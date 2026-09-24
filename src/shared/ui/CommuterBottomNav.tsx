@@ -16,12 +16,14 @@ interface CommuterBottomNavProps {
   activeTab: CommuterTab;
   onTabChange: (tab: CommuterTab) => void;
   rewardsBadge?: number;
+  lostFoundBadge?: number;
 }
 
 export const CommuterBottomNav: React.FC<CommuterBottomNavProps> = ({
   activeTab,
   onTabChange,
   rewardsBadge = 0,
+  lostFoundBadge = 0,
 }) => {
   const insets = useSafeAreaInsets();
 
@@ -68,14 +70,16 @@ export const CommuterBottomNav: React.FC<CommuterBottomNavProps> = ({
       style={[
         styles.container,
         {
-          paddingBottom: Math.max(insets.bottom, 10),
+          paddingBottom: Math.max(insets.bottom, 8),
         },
       ]}
     >
       <View style={styles.navRow}>
         {navItems.map((item) => {
           const isActive = activeTab === item.id;
-          const showBadge = item.id === "rewards" && rewardsBadge > 0;
+          let badgeCount = 0;
+          if (item.id === "rewards") badgeCount = rewardsBadge;
+          if (item.id === "lostfound") badgeCount = lostFoundBadge;
 
           return (
             <TouchableOpacity
@@ -83,30 +87,44 @@ export const CommuterBottomNav: React.FC<CommuterBottomNavProps> = ({
               activeOpacity={0.7}
               onPress={() => onTabChange(item.id)}
               style={styles.tabItem}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: isActive }}
+              accessibilityLabel={`${item.label}${badgeCount > 0 ? `, ${badgeCount} unread` : ""}`}
             >
+              {/* Web-parity top indicator dot */}
               <View
                 style={[
-                  styles.iconWrapper,
-                  isActive && styles.activeIconWrapper,
+                  styles.topDot,
+                  isActive ? styles.topDotActive : styles.topDotHidden,
+                ]}
+              />
+
+              {/* Icon Chip — #1A5FB4 active rounded chip matching web */}
+              <View
+                style={[
+                  styles.iconChip,
+                  isActive ? styles.iconChipActive : styles.iconChipInactive,
                 ]}
               >
                 <Ionicons
                   name={isActive ? item.activeIcon : item.icon}
-                  size={20}
-                  color={isActive ? "#62A0EA" : "rgba(255, 255, 255, 0.4)"}
+                  size={19}
+                  color={isActive ? "#FFFFFF" : "rgba(255, 255, 255, 0.45)"}
                 />
-                {showBadge && (
+                {badgeCount > 0 && (
                   <View style={styles.badge}>
                     <Text style={styles.badgeText}>
-                      {rewardsBadge > 9 ? "9+" : rewardsBadge}
+                      {badgeCount > 99 ? "99+" : badgeCount}
                     </Text>
                   </View>
                 )}
               </View>
+
+              {/* Text Label */}
               <Text
                 style={[
                   styles.tabLabel,
-                  isActive && styles.activeTabLabel,
+                  isActive ? styles.activeTabLabel : styles.inactiveTabLabel,
                 ]}
                 numberOfLines={1}
               >
@@ -122,50 +140,72 @@ export const CommuterBottomNav: React.FC<CommuterBottomNavProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: "#071A2E",
+    backgroundColor: "#0B1E33",
     borderTopWidth: 1,
-    borderTopColor: "rgba(255, 255, 255, 0.08)",
+    borderTopColor: "rgba(255, 255, 255, 0.06)",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 10,
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 12,
   },
   navRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-around",
-    paddingTop: 8,
+    paddingTop: 4,
     paddingHorizontal: 6,
   },
   tabItem: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 4,
+    paddingVertical: 3,
   },
-  iconWrapper: {
-    width: 38,
-    height: 32,
+  topDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    marginBottom: 4,
+  },
+  topDotActive: {
+    backgroundColor: "#62A0EA",
+  },
+  topDotHidden: {
+    backgroundColor: "transparent",
+  },
+  iconChip: {
+    width: 42,
+    height: 36,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 16,
     position: "relative",
   },
-  activeIconWrapper: {
-    backgroundColor: "rgba(26, 95, 180, 0.25)",
+  iconChipActive: {
+    backgroundColor: "#1A5FB4",
+    shadowColor: "#1A5FB4",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  iconChipInactive: {
+    backgroundColor: "transparent",
   },
   badge: {
     position: "absolute",
     top: -2,
-    right: 0,
+    right: -2,
     backgroundColor: "#FF6D3A",
-    borderRadius: 8,
+    borderRadius: 999,
     minWidth: 16,
     height: 16,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 3,
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: "#0B1E33",
   },
   badgeText: {
     color: "#FFFFFF",
@@ -174,12 +214,15 @@ const styles = StyleSheet.create({
   },
   tabLabel: {
     fontSize: 10,
-    fontWeight: "600",
-    color: "rgba(255, 255, 255, 0.4)",
-    marginTop: 3,
+    marginTop: 2,
+    textAlign: "center",
   },
   activeTabLabel: {
-    color: "#62A0EA",
-    fontWeight: "800",
+    color: "#FFFFFF",
+    fontWeight: "700",
+  },
+  inactiveTabLabel: {
+    color: "rgba(255, 255, 255, 0.35)",
+    fontWeight: "500",
   },
 });

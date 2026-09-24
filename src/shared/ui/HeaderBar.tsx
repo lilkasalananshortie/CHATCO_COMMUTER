@@ -18,6 +18,7 @@ interface HeaderBarProps {
   onOpenSos: () => void;
   onOpenAnnouncements?: () => void;
   onOpenProfile?: () => void;
+  onOpenTour?: () => void;
 }
 
 export const HeaderBar: React.FC<HeaderBarProps> = ({
@@ -27,6 +28,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   onOpenSos,
   onOpenAnnouncements,
   onOpenProfile,
+  onOpenTour,
 }) => {
   const insets = useSafeAreaInsets();
 
@@ -64,13 +66,28 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
           </View>
         </TouchableOpacity>
 
-        {/* Right: Actions (Announcements + SOS) */}
+        {/* Right: Actions (App Guide + Announcements + SOS) */}
         <View style={styles.actionsContainer}>
+          {/* App Guide & Tour Button */}
+          {onOpenTour && (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={onOpenTour}
+              style={styles.iconButton}
+              accessibilityRole="button"
+              accessibilityLabel="App Guide & Walkthrough"
+            >
+              <Ionicons name="help-circle-outline" size={20} color="rgba(255, 255, 255, 0.85)" />
+            </TouchableOpacity>
+          )}
+
           {/* Announcements Icon */}
           <TouchableOpacity
             activeOpacity={0.7}
             onPress={onOpenAnnouncements}
             style={styles.iconButton}
+            accessibilityRole="button"
+            accessibilityLabel={`Announcements, ${unreadAnnouncements} unread`}
           >
             <Ionicons name="notifications-outline" size={20} color="#FFFFFF" />
             {unreadAnnouncements > 0 && (
@@ -87,6 +104,8 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             activeOpacity={0.8}
             onPress={onOpenSos}
             style={styles.sosButton}
+            accessibilityRole="button"
+            accessibilityLabel="Emergency SOS Alert"
           >
             <Ionicons name="warning" size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
             <Text style={styles.sosButtonText}>SOS</Text>

@@ -17,9 +17,10 @@ import type { User, CommuterProfile } from "../../core/domain/types";
 
 interface ProfileScreenProps {
   onLogout: () => void;
+  onOpenTour?: () => void;
 }
 
-export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout }) => {
+export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onOpenTour }) => {
   const [profile, setProfile] = useState<CommuterProfile | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -471,6 +472,30 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout }) => {
             </TouchableOpacity>
           )}
         </View>
+
+        {/* App Walkthrough Tour Card */}
+        {onOpenTour && (
+          <TouchableOpacity
+            onPress={onOpenTour}
+            style={styles.tourCard}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Replay App Guide and Walkthrough"
+          >
+            <View style={styles.tourCardLeft}>
+              <View style={styles.tourIconCircle}>
+                <Ionicons name="compass-outline" size={22} color="#62A0EA" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.tourTitle}>App Features & Guide</Text>
+                <Text style={styles.tourSubtitle}>
+                  Replay the first-installation walkthrough tour
+                </Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="rgba(255, 255, 255, 0.4)" />
+          </TouchableOpacity>
+        )}
 
         {/* Log Out Button */}
         <TouchableOpacity
@@ -1160,5 +1185,42 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.4,
+  },
+  tourCard: {
+    backgroundColor: "#071A2E",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  tourCardLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+    marginRight: 8,
+  },
+  tourIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: "rgba(26, 95, 180, 0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tourTitle: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
+    marginBottom: 2,
+  },
+  tourSubtitle: {
+    color: "rgba(255, 255, 255, 0.5)",
+    fontSize: 11,
+    lineHeight: 15,
   },
 });

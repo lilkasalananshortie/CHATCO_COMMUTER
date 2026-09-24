@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { View, StyleSheet, ActivityIndicator } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { ThemeProvider } from "./src/core/theme/ThemeProvider";
 import { commuterColors } from "./src/core/theme/colors";
@@ -13,7 +14,8 @@ import type { User, CommuterProfile, CommuterTab, Trip } from "./src/core/domain
 import { HeaderBar } from "./src/shared/ui/HeaderBar";
 import { CommuterBottomNav } from "./src/shared/ui/CommuterBottomNav";
 
-// Screens (5 web-parity tabs)
+// Screens (5 web-parity tabs + Onboarding)
+import { OnboardingScreen, ONBOARDING_STORAGE_KEY } from "./src/features/onboarding/OnboardingScreen";
 import { LoginScreen } from "./src/features/auth/LoginScreen";
 import { RegisterScreen } from "./src/features/auth/RegisterScreen";
 import { DashboardScreen } from "./src/features/dashboard/DashboardScreen";
@@ -30,6 +32,7 @@ import { ShareRideModal } from "./src/features/share/ShareRideModal";
 
 export default function App() {
   const [initializing, setInitializing] = useState(true);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<CommuterProfile | null>(null);
   const [authView, setAuthView] = useState<"LOGIN" | "REGISTER">("LOGIN");
@@ -38,17 +41,24 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<CommuterTab>("home");
   const [feedbackTargetTrip, setFeedbackTargetTrip] = useState<Trip | null>(null);
 
-  // Modals
+  // Modals & Badges
   const [showScanModal, setShowScanModal] = useState(false);
   const [showReceiptScanModal, setShowReceiptScanModal] = useState(false);
   const [showSosModal, setShowSosModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [unreadAnnouncements, setUnreadAnnouncements] = useState(0);
+  const [availableVouchers, setAvailableVouchers] = useState(0);
+  const [lostFoundBadge, setLostFoundBadge] = useState(0);
 
-  // Initialize session
+  // Initialize session & onboarding check
   useEffect(() => {
     (async () => {
       try {
+        const onboardingCompleted = await AsyncStorage.getItem(ONBOARDING_STORAGE_KEY);
+        if (!onboardingCompleted) {
+          setShowOnboarding(true);
+        }
+
         const storedUser = await authService.getStoredUser();
         const token = await authService.getStoredToken();
         if (token && storedUser && storedUser.role === "COMMUTER") {
@@ -72,12 +82,28 @@ export default function App() {
     })();
   }, []);
 
-  // Poll unread announcements count if logged in
+  // Poll unread announcements count & available vouchers if logged in (matching web layout)
   const fetchUnreadCount = useCallback(async () => {
     if (!user) return;
     try {
-      const count = await commuterService.getUnreadAnnouncementCount();
-      setUnreadAnnouncements(count);
+      const [announcementRes, rewardsRes, claimsRes] = await Promise.allSettled([
+        commuterService.getUnreadAnnouncementCount(),
+        commuterService.getRewards(),
+        commuterService.getMyClaims({ per_page: 10 }),
+      ]);
+
+      if (announcementRes.status === "fulfilled") {
+        setUnreadAnnouncements(announcementRes.value);
+      }
+      if (rewardsRes.status === "fulfilled") {
+        setAvailableVouchers(rewardsRes.value.availableVoucherCount || 0);
+      }
+      if (claimsRes.status === "fulfilled") {
+        const validatedClaims = claimsRes.value.claims.filter(
+          (c) => c.status === "VALIDATED" || (c.status as string) === "APPROVED"
+        ).length;
+        setLostFoundBadge(validatedClaims);
+      }
     } catch {
       // ignore
     }
@@ -123,6 +149,16 @@ export default function App() {
     );
   }
 
+  // First-installation onboarding walkthrough screen
+  if (showOnboarding) {
+    return (
+      <SafeAreaProvider>
+        <StatusBar style="light" />
+        <OnboardingScreen onFinish={() => setShowOnboarding(false)} />
+      </SafeAreaProvider>
+    );
+  }
+
   return (
     <SafeAreaProvider>
       <ThemeProvider>
@@ -150,12 +186,15 @@ export default function App() {
                 onOpenSos={() => setShowSosModal(true)}
                 onOpenAnnouncements={() => setActiveTab("rewards")}
                 onOpenProfile={() => setActiveTab("profile")}
+                onOpenTour={() => setShowOnboarding(true)}
               />
 
               {/* Active Tab Screen (5 web-parity tabs) */}
               <View style={styles.screenViewport}>
                 {activeTab === "home" && (
                   <DashboardScreen
+                    user={user}
+                    profile={profile}
                     onOpenScan={() => setShowScanModal(true)}
                     onOpenShareRide={() => setShowShareModal(true)}
                     onOpenSos={() => setShowSosModal(true)}
@@ -178,7 +217,10 @@ export default function App() {
                   />
                 )}
                 {activeTab === "profile" && (
-                  <ProfileScreen onLogout={handleLogout} />
+                  <ProfileScreen
+                    onLogout={handleLogout}
+                    onOpenTour={() => setShowOnboarding(true)}
+                  />
                 )}
               </View>
 
@@ -186,7 +228,8 @@ export default function App() {
               <CommuterBottomNav
                 activeTab={activeTab}
                 onTabChange={setActiveTab}
-                rewardsBadge={unreadAnnouncements}
+                rewardsBadge={unreadAnnouncements + availableVouchers}
+                lostFoundBadge={lostFoundBadge}
               />
 
               {/* Global Modals matching web dashboard */}
