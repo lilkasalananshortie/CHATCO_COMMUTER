@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { View, StyleSheet } from "react-native";
+import { View, StyleSheet, StyleProp, ViewStyle } from "react-native";
 import Constants from "expo-constants";
 import { commuterColors } from "../../core/theme/colors";
 import type { VehicleLocation } from "../../core/domain/types";
@@ -15,12 +15,14 @@ export interface CommuterLiveMapProps {
   vehicles: VehicleLocation[];
   userLocation?: { latitude: number; longitude: number } | null;
   isHailing?: boolean;
+  style?: StyleProp<ViewStyle>;
 }
 
 export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
   vehicles,
   userLocation,
   isHailing = false,
+  style,
 }) => {
   const routeCenter = useMemo(() => {
     const latitudes = ROUTE_COORDINATES.map((p) => p.latitude);
@@ -198,7 +200,7 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
   `;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, style]}>
       {React.createElement("iframe", {
         srcDoc: htmlContent,
         style: {
@@ -215,12 +217,8 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    height: 280,
+    flex: 1,
     width: "100%",
     backgroundColor: commuterColors.surfaceSecondary,
-    borderRadius: 16,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: commuterColors.border,
   },
 });

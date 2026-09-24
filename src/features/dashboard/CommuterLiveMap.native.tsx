@@ -1,5 +1,5 @@
 import React, { useMemo, useRef } from "react";
-import { View, StyleSheet } from "react-native";
+import { View, StyleSheet, StyleProp, ViewStyle } from "react-native";
 import { WebView } from "react-native-webview";
 import Constants from "expo-constants";
 import { commuterColors } from "../../core/theme/colors";
@@ -16,12 +16,14 @@ export interface CommuterLiveMapProps {
   vehicles: VehicleLocation[];
   userLocation?: { latitude: number; longitude: number } | null;
   isHailing?: boolean;
+  style?: StyleProp<ViewStyle>;
 }
 
 export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
   vehicles,
   userLocation,
   isHailing = false,
+  style,
 }) => {
   const webViewRef = useRef<WebView>(null);
 
@@ -201,7 +203,7 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
   `;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, style]}>
       <WebView
         ref={webViewRef}
         originWhitelist={["*"]}
@@ -215,13 +217,9 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    height: 280,
+    flex: 1,
     width: "100%",
     backgroundColor: commuterColors.surfaceSecondary,
-    borderRadius: 16,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: commuterColors.border,
   },
   webView: {
     flex: 1,

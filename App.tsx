@@ -178,16 +178,18 @@ export default function App() {
             )
           ) : (
             <View style={styles.mainShell}>
-              {/* App Header */}
-              <HeaderBar
-                title="CHATCO"
-                userName={profile?.first_name || user.name}
-                unreadAnnouncements={unreadAnnouncements}
-                onOpenSos={() => setShowSosModal(true)}
-                onOpenAnnouncements={() => setActiveTab("rewards")}
-                onOpenProfile={() => setActiveTab("profile")}
-                onOpenTour={() => setShowOnboarding(true)}
-              />
+              {/* App Header (Shown on secondary tabs; Dashboard uses full-bleed floating header 1:1 with web) */}
+              {activeTab !== "home" && (
+                <HeaderBar
+                  title="CHATCO"
+                  userName={profile?.first_name || user.name}
+                  unreadAnnouncements={unreadAnnouncements}
+                  onOpenSos={() => setShowSosModal(true)}
+                  onOpenAnnouncements={() => setActiveTab("rewards")}
+                  onOpenProfile={() => setActiveTab("profile")}
+                  onOpenTour={() => setShowOnboarding(true)}
+                />
+              )}
 
               {/* Active Tab Screen (5 web-parity tabs) */}
               <View style={styles.screenViewport}>
@@ -198,6 +200,8 @@ export default function App() {
                     onOpenScan={() => setShowScanModal(true)}
                     onOpenShareRide={() => setShowShareModal(true)}
                     onOpenSos={() => setShowSosModal(true)}
+                    onOpenProfile={() => setActiveTab("profile")}
+                    onOpenTour={() => setShowOnboarding(true)}
                     onNavigateToFeedback={handleNavigateToFeedback}
                   />
                 )}
