@@ -40,6 +40,14 @@
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "ChatCo needs camera access to scan fare receipt QR codes."
       }
-    }
+    },
+    "extra": {
+      "googleMapsConfigured": false,
+      "cartoApiKey": "cb1_2dut_1_0bf5bd46e8782ff0b7ba6f38",
+      "eas": {
+        "projectId": "2ee7dd04-381f-4196-b4b5-4f19973181a8"
+      }
+    },
+    "owner": "lilkasalananshortie"
   }
 }

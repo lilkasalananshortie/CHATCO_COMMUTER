@@ -1,9 +1,16 @@
 import React, { useMemo, useRef } from "react";
 import { View, StyleSheet } from "react-native";
 import { WebView } from "react-native-webview";
+import Constants from "expo-constants";
 import { commuterColors } from "../../core/theme/colors";
 import type { VehicleLocation } from "../../core/domain/types";
 import { ROUTE_POINTS, ROUTE_COORDINATES } from "./route-data";
+
+const CARTO_API_KEY =
+  process.env.EXPO_PUBLIC_CARTO_API_KEY ||
+  process.env.NEXT_PUBLIC_CARTO_API_KEY ||
+  (Constants.expoConfig?.extra as any)?.cartoApiKey ||
+  "cb1_2dut_1_0bf5bd46e8782ff0b7ba6f38";
 
 export interface CommuterLiveMapProps {
   vehicles: VehicleLocation[];
@@ -66,7 +73,7 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
       height: 100%;
       margin: 0;
       padding: 0;
-      background: #F0F7FF;
+      background: #050F1A;
       overflow: hidden;
     }
     .leaflet-control-attribution, .leaflet-control-zoom { display: none !important; }
@@ -123,9 +130,24 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
       attributionControl: false
     });
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-      maxZoom: 19
-    }).addTo(map);
+    var cartoKey = "${CARTO_API_KEY}";
+    var tileUrl = cartoKey
+      ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=' + encodeURIComponent(cartoKey)
+      : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+
+    var tileLayer = L.tileLayer(tileUrl, {
+      maxZoom: 19,
+      subdomains: 'abcd'
+    });
+
+    tileLayer.on('tileerror', function() {
+      if (!tileLayer._hasFallenBack) {
+        tileLayer._hasFallenBack = true;
+        tileLayer.setUrl('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+      }
+    });
+
+    tileLayer.addTo(map);
 
     var routePoints = ${routePointsJs};
     var polyline = L.polyline(routePoints, {
