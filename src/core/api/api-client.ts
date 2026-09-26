@@ -68,7 +68,13 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
         sessionEndedHandler?.();
       }
     }
-    const message = payload?.message ?? `Request failed (${response.status}).`;
+    let message = payload?.message ?? `Request failed (${response.status}).`;
+    if ((payload as any)?.errors && typeof (payload as any).errors === "object") {
+      const errList = Object.values((payload as any).errors).flat().filter(Boolean);
+      if (errList.length > 0) {
+        message = `${message}: ${errList.join("; ")}`;
+      }
+    }
     throw new Error(`${message} [HTTP ${response.status}]`);
   }
 

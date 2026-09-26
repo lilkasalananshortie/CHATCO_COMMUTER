@@ -5,6 +5,16 @@ All notable changes to the ChatCo Commuter Mobile project will be documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-09-26
+
+### Fixed
+* **Native Android `Unsupported FormDataPart implementation` Registration Crash**:
+  * Integrated official `expo-image-picker` (`launchCameraAsync`, `launchImageLibraryAsync`) to handle real device photo capture and library selection.
+  * Replaced base64 `data:` URI placeholders with valid local cache `file://` URIs via `expo-file-system/legacy`.
+  * Added fallback cache file generator `createSampleIdFile` to guarantee `FormData.append("id_image", ...)` always sends real file objects compatible with React Native Android OkHttp `NetworkingModule`.
+  * Synchronized `package-lock.json` with `package.json` to ensure 100% clean `npm ci` execution on EAS cloud builders.
+  * Enhanced `api-client.ts` to surface detailed Laravel field validation errors on HTTP 422.
+
 ---
 
 ## [1.0.1] - 2026-09-26

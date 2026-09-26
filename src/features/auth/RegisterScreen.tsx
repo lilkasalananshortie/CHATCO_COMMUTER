@@ -15,6 +15,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { commuterColors } from "../../core/theme/colors";
 import { CommuterButton } from "../../shared/ui/CommuterButton";
 import { authService } from "../../core/api/auth-service";
+import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system/legacy";
 
 interface RegisterScreenProps {
   onRegisterSuccess: () => void;
@@ -55,6 +57,47 @@ const STEP_COPY: Record<number, { title: string; subtitle: string }> = {
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_PATTERN = /^09\d{9}$/;
+
+// 1x1 clean PNG transparent pixel base64 for sample / fallback testing
+const SAMPLE_PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+async function createSampleIdFile(): Promise<{ uri: string; name: string; type: string } | File> {
+  const filename = "valid_government_id_sample.png";
+  const mimeType = "image/png";
+
+  if (Platform.OS === "web") {
+    try {
+      const byteCharacters = atob(SAMPLE_PNG_BASE64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: mimeType });
+      return new File([blob], filename, { type: mimeType });
+    } catch {
+      return {
+        uri: `data:${mimeType};base64,${SAMPLE_PNG_BASE64}`,
+        name: filename,
+        type: mimeType,
+      };
+    }
+  }
+
+  // Native Android and iOS - write to local cache file so uri is a valid file:// URI (OkHttp supported)
+  const dir = FileSystem.cacheDirectory || "";
+  const fileUri = `${dir}chatco_sample_id.png`;
+  await FileSystem.writeAsStringAsync(fileUri, SAMPLE_PNG_BASE64, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+
+  return {
+    uri: fileUri,
+    name: filename,
+    type: mimeType,
+  };
+}
 
 export const RegisterScreen: React.FC<RegisterScreenProps> = ({
   onRegisterSuccess,
@@ -239,47 +282,98 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
   };
 
   // Handle Pick / Capture ID
-  const handleSelectIdOption = (option: "CAMERA" | "FILE" | "SAMPLE") => {
+  const handleSelectIdOption = async (option: "CAMERA" | "FILE" | "SAMPLE") => {
     setShowIdChoiceModal(false);
     clearFieldError("id");
+    setErrorMessage(null);
 
-    if (option === "SAMPLE") {
-      setIdFileName("valid_government_id_sample.jpg");
-      setIdFileBlob({
-        uri: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
-        name: "valid_id.png",
-        type: "image/png",
-      });
-      return;
-    }
-
-    if (Platform.OS === "web") {
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = "image/jpeg,image/png,image/webp";
-      if (option === "CAMERA") {
-        input.capture = "environment";
+    try {
+      if (option === "SAMPLE") {
+        const sampleFile = await createSampleIdFile();
+        setIdFileName("valid_government_id_sample.png");
+        setIdFileBlob(sampleFile);
+        return;
       }
-      input.onchange = (e: any) => {
-        const file = e.target?.files?.[0];
-        if (file) {
-          if (file.size > 5 * 1024 * 1024) {
+
+      if (Platform.OS === "web") {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "image/jpeg,image/png,image/webp";
+        if (option === "CAMERA") {
+          input.capture = "environment";
+        }
+        input.onchange = (e: any) => {
+          const file = e.target?.files?.[0];
+          if (file) {
+            if (file.size > 5 * 1024 * 1024) {
+              setErrorMessage("That image is over 5MB. Please choose an image under 5MB.");
+              return;
+            }
+            setIdFileName(file.name);
+            setIdFileBlob(file);
+          }
+        };
+        input.click();
+        return;
+      }
+
+      // Native Android & iOS
+      if (option === "CAMERA") {
+        const perm = await ImagePicker.requestCameraPermissionsAsync();
+        if (!perm.granted) {
+          setErrorMessage("Camera permission is required to take a picture of your ID.");
+          return;
+        }
+        const result = await ImagePicker.launchCameraAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          quality: 0.8,
+        });
+        if (!result.canceled && result.assets && result.assets.length > 0 && result.assets[0]) {
+          const asset = result.assets[0];
+          if (asset.fileSize && asset.fileSize > 5 * 1024 * 1024) {
             setErrorMessage("That image is over 5MB. Please choose an image under 5MB.");
             return;
           }
-          setIdFileName(file.name);
-          setIdFileBlob(file);
+          const filename = asset.fileName || `id_camera_${Date.now()}.jpg`;
+          const mime = asset.mimeType || "image/jpeg";
+          setIdFileName(filename);
+          setIdFileBlob({
+            uri: asset.uri,
+            name: filename,
+            type: mime,
+          });
         }
-      };
-      input.click();
-    } else {
-      // Mobile fallback placeholder
-      setIdFileName("captured_id_photo.jpg");
-      setIdFileBlob({
-        uri: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
-        name: "captured_id.png",
-        type: "image/png",
-      });
+      } else if (option === "FILE") {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted) {
+          setErrorMessage("Photo library permission is required to upload your ID document.");
+          return;
+        }
+        const result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          quality: 0.8,
+        });
+        if (!result.canceled && result.assets && result.assets.length > 0 && result.assets[0]) {
+          const asset = result.assets[0];
+          if (asset.fileSize && asset.fileSize > 5 * 1024 * 1024) {
+            setErrorMessage("That image is over 5MB. Please choose an image under 5MB.");
+            return;
+          }
+          const filename = asset.fileName || `id_upload_${Date.now()}.jpg`;
+          const mime = asset.mimeType || "image/jpeg";
+          setIdFileName(filename);
+          setIdFileBlob({
+            uri: asset.uri,
+            name: filename,
+            type: mime,
+          });
+        }
+      }
+    } catch (err: any) {
+      console.error("[RegisterScreen] ID selection error:", err);
+      setErrorMessage("Could not select image. Please try again or use the Sample ID option.");
     }
   };
 
@@ -305,16 +399,23 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
       formData.append("password", password);
       formData.append("password_confirmation", passwordConfirmation);
 
-      // Attach ID
+      // Attach ID safely (guaranteeing valid file:// URI on Native, never a data: URI)
       if (idFileBlob) {
-        formData.append("id_image", idFileBlob);
+        if (
+          Platform.OS !== "web" &&
+          typeof idFileBlob === "object" &&
+          "uri" in idFileBlob &&
+          typeof idFileBlob.uri === "string" &&
+          idFileBlob.uri.startsWith("data:")
+        ) {
+          const safeSample = await createSampleIdFile();
+          formData.append("id_image", safeSample as any);
+        } else {
+          formData.append("id_image", idFileBlob);
+        }
       } else {
-        const dummyId = {
-          uri: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
-          name: "id_document.png",
-          type: "image/png",
-        } as any;
-        formData.append("id_image", dummyId);
+        const fallbackFile = await createSampleIdFile();
+        formData.append("id_image", fallbackFile as any);
       }
 
       await authService.register(formData);
