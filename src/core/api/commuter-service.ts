@@ -356,8 +356,20 @@ export const commuterService = {
   },
 
   // Emergency SOS
-  async triggerSos(data: { latitude: number; longitude: number; note?: string }): Promise<SosAlert> {
-    return post("/commuter/sos", data);
+  async triggerSos(data: {
+    lat?: number;
+    lng?: number;
+    latitude?: number;
+    longitude?: number;
+    note?: string;
+  }): Promise<SosAlert> {
+    const lat = Number(data.lat ?? data.latitude ?? 0);
+    const lng = Number(data.lng ?? data.longitude ?? 0);
+    return post("/commuter/sos", {
+      lat,
+      lng,
+      note: data.note || "Emergency distress triggered from Commuter Mobile App",
+    });
   },
 
   async getSosStatus(id: string): Promise<SosAlert> {

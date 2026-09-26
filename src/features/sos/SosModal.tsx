@@ -106,6 +106,8 @@ export const SosModal: React.FC<SosModalProps> = ({ visible, onClose }) => {
     setStatus("sending");
     try {
       const res = await commuterService.triggerSos({
+        lat: latitude,
+        lng: longitude,
         latitude,
         longitude,
         note: "Emergency distress triggered from Commuter Mobile App",

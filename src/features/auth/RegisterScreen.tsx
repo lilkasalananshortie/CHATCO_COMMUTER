@@ -86,11 +86,22 @@ async function createSampleIdFile(): Promise<{ uri: string; name: string; type: 
   }
 
   // Native Android and iOS - write to local cache file so uri is a valid file:// URI (OkHttp supported)
-  const dir = FileSystem.cacheDirectory || "";
-  const fileUri = `${dir}chatco_sample_id.png`;
-  await FileSystem.writeAsStringAsync(fileUri, SAMPLE_PNG_BASE64, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
+  let baseDir = FileSystem.cacheDirectory || FileSystem.documentDirectory || "";
+  if (baseDir && !baseDir.endsWith("/")) {
+    baseDir = `${baseDir}/`;
+  }
+  let fileUri = `${baseDir}chatco_sample_id.png`;
+  if (!fileUri.startsWith("file://") && !fileUri.startsWith("content://")) {
+    fileUri = `file://${fileUri}`;
+  }
+
+  try {
+    await FileSystem.writeAsStringAsync(fileUri, SAMPLE_PNG_BASE64, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+  } catch (err) {
+    console.warn("[RegisterScreen] Error writing sample ID file:", err);
+  }
 
   return {
     uri: fileUri,
@@ -386,37 +397,51 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
 
     try {
       const formData = new FormData();
-      formData.append("first_name", firstName.trim());
-      if (middleName.trim()) formData.append("middle_name", middleName.trim());
-      formData.append("surname", surname.trim());
-      if (suffix && suffix !== "None") formData.append("suffix", suffix);
-      formData.append("birthdate", birthdate.trim());
-      formData.append("gender", gender);
-      formData.append("email", email.trim().toLowerCase());
-      formData.append("contact_number", contactNumber.trim());
-      formData.append("username", username.trim());
-      formData.append("applied_type", appliedType);
-      formData.append("password", password);
-      formData.append("password_confirmation", passwordConfirmation);
+      formData.append("first_name", String(firstName || "").trim());
+      if (middleName && middleName.trim()) {
+        formData.append("middle_name", String(middleName).trim());
+      }
+      formData.append("surname", String(surname || "").trim());
+      if (suffix && suffix !== "None") {
+        formData.append("suffix", String(suffix));
+      }
+      formData.append("birthdate", String(birthdate || "").trim());
+      formData.append("gender", String(gender || ""));
+      formData.append("email", String(email || "").trim().toLowerCase());
+      formData.append("contact_number", String(contactNumber || "").trim());
+      formData.append("username", String(username || "").trim());
+      formData.append("applied_type", String(appliedType || "REGULAR"));
+      formData.append("password", String(password));
+      formData.append("password_confirmation", String(passwordConfirmation));
 
-      // Attach ID safely (guaranteeing valid file:// URI on Native, never a data: URI)
-      if (idFileBlob) {
+      // Attach ID safely (guaranteeing valid file:// or content:// URI on Native, never a Blob or data: URI)
+      let fileToAttach: any;
+      if (Platform.OS === "web") {
+        fileToAttach = idFileBlob || (await createSampleIdFile());
+      } else {
         if (
-          Platform.OS !== "web" &&
+          idFileBlob &&
           typeof idFileBlob === "object" &&
           "uri" in idFileBlob &&
           typeof idFileBlob.uri === "string" &&
-          idFileBlob.uri.startsWith("data:")
+          !idFileBlob.uri.startsWith("data:")
         ) {
-          const safeSample = await createSampleIdFile();
-          formData.append("id_image", safeSample as any);
+          const rawUri = idFileBlob.uri;
+          const safeUri =
+            rawUri.startsWith("file://") || rawUri.startsWith("content://")
+              ? rawUri
+              : `file://${rawUri}`;
+          fileToAttach = {
+            uri: safeUri,
+            name: String(idFileBlob.name || "id_upload.jpg"),
+            type: String(idFileBlob.type || "image/jpeg"),
+          };
         } else {
-          formData.append("id_image", idFileBlob);
+          fileToAttach = await createSampleIdFile();
         }
-      } else {
-        const fallbackFile = await createSampleIdFile();
-        formData.append("id_image", fallbackFile as any);
       }
+
+      formData.append("id_image", fileToAttach as any);
 
       await authService.register(formData);
       setIsSuccess(true);
@@ -1061,7 +1086,10 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
               <CommuterButton
                 title="Next Step"
                 onPress={() => {
-                  if (validateCurrentStep(1)) setStep(2);
+                  if (validateCurrentStep(1)) {
+                    setErrorMessage(null);
+                    setStep(2);
+                  }
                 }}
                 fullWidth
                 style={styles.primaryActionBtn}
@@ -1107,7 +1135,10 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
             {/* Back to previous step link */}
             {step > 1 && (
               <TouchableOpacity
-                onPress={() => setStep(step === 4 ? 2 : step - 1)}
+                onPress={() => {
+                  setErrorMessage(null);
+                  setStep(step === 4 ? 2 : step - 1);
+                }}
                 style={styles.prevStepBtn}
                 disabled={loading || isSendingCode || isVerifyingCode}
               >
