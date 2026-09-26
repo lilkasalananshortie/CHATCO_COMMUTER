@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  TouchableOpacity,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { commuterColors } from "../../core/theme/colors";
@@ -18,11 +19,13 @@ import type { User } from "../../core/domain/types";
 interface LoginScreenProps {
   onLoginSuccess: (user: User, token: string) => void;
   onGoToRegister: () => void;
+  onResetOnboarding?: () => void;
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({
   onLoginSuccess,
   onGoToRegister,
+  onResetOnboarding,
 }) => {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -174,6 +177,23 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               Create an Account
             </Text>
           </View>
+
+          {/* Quick Walkthrough Replay Link */}
+          {onResetOnboarding && (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={onResetOnboarding}
+              style={styles.replayTourBtn}
+            >
+              <Ionicons
+                name="sparkles"
+                size={14}
+                color={commuterColors.primary}
+                style={{ marginRight: 6 }}
+              />
+              <Text style={styles.replayTourText}>Replay App Onboarding</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -323,6 +343,24 @@ const styles = StyleSheet.create({
   },
   linkText: {
     fontSize: 13,
+    fontWeight: "700",
+    color: commuterColors.primary,
+  },
+  replayTourBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: "rgba(26, 95, 180, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(26, 95, 180, 0.18)",
+    alignSelf: "center",
+  },
+  replayTourText: {
+    fontSize: 12,
     fontWeight: "700",
     color: commuterColors.primary,
   },

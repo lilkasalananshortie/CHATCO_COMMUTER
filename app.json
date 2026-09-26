@@ -3,7 +3,7 @@
     "name": "ChatCo Commuter",
     "slug": "chatco-commuter-mobile",
     "scheme": "chatco-commuter",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "plugins": [
@@ -13,12 +13,18 @@
           "locationWhenInUsePermission": "ChatCo uses your location to show approaching jeepneys and allow you to signal Pick Me Up."
         }
       ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "ChatCo needs camera access to scan conductor fare QR codes and ride receipts."
+        }
+      ],
       "expo-maps",
       "expo-font"
     ],
     "android": {
       "package": "com.chatco.commuter",
-      "versionCode": 1,
+      "versionCode": 2,
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
@@ -38,12 +44,12 @@
       "bundleIdentifier": "com.chatco.commuter",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSCameraUsageDescription": "ChatCo needs camera access to scan fare receipt QR codes."
+        "NSCameraUsageDescription": "ChatCo needs camera access to scan fare receipt QR codes.",
+        "NSLocationWhenInUseUsageDescription": "ChatCo uses your location to show approaching jeepneys and allow you to signal Pick Me Up."
       }
     },
     "extra": {
       "googleMapsConfigured": false,
-      "cartoApiKey": "cb1_2dut_1_0bf5bd46e8782ff0b7ba6f38",
       "eas": {
         "projectId": "2ee7dd04-381f-4196-b4b5-4f19973181a8"
       }

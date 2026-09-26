@@ -4,11 +4,17 @@
     "appVersionSource": "local"
   },
   "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "http://10.0.2.2:8000"
+      }
+    },
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api.chatco.online",
-        "EXPO_PUBLIC_CARTO_API_KEY": "cb1_2dut_1_0bf5bd46e8782ff0b7ba6f38"
+        "EXPO_PUBLIC_API_URL": "https://api.chatco.online"
       },
       "android": {
         "buildType": "apk"
@@ -16,8 +22,7 @@
     },
     "production": {
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api.chatco.online",
-        "EXPO_PUBLIC_CARTO_API_KEY": "cb1_2dut_1_0bf5bd46e8782ff0b7ba6f38"
+        "EXPO_PUBLIC_API_URL": "https://api.chatco.online"
       },
       "android": {
         "buildType": "app-bundle"

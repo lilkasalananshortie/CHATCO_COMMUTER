@@ -86,49 +86,110 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     }
   }, []);
 
-  // Request GPS
+  // Request GPS permission and coordinates
+  const requestGps = useCallback(async () => {
+    setGpsStatus("loading");
+
+    // 1. Web browser geolocation prompt
+    if (Platform.OS === "web") {
+      if (typeof navigator !== "undefined" && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            setUserLocation({
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+            });
+            setGpsStatus("available");
+          },
+          (err) => {
+            if (err.code === 1) {
+              setGpsStatus("denied");
+            } else {
+              setGpsStatus("unavailable");
+            }
+            setUserLocation({ latitude: 14.8459, longitude: 120.8342 });
+          },
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+        );
+        return;
+      }
+    }
+
+    // 2. Native mobile expo-location
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        setGpsStatus("denied");
+        setUserLocation({ latitude: 14.8459, longitude: 120.8342 });
+        return;
+      }
+
+      const loc = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      setUserLocation({
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude,
+      });
+      setGpsStatus("available");
+    } catch {
+      setGpsStatus("unavailable");
+      setUserLocation({ latitude: 14.8459, longitude: 120.8342 });
+    }
+  }, []);
+
   useEffect(() => {
     let sub: Location.LocationSubscription | null = null;
-    (async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== "granted") {
-          setGpsStatus("denied");
-          setUserLocation({ latitude: 14.8459, longitude: 120.8342 });
-          return;
-        }
+    let webWatchId: number | null = null;
 
-        const loc = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-        setUserLocation({
-          latitude: loc.coords.latitude,
-          longitude: loc.coords.longitude,
-        });
-        setGpsStatus("available");
+    requestGps();
 
-        sub = await Location.watchPositionAsync(
-          {
-            accuracy: Location.Accuracy.Balanced,
-            distanceInterval: 10,
-          },
-          (newLoc) => {
+    if (Platform.OS === "web") {
+      if (typeof navigator !== "undefined" && navigator.geolocation) {
+        webWatchId = navigator.geolocation.watchPosition(
+          (pos) => {
             setUserLocation({
-              latitude: newLoc.coords.latitude,
-              longitude: newLoc.coords.longitude,
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
             });
-          }
+            setGpsStatus("available");
+          },
+          () => {},
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
         );
-      } catch {
-        setGpsStatus("unavailable");
-        setUserLocation({ latitude: 14.8459, longitude: 120.8342 });
       }
-    })();
+    } else {
+      (async () => {
+        try {
+          const perm = await Location.getForegroundPermissionsAsync();
+          if (perm.granted) {
+            sub = await Location.watchPositionAsync(
+              {
+                accuracy: Location.Accuracy.Balanced,
+                distanceInterval: 10,
+              },
+              (newLoc) => {
+                setUserLocation({
+                  latitude: newLoc.coords.latitude,
+                  longitude: newLoc.coords.longitude,
+                });
+                setGpsStatus("available");
+              }
+            );
+          }
+        } catch {
+          // ignore
+        }
+      })();
+    }
 
     return () => {
       if (sub) sub.remove();
+      if (webWatchId !== null && typeof navigator !== "undefined" && navigator.geolocation) {
+        navigator.geolocation.clearWatch(webWatchId);
+      }
     };
-  }, []);
+  }, [requestGps]);
 
   // Poll vehicle locations every 5s
   useEffect(() => {
@@ -394,26 +455,53 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             {gpsStatus === "loading" && (
               <View style={styles.statusBox}>
                 <ActivityIndicator size="small" color={commuterColors.primaryLight} style={{ marginRight: 10 }} />
-                <Text style={styles.statusBoxText}>Locating you... Waiting for GPS signal</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.statusBoxText}>Locating you... Waiting for GPS signal</Text>
+                </View>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={requestGps}
+                  style={styles.retryGpsSmallBtn}
+                >
+                  <Ionicons name="refresh" size={14} color="rgba(255,255,255,0.7)" />
+                </TouchableOpacity>
               </View>
             )}
 
             {gpsStatus === "denied" && (
               <View style={[styles.statusBox, styles.statusBoxDenied]}>
-                <Ionicons name="alert-circle" size={18} color="#F87171" style={{ marginRight: 8 }} />
+                <Ionicons name="alert-circle" size={20} color="#F87171" style={{ marginRight: 10 }} />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.statusBoxDeniedTitle}>Location access denied</Text>
-                  <Text style={styles.statusBoxDeniedSub}>Enable location permission to see ETA and hail vehicles.</Text>
+                  <Text style={styles.statusBoxDeniedTitle}>Location access required</Text>
+                  <Text style={styles.statusBoxDeniedSub}>
+                    Allow location permission to see nearby jeepneys, live ETA, and hail rides.
+                  </Text>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={requestGps}
+                    style={styles.enableGpsBtn}
+                  >
+                    <Ionicons name="location-outline" size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.enableGpsBtnText}>Allow Location Access</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             )}
 
             {gpsStatus === "unavailable" && (
               <View style={[styles.statusBox, styles.statusBoxOutside]}>
-                <Ionicons name="warning" size={18} color="#FBBF24" style={{ marginRight: 8 }} />
+                <Ionicons name="warning" size={20} color="#FBBF24" style={{ marginRight: 10 }} />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.statusBoxOutsideTitle}>Location unavailable</Text>
-                  <Text style={styles.statusBoxOutsideSub}>GPS is not available on this device.</Text>
+                  <Text style={styles.statusBoxOutsideTitle}>Location signal unavailable</Text>
+                  <Text style={styles.statusBoxOutsideSub}>GPS signal was not detected on this device.</Text>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={requestGps}
+                    style={styles.retryGpsBtn}
+                  >
+                    <Ionicons name="refresh-outline" size={14} color="#FBBF24" style={{ marginRight: 6 }} />
+                    <Text style={styles.retryGpsBtnText}>Retry Location</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             )}
@@ -766,6 +854,47 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "rgba(255, 255, 255, 0.5)",
     marginTop: 2,
+  },
+  enableGpsBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: "#1A5FB4",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  enableGpsBtnText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  retryGpsBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(245, 158, 11, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(245, 158, 11, 0.35)",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  retryGpsBtnText: {
+    color: "#FBBF24",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  retryGpsSmallBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 6,
   },
   statusBoxOutside: {
     flexDirection: "row",

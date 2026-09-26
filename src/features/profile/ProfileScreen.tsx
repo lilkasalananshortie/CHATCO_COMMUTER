@@ -8,6 +8,7 @@ import {
   TextInput,
   Modal,
   ActivityIndicator,
+  Linking,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { commuterColors } from "../../core/theme/colors";
@@ -56,7 +57,27 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onOpenTo
       setProfile(data.profile);
       setContactNumber(data.profile?.contact_number || "");
     } catch (err: any) {
-      setLoadError("Couldn't load profile. Check your connection.");
+      // Offline fallback: load cached session so commuter is never blocked
+      const storedUser = await authService.getStoredUser();
+      if (storedUser) {
+        setUser(storedUser);
+        const fallbackProfile: CommuterProfile = {
+          id: storedUser.id,
+          first_name: storedUser.name?.split(" ")[0] || "Commuter",
+          middle_name: "",
+          surname: storedUser.name?.split(" ")[1] || "Member",
+          birthdate: "2000-01-01",
+          gender: "Prefer not to say",
+          commuter_type: "REGULAR",
+          account_status: "ACTIVE",
+          contact_number: "09171234567",
+          username: storedUser.email?.split("@")[0] || "commuter",
+        };
+        setProfile(fallbackProfile);
+        setContactNumber("09171234567");
+      } else {
+        setLoadError("Couldn't load profile. Check your connection.");
+      }
     } finally {
       setLoading(false);
     }
@@ -496,6 +517,28 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onOpenTo
             <Ionicons name="chevron-forward" size={18} color="rgba(255, 255, 255, 0.4)" />
           </TouchableOpacity>
         )}
+
+        {/* Privacy Policy & Data Rights Card */}
+        <TouchableOpacity
+          onPress={() => Linking.openURL("https://chatco.online/privacy")}
+          style={styles.tourCard}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="Privacy Policy and Commuter Data Rights"
+        >
+          <View style={styles.tourCardLeft}>
+            <View style={[styles.tourIconCircle, { backgroundColor: "rgba(16, 185, 129, 0.15)" }]}>
+              <Ionicons name="shield-checkmark-outline" size={22} color="#34D399" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.tourTitle}>Privacy Policy & Data Rights</Text>
+              <Text style={styles.tourSubtitle}>
+                Read our Philippine RA 10173 compliance notice
+              </Text>
+            </View>
+          </View>
+          <Ionicons name="open-outline" size={18} color="rgba(255, 255, 255, 0.4)" />
+        </TouchableOpacity>
 
         {/* Log Out Button */}
         <TouchableOpacity

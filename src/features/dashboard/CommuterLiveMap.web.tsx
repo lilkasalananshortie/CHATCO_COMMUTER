@@ -9,7 +9,7 @@ const CARTO_API_KEY =
   process.env.EXPO_PUBLIC_CARTO_API_KEY ||
   process.env.NEXT_PUBLIC_CARTO_API_KEY ||
   (Constants.expoConfig?.extra as any)?.cartoApiKey ||
-  "cb1_2dut_1_0bf5bd46e8782ff0b7ba6f38";
+  "";
 
 export interface CommuterLiveMapProps {
   vehicles: VehicleLocation[];

@@ -42,28 +42,42 @@ export interface ReceiptClaimResult {
 export const commuterService = {
   // Profile
   async getProfile(): Promise<{ user: User; profile: CommuterProfile }> {
-    const res = await request<any>("/mobile/commuter/profile");
-    return {
-      user: res.user || res,
-      profile: res.profile || res,
-    };
+    try {
+      const res = await request<any>("/commuter/profile");
+      return {
+        user: res.user || res,
+        profile: res.profile || res,
+      };
+    } catch (err: any) {
+      // Fallback to /user if /commuter/profile is unroutable
+      try {
+        const userRes = await request<any>("/user");
+        const rawUser = userRes.user || userRes;
+        return {
+          user: rawUser,
+          profile: userRes.profile || rawUser,
+        };
+      } catch {
+        throw err;
+      }
+    }
   },
 
   async updateProfile(data: { contact_number?: string; email?: string; language_preference?: string }): Promise<CommuterProfile> {
-    return put("/mobile/commuter/profile", data);
+    return put("/commuter/profile", data);
   },
 
   async requestPasswordChangeCode(): Promise<{ message: string }> {
-    return post("/mobile/commuter/change-password/request-code");
+    return post("/commuter/change-password/request-code");
   },
 
   async confirmPasswordChange(data: { code: string; new_password: string; new_password_confirmation: string }): Promise<{ message: string }> {
-    return post("/mobile/commuter/change-password/confirm", data);
+    return post("/commuter/change-password/confirm", data);
   },
 
   // Live Vehicle Tracking
   async getVehicleLocations(): Promise<VehicleLocation[]> {
-    return request<VehicleLocation[]>("/mobile/commuter/vehicles/locations");
+    return request<VehicleLocation[]>("/vehicles/locations");
   },
 
   // Fare Matrix
@@ -89,16 +103,16 @@ export const commuterService = {
     longitude: number;
     passenger_count: number;
   }): Promise<HailRequest> {
-    return post("/mobile/commuter/hail", data);
+    return post("/commuter/hail", data);
   },
 
   async cancelHail(id: string): Promise<void> {
-    return del(`/mobile/commuter/hail/${encodeURIComponent(id)}`);
+    return del(`/commuter/hail/${encodeURIComponent(id)}`);
   },
 
   // Payments & GCash Claim
   async claimGcash(qrToken: string): Promise<ClaimGcashResult> {
-    const res = await post<any>("/mobile/commuter/payments/claim", { qr_token: qrToken });
+    const res = await post<any>("/commuter/payments/claim", { qr_token: qrToken });
     return {
       transactionId: res.transaction_id || res.id || "",
       amount: Number(res.amount ?? res.final_amount ?? 0),
@@ -114,7 +128,7 @@ export const commuterService = {
   },
 
   async redeemVoucherForGcash(transactionId: string): Promise<ClaimGcashResult> {
-    const res = await post<any>(`/mobile/commuter/payments/${encodeURIComponent(transactionId)}/redeem-voucher`);
+    const res = await post<any>(`/commuter/payments/${encodeURIComponent(transactionId)}/redeem-voucher`);
     return {
       transactionId: res.transaction_id || transactionId,
       amount: Number(res.amount ?? res.final_amount ?? 0),
@@ -133,7 +147,7 @@ export const commuterService = {
   },
 
   async claimReceipt(receiptToken: string): Promise<ReceiptClaimResult> {
-    const res = await post<any>("/mobile/commuter/receipts/claim", { receipt_token: receiptToken });
+    const res = await post<any>("/commuter/receipts/claim", { receipt_token: receiptToken });
     return {
       transactionId: res.transaction_id || res.id || "",
       amount: Number(res.amount ?? res.final_amount ?? 0),
@@ -158,7 +172,7 @@ export const commuterService = {
     query.set("per_page", String(perPage));
     if (filter && filter !== "all") query.set("filter", filter);
 
-    const res = await request<any>(`/mobile/commuter/payments?${query.toString()}`);
+    const res = await request<any>(`/commuter/payments?${query.toString()}`);
     const rows = Array.isArray(res) ? res : res.data || [];
     return {
       items: rows.map((r: any) => ({
@@ -190,7 +204,7 @@ export const commuterService = {
 
   // Trips & Ride History
   async getTrips(): Promise<Trip[]> {
-    const res = await request<any>("/mobile/commuter/trips");
+    const res = await request<any>("/commuter/trips");
     const rows = Array.isArray(res) ? res : res.data || [];
     return rows.map((r: any) => ({
       id: r.id,
@@ -221,20 +235,20 @@ export const commuterService = {
     expires_at: string;
     share_url: string;
   }> {
-    return post("/mobile/commuter/share-ride", data);
+    return post("/commuter/share-ride", data);
   },
 
   async updateShareRideLocation(data: { lat: number; lng: number }): Promise<void> {
-    return post("/mobile/commuter/location", data);
+    return post("/commuter/location", data);
   },
 
   async stopShareRide(): Promise<void> {
-    return del("/mobile/commuter/share-ride");
+    return del("/commuter/share-ride");
   },
 
   // Rewards
   async getRewards(): Promise<RewardProgress> {
-    const res = await request<any>("/mobile/commuter/rewards");
+    const res = await request<any>("/commuter/rewards");
     const currentCycleRides = Number(res.current_cycle_rides ?? res.current_rides ?? res.rides_completed ?? 0);
     const ridesNeeded = Number(res.rides_needed ?? res.target_rides ?? res.rides_required ?? 10);
     const totalRides = Number(res.total_rides ?? res.rides_completed ?? 0);
@@ -267,7 +281,7 @@ export const commuterService = {
 
   // Feedback & QR Resolution
   async scanQr(token: string): Promise<ResolvedCrew> {
-    const res = await post<any>("/mobile/commuter/qr/scan", { token });
+    const res = await post<any>("/qr/scan", { token });
     const data = res.data || res;
     return {
       unitNumber: data.unit_number || data.unitNumber,
@@ -290,20 +304,20 @@ export const commuterService = {
     conductor_tags?: string[];
     conductor_comment?: string;
   }): Promise<void> {
-    return post("/mobile/commuter/feedback", data);
+    return post("/commuter/feedback", data);
   },
 
   async getFeedback(): Promise<Feedback[]> {
-    return request<Feedback[]>("/mobile/commuter/feedback");
+    return request<Feedback[]>("/commuter/feedback");
   },
 
   // Emergency SOS
   async triggerSos(data: { latitude: number; longitude: number; note?: string }): Promise<SosAlert> {
-    return post("/mobile/commuter/sos", data);
+    return post("/commuter/sos", data);
   },
 
   async getSosStatus(id: string): Promise<SosAlert> {
-    return request(`/mobile/commuter/sos/${encodeURIComponent(id)}`);
+    return request(`/commuter/sos/${encodeURIComponent(id)}`);
   },
 
   // Lost & Found
@@ -382,7 +396,7 @@ export const commuterService = {
     if (params.date) query.set("date", params.date);
     if (params.search?.trim()) query.set("search", params.search.trim());
 
-    const res = await request<any>(`/mobile/commuter/claims?${query.toString()}`);
+    const res = await request<any>(`/commuter/claims?${query.toString()}`);
     const rows = Array.isArray(res) ? res : res.data || [];
     return {
       claims: rows.map((r: any) => ({
@@ -434,7 +448,7 @@ export const commuterService = {
     if (params.date) query.set("date", params.date);
     if (params.search?.trim()) query.set("search", params.search.trim());
 
-    const res = await request<any>(`/mobile/commuter/watchlist?${query.toString()}`);
+    const res = await request<any>(`/commuter/watchlist?${query.toString()}`);
     const rows = Array.isArray(res) ? res : res.data || [];
     return {
       items: rows
@@ -474,7 +488,7 @@ export const commuterService = {
 
   // Announcements
   async getAnnouncements(): Promise<Announcement[]> {
-    const res = await request<any>("/mobile/commuter/announcements");
+    const res = await request<any>("/announcements");
     const rows = Array.isArray(res) ? res : res.data || [];
     return rows.map((a: any) => ({
       id: a.id,
@@ -491,15 +505,15 @@ export const commuterService = {
   },
 
   async getUnreadAnnouncementCount(): Promise<number> {
-    const res = await request<{ count: number }>("/mobile/commuter/announcements/unread-count");
+    const res = await request<{ count: number }>("/announcements/unread-count");
     return res.count ?? 0;
   },
 
   async markAnnouncementRead(id: string): Promise<void> {
-    return post(`/mobile/commuter/announcements/${encodeURIComponent(id)}/read`);
+    return post(`/announcements/${encodeURIComponent(id)}/read`);
   },
 
   async markAllAnnouncementsRead(): Promise<void> {
-    return post("/mobile/commuter/announcements/mark-all-read");
+    return post("/announcements/mark-all-read");
   },
 };

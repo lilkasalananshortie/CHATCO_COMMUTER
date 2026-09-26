@@ -1,6 +1,6 @@
 {
   "name": "chatco-commuter-mobile",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "main": "index.js",
   "scripts": {
@@ -8,13 +8,15 @@
     "android": "expo start --android --port 8082",
     "ios": "expo start --ios --port 8082",
     "web": "expo start --web --port 8082",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "jest"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "~57.0.15",
     "expo-battery": "~57.0.2",
+    "expo-camera": "~57.0.5",
     "expo-clipboard": "~57.0.2",
     "expo-constants": "~57.0.13",
     "expo-font": "~57.0.1",
@@ -38,8 +40,14 @@
     "react-native-webview": "13.16.1"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "@types/leaflet": "^1.9.21",
     "@types/react": "^19.2.17",
+    "jest": "^30.5.2",
+    "ts-jest": "^29.4.14",
     "typescript": "~6.0.3"
+  },
+  "overrides": {
+    "image-size": "^2.0.2"
   }
 }

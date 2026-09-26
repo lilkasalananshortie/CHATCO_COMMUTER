@@ -9,6 +9,8 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { CameraView, useCameraPermissions, type BarcodeScanningResult } from "expo-camera";
+import * as Haptics from "expo-haptics";
 import { commuterColors } from "../../core/theme/colors";
 import { commuterService } from "../../core/api/commuter-service";
 import type { Trip, ResolvedCrew } from "../../core/domain/types";
@@ -72,6 +74,20 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
   const [manualToken, setManualToken] = useState(
     initialTrip?.transaction_id || ""
   );
+  const [torch, setTorch] = useState(false);
+  const [scanned, setScanned] = useState(false);
+
+  const [permission, requestPermission] = useCameraPermissions();
+
+  useEffect(() => {
+    if (scanStatus === "scanning") {
+      setScanned(false);
+      setTorch(false);
+      if (permission && !permission.granted && permission.canAskAgain) {
+        requestPermission().catch(() => {});
+      }
+    }
+  }, [scanStatus, permission, requestPermission]);
 
   // Resolved crew info
   const [crew, setCrew] = useState<ResolvedCrew | null>(
@@ -118,13 +134,37 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
     return () => clearTimeout(timer);
   }, [isSubmitted, countdown, onFeedbackComplete]);
 
+  const extractFeedbackToken = (raw: string): string => {
+    let val = raw.trim();
+    if (val.startsWith("{") && val.endsWith("}")) {
+      try {
+        const p = JSON.parse(val);
+        if (p.token) return String(p.token);
+        if (p.unit_code) return String(p.unit_code);
+        if (p.qr_token) return String(p.qr_token);
+      } catch {}
+    }
+    if (val.includes("token=")) {
+      try {
+        const url = new URL(val);
+        const t = url.searchParams.get("token") || url.searchParams.get("unit");
+        if (t) return t;
+      } catch {
+        const m = val.match(/token=([a-zA-Z0-9_\-]+)/);
+        if (m && m[1]) return m[1];
+      }
+    }
+    return val;
+  };
+
   const handleResolveToken = async (rawToken: string) => {
-    if (!rawToken.trim()) return;
+    const cleanToken = extractFeedbackToken(rawToken);
+    if (!cleanToken.trim()) return;
     setScanStatus("resolving");
     setScanError(null);
 
     try {
-      const resolved = await commuterService.scanQr(rawToken.trim());
+      const resolved = await commuterService.scanQr(cleanToken.trim());
       setCrew(resolved);
       setDriverRating(0);
       setDriverTags([]);
@@ -144,7 +184,18 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
     }
   };
 
+  const handleBarcodeScanned = useCallback(
+    ({ data }: BarcodeScanningResult) => {
+      if (scanned || scanStatus !== "scanning") return;
+      setScanned(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      handleResolveToken(data);
+    },
+    [scanned, scanStatus]
+  );
+
   const handleRescan = () => {
+    setScanned(false);
     setScanStatus("scanning");
     setScanError(null);
     setManualToken("");
@@ -207,22 +258,69 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          <View style={styles.scannerViewport}>
-            <View style={styles.reticle}>
-              <View style={[styles.corner, styles.topLeft]} />
-              <View style={[styles.corner, styles.topRight]} />
-              <View style={[styles.corner, styles.bottomLeft]} />
-              <View style={[styles.corner, styles.bottomRight]} />
-              <Ionicons
-                name="qr-code-outline"
-                size={54}
-                color="rgba(98, 160, 234, 0.4)"
-              />
+          {!permission ? (
+            <View style={styles.permissionBox}>
+              <ActivityIndicator size="large" color="#62A0EA" />
+              <Text style={styles.permissionText}>Checking camera access…</Text>
             </View>
-            <Text style={styles.reticleHint}>
-              Align the feedback QR code posted inside the vehicle
-            </Text>
-          </View>
+          ) : !permission.granted ? (
+            <View style={styles.permissionBox}>
+              <Ionicons name="camera-outline" size={44} color="#62A0EA" />
+              <Text style={styles.permissionTitle}>Camera Access Required</Text>
+              <Text style={styles.permissionText}>
+                ChatCo needs camera access to scan the vehicle feedback QR code.
+              </Text>
+              <TouchableOpacity
+                style={styles.primaryButton}
+                activeOpacity={0.8}
+                onPress={requestPermission}
+              >
+                <Ionicons name="shield-checkmark-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.primaryButtonText}>Enable Camera</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.scannerViewport}>
+              <CameraView
+                style={StyleSheet.absoluteFill}
+                facing="back"
+                enableTorch={torch}
+                barcodeScannerSettings={{
+                  barcodeTypes: ["qr"],
+                }}
+                onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
+              />
+
+              {/* Scanner Reticle Overlay */}
+              <View style={styles.reticleOverlay} pointerEvents="none">
+                <View style={styles.reticle}>
+                  <View style={[styles.corner, styles.topLeft]} />
+                  <View style={[styles.corner, styles.topRight]} />
+                  <View style={[styles.corner, styles.bottomLeft]} />
+                  <View style={[styles.corner, styles.bottomRight]} />
+                  <View style={styles.scanLaser} />
+                </View>
+              </View>
+
+              {/* Torch toggle button */}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => setTorch((t) => !t)}
+                style={styles.torchBtn}
+                accessibilityLabel={torch ? "Turn off flashlight" : "Turn on flashlight"}
+              >
+                <Ionicons
+                  name={torch ? "flash" : "flash-outline"}
+                  size={18}
+                  color={torch ? "#FBBF24" : "#FFFFFF"}
+                />
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <Text style={styles.reticleHint}>
+            Align the feedback QR code posted inside the vehicle
+          </Text>
 
           <View style={styles.manualEntryCard}>
             <Text style={styles.manualLabel}>Or Enter Unit Code / Token</Text>
@@ -245,6 +343,24 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
               activeOpacity={0.8}
             >
               <Text style={styles.primaryButtonText}>Verify Unit & Crew</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => {
+                setCrew({
+                  unitNumber: "Unit J-04",
+                  plateNumber: "NDB-5821",
+                  driverName: "Mang Carding (Driver)",
+                  conductorName: "Kuya Arnel (Conductor)",
+                  routeTitle: "Calumpit - Meycauayan Line",
+                });
+                setScanStatus("resolved");
+              }}
+              style={styles.demoTripBtn}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="sparkles-outline" size={15} color="#62A0EA" style={{ marginRight: 6 }} />
+              <Text style={styles.demoTripBtnText}>Rate Recent Ride (Unit J-04)</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -870,6 +986,66 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     overflow: "hidden",
   },
+  reticleOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scanLaser: {
+    width: "100%",
+    height: 2,
+    backgroundColor: "rgba(98, 160, 234, 0.85)",
+    shadowColor: "#62A0EA",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+  },
+  torchBtn: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "rgba(5, 15, 26, 0.7)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 10,
+  },
+  permissionBox: {
+    width: "100%",
+    aspectRatio: 1,
+    maxHeight: 260,
+    backgroundColor: "rgba(255, 255, 255, 0.02)",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    marginBottom: 16,
+  },
+  permissionTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    marginTop: 12,
+    marginBottom: 6,
+    textAlign: "center",
+  },
+  permissionText: {
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.6)",
+    textAlign: "center",
+    lineHeight: 18,
+    marginBottom: 16,
+  },
   reticle: {
     width: 140,
     height: 140,
@@ -1285,5 +1461,21 @@ const styles = StyleSheet.create({
     color: "rgba(255, 255, 255, 0.4)",
     textAlign: "center",
     marginTop: 8,
+  },
+  demoTripBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 10,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: "rgba(98, 160, 234, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(98, 160, 234, 0.25)",
+  },
+  demoTripBtnText: {
+    color: "#62A0EA",
+    fontSize: 13,
+    fontWeight: "700",
   },
 });

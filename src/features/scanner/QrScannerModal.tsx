@@ -10,6 +10,8 @@ import {
   Linking,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { CameraView, useCameraPermissions, type BarcodeScanningResult } from "expo-camera";
+import * as Haptics from "expo-haptics";
 import { commuterColors } from "../../core/theme/colors";
 import {
   commuterService,
@@ -41,6 +43,20 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [manualToken, setManualToken] = useState("");
   const [showManualEntry, setShowManualEntry] = useState(false);
+  const [torch, setTorch] = useState(false);
+  const [scanned, setScanned] = useState(false);
+
+  const [permission, requestPermission] = useCameraPermissions();
+
+  useEffect(() => {
+    if (visible && step === "scanning") {
+      setScanned(false);
+      setTorch(false);
+      if (permission && !permission.granted && permission.canAskAgain) {
+        requestPermission().catch(() => {});
+      }
+    }
+  }, [visible, step, permission, requestPermission]);
 
   const resetState = () => {
     setStep("scanning");
@@ -48,11 +64,36 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
     setError(null);
     setManualToken("");
     setShowManualEntry(false);
+    setTorch(false);
+    setScanned(false);
   };
 
   const handleClose = () => {
     resetState();
     onClose();
+  };
+
+  const extractQrToken = (raw: string): string => {
+    let val = raw.trim();
+    if (val.startsWith("{") && val.endsWith("}")) {
+      try {
+        const p = JSON.parse(val);
+        if (p.token) return String(p.token);
+        if (p.qr_token) return String(p.qr_token);
+        if (p.code) return String(p.code);
+      } catch {}
+    }
+    if (val.includes("token=")) {
+      try {
+        const url = new URL(val);
+        const t = url.searchParams.get("token") || url.searchParams.get("qr_token");
+        if (t) return t;
+      } catch {
+        const m = val.match(/token=([a-zA-Z0-9_\-]+)/);
+        if (m && m[1]) return m[1];
+      }
+    }
+    return val;
   };
 
   const proceedToPayment = useCallback(async (result: ClaimGcashResult) => {
@@ -78,12 +119,13 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
   }, [onPaymentSuccess]);
 
   const handleScanSuccess = useCallback(async (qrToken: string) => {
-    if (!qrToken.trim()) return;
+    const cleanToken = extractQrToken(qrToken);
+    if (!cleanToken.trim()) return;
     setStep("verifying");
     setError(null);
 
     try {
-      const result = await commuterService.claimGcash(qrToken.trim());
+      const result = await commuterService.claimGcash(cleanToken.trim());
       setClaimResult(result);
 
       if (result.voucherAvailable) {
@@ -112,6 +154,16 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
       setStep("failed");
     }
   }, [proceedToPayment]);
+
+  const handleBarcodeScanned = useCallback(
+    ({ data }: BarcodeScanningResult) => {
+      if (scanned || step !== "scanning") return;
+      setScanned(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      handleScanSuccess(data);
+    },
+    [scanned, step, handleScanSuccess]
+  );
 
   const handleUseVoucher = async () => {
     if (!claimResult) return;
@@ -181,22 +233,69 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
               <View style={styles.scanningContainer}>
                 {!showManualEntry ? (
                   <>
-                    <View style={styles.scannerViewport}>
-                      <View style={styles.reticle}>
-                        <View style={[styles.corner, styles.topLeft]} />
-                        <View style={[styles.corner, styles.topRight]} />
-                        <View style={[styles.corner, styles.bottomLeft]} />
-                        <View style={[styles.corner, styles.bottomRight]} />
-                        <Ionicons
-                          name="camera-outline"
-                          size={54}
-                          color="rgba(98, 160, 234, 0.4)"
-                        />
+                    {!permission ? (
+                      <View style={styles.permissionBox}>
+                        <ActivityIndicator size="large" color="#62A0EA" />
+                        <Text style={styles.permissionText}>Checking camera access…</Text>
                       </View>
-                      <Text style={styles.reticleHint}>
-                        Align the QR code shown by the conductor within the frame
-                      </Text>
-                    </View>
+                    ) : !permission.granted ? (
+                      <View style={styles.permissionBox}>
+                        <Ionicons name="camera-outline" size={44} color="#62A0EA" />
+                        <Text style={styles.permissionTitle}>Camera Access Required</Text>
+                        <Text style={styles.permissionText}>
+                          ChatCo needs camera access to scan the conductor&apos;s fare QR code.
+                        </Text>
+                        <TouchableOpacity
+                          style={styles.primaryButton}
+                          activeOpacity={0.8}
+                          onPress={requestPermission}
+                        >
+                          <Ionicons name="shield-checkmark-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                          <Text style={styles.primaryButtonText}>Enable Camera</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <View style={styles.scannerViewport}>
+                        <CameraView
+                          style={StyleSheet.absoluteFill}
+                          facing="back"
+                          enableTorch={torch}
+                          barcodeScannerSettings={{
+                            barcodeTypes: ["qr"],
+                          }}
+                          onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
+                        />
+
+                        {/* Scanner Reticle Overlay */}
+                        <View style={styles.reticleOverlay} pointerEvents="none">
+                          <View style={styles.reticle}>
+                            <View style={[styles.corner, styles.topLeft]} />
+                            <View style={[styles.corner, styles.topRight]} />
+                            <View style={[styles.corner, styles.bottomLeft]} />
+                            <View style={[styles.corner, styles.bottomRight]} />
+                            <View style={styles.scanLaser} />
+                          </View>
+                        </View>
+
+                        {/* Torch toggle button */}
+                        <TouchableOpacity
+                          activeOpacity={0.8}
+                          onPress={() => setTorch((t) => !t)}
+                          style={styles.torchBtn}
+                          accessibilityLabel={torch ? "Turn off flashlight" : "Turn on flashlight"}
+                        >
+                          <Ionicons
+                            name={torch ? "flash" : "flash-outline"}
+                            size={18}
+                            color={torch ? "#FBBF24" : "#FFFFFF"}
+                          />
+                        </TouchableOpacity>
+                      </View>
+                    )}
+
+                    <Text style={styles.reticleHint}>
+                      Align the QR code shown by the conductor within the frame
+                    </Text>
 
                     <TouchableOpacity
                       onPress={() => setShowManualEntry(true)}
@@ -580,6 +679,64 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     position: "relative",
     overflow: "hidden",
+  },
+  reticleOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  scanLaser: {
+    width: "100%",
+    height: 2,
+    backgroundColor: "rgba(98, 160, 234, 0.85)",
+    shadowColor: "#62A0EA",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+  },
+  torchBtn: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "rgba(5, 15, 26, 0.7)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 10,
+  },
+  permissionBox: {
+    width: "100%",
+    aspectRatio: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.02)",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+  permissionTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    marginTop: 12,
+    marginBottom: 6,
+    textAlign: "center",
+  },
+  permissionText: {
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.6)",
+    textAlign: "center",
+    lineHeight: 18,
+    marginBottom: 16,
   },
   reticle: {
     width: 140,

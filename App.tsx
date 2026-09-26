@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { View, StyleSheet, ActivityIndicator } from "react-native";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -11,10 +11,10 @@ import { commuterService } from "./src/core/api/commuter-service";
 import type { User, CommuterProfile, CommuterTab, Trip } from "./src/core/domain/types";
 
 // UI Components
-import { HeaderBar } from "./src/shared/ui/HeaderBar";
 import { CommuterBottomNav } from "./src/shared/ui/CommuterBottomNav";
 
-// Screens (5 web-parity tabs + Onboarding)
+// Screens (5 web-parity tabs + Onboarding + Splash)
+import { SplashScreen } from "./src/features/splash/SplashScreen";
 import { OnboardingScreen, ONBOARDING_STORAGE_KEY } from "./src/features/onboarding/OnboardingScreen";
 import { LoginScreen } from "./src/features/auth/LoginScreen";
 import { RegisterScreen } from "./src/features/auth/RegisterScreen";
@@ -31,6 +31,18 @@ import { SosModal } from "./src/features/sos/SosModal";
 import { ShareRideModal } from "./src/features/share/ShareRideModal";
 
 export default function App() {
+  return (
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <StatusBar style="light" />
+        <MainApp />
+      </ThemeProvider>
+    </SafeAreaProvider>
+  );
+}
+
+function MainApp() {
+  const [showSplash, setShowSplash] = useState(true);
   const [initializing, setInitializing] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [user, setUser] = useState<User | null>(null);
@@ -141,6 +153,13 @@ export default function App() {
     setActiveTab("feedback");
   };
 
+  const insets = useSafeAreaInsets();
+
+  // Lively animated splash screen on startup
+  if (showSplash) {
+    return <SplashScreen onFinish={() => setShowSplash(false)} />;
+  }
+
   if (initializing) {
     return (
       <View style={styles.loadingScreen}>
@@ -149,119 +168,114 @@ export default function App() {
     );
   }
 
-  // First-installation onboarding walkthrough screen
+  // First-installation onboarding walkthrough screen (zero AI-slop, authentic local commuter guide)
   if (showOnboarding) {
     return (
-      <SafeAreaProvider>
-        <StatusBar style="light" />
-        <OnboardingScreen onFinish={() => setShowOnboarding(false)} />
-      </SafeAreaProvider>
+      <OnboardingScreen
+        onFinish={(targetAuthView) => {
+          if (targetAuthView) {
+            setAuthView(targetAuthView);
+          }
+          setShowOnboarding(false);
+        }}
+      />
     );
   }
 
   return (
-    <SafeAreaProvider>
-      <ThemeProvider>
-        <StatusBar style="light" />
-        <View style={styles.appContainer}>
-          {!user ? (
-            authView === "LOGIN" ? (
-              <LoginScreen
-                onLoginSuccess={handleLoginSuccess}
-                onGoToRegister={() => setAuthView("REGISTER")}
+    <View style={styles.appContainer}>
+      {!user ? (
+        authView === "LOGIN" ? (
+          <LoginScreen
+            onLoginSuccess={handleLoginSuccess}
+            onGoToRegister={() => setAuthView("REGISTER")}
+            onResetOnboarding={async () => {
+              await AsyncStorage.removeItem(ONBOARDING_STORAGE_KEY);
+              setShowOnboarding(true);
+            }}
+          />
+        ) : (
+          <RegisterScreen
+            onRegisterSuccess={() => setAuthView("LOGIN")}
+            onGoToLogin={() => setAuthView("LOGIN")}
+          />
+        )
+      ) : (
+        <View style={styles.mainShell}>
+          {/* Active Tab Screen (5 web-parity tabs, no duplicate HeaderBar) */}
+          <View
+            style={[
+              styles.screenViewport,
+              activeTab !== "home" && { paddingTop: insets.top },
+            ]}
+          >
+            {activeTab === "home" && (
+              <DashboardScreen
+                user={user}
+                profile={profile}
+                onOpenScan={() => setShowScanModal(true)}
+                onOpenShareRide={() => setShowShareModal(true)}
+                onOpenSos={() => setShowSosModal(true)}
+                onOpenProfile={() => setActiveTab("profile")}
+                onOpenTour={() => setShowOnboarding(true)}
+                onNavigateToFeedback={handleNavigateToFeedback}
               />
-            ) : (
-              <RegisterScreen
-                onRegisterSuccess={() => setAuthView("LOGIN")}
-                onGoToLogin={() => setAuthView("LOGIN")}
+            )}
+            {activeTab === "lostfound" && <LostFoundScreen />}
+            {activeTab === "rewards" && (
+              <RewardsScreen
+                onOpenReceiptScan={() => setShowReceiptScanModal(true)}
               />
-            )
-          ) : (
-            <View style={styles.mainShell}>
-              {/* App Header (Shown on secondary tabs; Dashboard uses full-bleed floating header 1:1 with web) */}
-              {activeTab !== "home" && (
-                <HeaderBar
-                  title="CHATCO"
-                  userName={profile?.first_name || user.name}
-                  unreadAnnouncements={unreadAnnouncements}
-                  onOpenSos={() => setShowSosModal(true)}
-                  onOpenAnnouncements={() => setActiveTab("rewards")}
-                  onOpenProfile={() => setActiveTab("profile")}
-                  onOpenTour={() => setShowOnboarding(true)}
-                />
-              )}
+            )}
+            {activeTab === "feedback" && (
+              <FeedbackScreen
+                initialTrip={feedbackTargetTrip}
+                onFeedbackComplete={() => {
+                  setFeedbackTargetTrip(null);
+                  setActiveTab("home");
+                }}
+              />
+            )}
+            {activeTab === "profile" && (
+              <ProfileScreen
+                onLogout={handleLogout}
+                onOpenTour={() => setShowOnboarding(true)}
+              />
+            )}
+          </View>
 
-              {/* Active Tab Screen (5 web-parity tabs) */}
-              <View style={styles.screenViewport}>
-                {activeTab === "home" && (
-                  <DashboardScreen
-                    user={user}
-                    profile={profile}
-                    onOpenScan={() => setShowScanModal(true)}
-                    onOpenShareRide={() => setShowShareModal(true)}
-                    onOpenSos={() => setShowSosModal(true)}
-                    onOpenProfile={() => setActiveTab("profile")}
-                    onOpenTour={() => setShowOnboarding(true)}
-                    onNavigateToFeedback={handleNavigateToFeedback}
-                  />
-                )}
-                {activeTab === "lostfound" && <LostFoundScreen />}
-                {activeTab === "rewards" && (
-                  <RewardsScreen
-                    onOpenReceiptScan={() => setShowReceiptScanModal(true)}
-                  />
-                )}
-                {activeTab === "feedback" && (
-                  <FeedbackScreen
-                    initialTrip={feedbackTargetTrip}
-                    onFeedbackComplete={() => {
-                      setFeedbackTargetTrip(null);
-                      setActiveTab("home");
-                    }}
-                  />
-                )}
-                {activeTab === "profile" && (
-                  <ProfileScreen
-                    onLogout={handleLogout}
-                    onOpenTour={() => setShowOnboarding(true)}
-                  />
-                )}
-              </View>
+          {/* Bottom Navigation (5 tabs matching web layout) */}
+          <CommuterBottomNav
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            rewardsBadge={unreadAnnouncements + availableVouchers}
+            lostFoundBadge={lostFoundBadge}
+          />
 
-              {/* Bottom Navigation (5 tabs matching web layout) */}
-              <CommuterBottomNav
-                activeTab={activeTab}
-                onTabChange={setActiveTab}
-                rewardsBadge={unreadAnnouncements + availableVouchers}
-                lostFoundBadge={lostFoundBadge}
-              />
+          {/* Global Modals matching web dashboard */}
+          <QrScannerModal
+            visible={showScanModal}
+            onClose={() => setShowScanModal(false)}
+          />
 
-              {/* Global Modals matching web dashboard */}
-              <QrScannerModal
-                visible={showScanModal}
-                onClose={() => setShowScanModal(false)}
-              />
+          <ReceiptScanModal
+            visible={showReceiptScanModal}
+            onClose={() => setShowReceiptScanModal(false)}
+            onClaimed={fetchUnreadCount}
+          />
 
-              <ReceiptScanModal
-                visible={showReceiptScanModal}
-                onClose={() => setShowReceiptScanModal(false)}
-                onClaimed={fetchUnreadCount}
-              />
+          <SosModal
+            visible={showSosModal}
+            onClose={() => setShowSosModal(false)}
+          />
 
-              <SosModal
-                visible={showSosModal}
-                onClose={() => setShowSosModal(false)}
-              />
-
-              <ShareRideModal
-                visible={showShareModal}
-                onClose={() => setShowShareModal(false)}
-              />
-            </View>
-          )}
+          <ShareRideModal
+            visible={showShareModal}
+            onClose={() => setShowShareModal(false)}
+          />
         </View>
-      </ThemeProvider>
-    </SafeAreaProvider>
+      )}
+    </View>
   );
 }
 

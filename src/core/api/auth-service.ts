@@ -82,6 +82,14 @@ export const authService = {
     return post("/auth/register", input);
   },
 
+  async sendRegistrationCode(email: string, contactNumber?: string): Promise<{ resend_in_seconds?: number }> {
+    return post("/auth/register/send-code", { email, contact_number: contactNumber });
+  },
+
+  async verifyRegistrationCode(email: string, code: string): Promise<void> {
+    return post("/auth/register/verify-code", { email, code });
+  },
+
   async me(): Promise<{ user: User; profile?: CommuterProfile } | null> {
     const token = await appStorage.getItem(TOKEN_KEY);
     if (!token) return null;
