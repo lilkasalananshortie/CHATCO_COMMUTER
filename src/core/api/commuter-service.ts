@@ -77,7 +77,28 @@ export const commuterService = {
 
   // Live Vehicle Tracking
   async getVehicleLocations(): Promise<VehicleLocation[]> {
-    return request<VehicleLocation[]>("/vehicles/locations");
+    const raw = await request<any[]>("/vehicles/locations");
+    if (!Array.isArray(raw)) return [];
+    return raw.map((item) => {
+      const lat = Number(item.latitude ?? item.lat ?? 0);
+      const lng = Number(item.longitude ?? item.lng ?? 0);
+      return {
+        ...item,
+        id: item.id || item.vehicle_id || item.unit_number || "JEEP",
+        vehicle_id: item.vehicle_id || item.id,
+        unit_number: item.unit_number || "JEEP",
+        plate_number: item.plate_number || "",
+        latitude: lat,
+        longitude: lng,
+        lat,
+        lng,
+        speed: item.speed != null ? Number(item.speed) : null,
+        bearing: item.bearing ?? item.heading ?? null,
+        capacity_status: item.capacity_status ?? item.vehicle_capacity_status ?? "AVAILABLE",
+        available_seats: item.available_seats ?? null,
+        updated_at: item.updated_at,
+      };
+    });
   },
 
   // Fare Matrix
@@ -98,12 +119,35 @@ export const commuterService = {
 
   // Hail / "Pick Me Up"
   async sendHail(data: {
-    pickup_name: string;
-    latitude: number;
-    longitude: number;
-    passenger_count: number;
+    vehicle_id: string;
+    commuter_lat?: number;
+    commuter_lng?: number;
+    pickup_name?: string;
+    latitude?: number;
+    longitude?: number;
+    passenger_count?: number;
   }): Promise<HailRequest> {
-    return post("/commuter/hail", data);
+    const lat = Number(data.commuter_lat ?? data.latitude ?? 0);
+    const lng = Number(data.commuter_lng ?? data.longitude ?? 0);
+    const payload = {
+      vehicle_id: data.vehicle_id,
+      commuter_lat: lat,
+      commuter_lng: lng,
+    };
+    const res = await post<any>("/commuter/hail", payload);
+    return {
+      id: res.id,
+      pickup_name: data.pickup_name || "Commuter Location",
+      passenger_count: data.passenger_count || 1,
+      status: res.status || "PENDING",
+      created_at: res.created_at || new Date().toISOString(),
+      accepted_by: res.vehicle
+        ? {
+            unit_number: res.vehicle.unit_number || "JEEP",
+            driver_name: res.vehicle.driver_name,
+          }
+        : null,
+    };
   },
 
   async cancelHail(id: string): Promise<void> {

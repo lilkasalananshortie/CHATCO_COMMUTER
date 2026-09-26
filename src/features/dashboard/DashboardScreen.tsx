@@ -205,11 +205,16 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     let nearest: VehicleLocation | null = null;
 
     for (const v of vehicles) {
+      const vLat = Number(v.latitude ?? (v as any).lat ?? 0);
+      const vLng = Number(v.longitude ?? (v as any).lng ?? 0);
+      if (!Number.isFinite(vLat) || !Number.isFinite(vLng) || (vLat === 0 && vLng === 0)) {
+        continue;
+      }
       const dist = distanceMeters(userLocation, {
-        latitude: v.latitude,
-        longitude: v.longitude,
+        latitude: vLat,
+        longitude: vLng,
       });
-      if (dist < minDistance) {
+      if (!isNaN(dist) && dist < minDistance) {
         minDistance = dist;
         nearest = v;
       }
@@ -266,8 +271,17 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
       return;
     }
 
-    if (!userLocation || !canHail) {
+    if (!userLocation || !canHail || !nearestVehicleInfo?.vehicle) {
       setHailError("Move within 1km of a conductor unit to hail.");
+      return;
+    }
+
+    const vehicleId =
+      nearestVehicleInfo.vehicle.vehicle_id ||
+      nearestVehicleInfo.vehicle.id;
+
+    if (!vehicleId) {
+      setHailError("Cannot identify vehicle unit. Please refresh.");
       return;
     }
 
@@ -276,6 +290,9 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     try {
       if (Platform.OS !== "web") Vibration.vibrate([100, 50, 100]);
       const hail = await commuterService.sendHail({
+        vehicle_id: vehicleId,
+        commuter_lat: userLocation.latitude,
+        commuter_lng: userLocation.longitude,
         pickup_name: "Commuter GPS Location",
         latitude: userLocation.latitude,
         longitude: userLocation.longitude,

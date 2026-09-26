@@ -45,8 +45,8 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
           id: v.vehicle_id || v.id || v.unit_number || "JEEP",
           unitNumber: v.unit_number || "JEEP",
           plateNumber: v.plate_number,
-          lat: v.latitude,
-          lng: v.longitude,
+          lat: Number(v.latitude ?? (v as any).lat ?? 0),
+          lng: Number(v.longitude ?? (v as any).lng ?? 0),
           availableSeats: v.available_seats ?? null,
         }))
       ),
