@@ -40,6 +40,12 @@ export const CommuterBottomNav: React.FC<CommuterBottomNavProps> = ({
       activeIcon: "home",
     },
     {
+      id: "fare",
+      label: "Fare",
+      icon: "calculator-outline",
+      activeIcon: "calculator",
+    },
+    {
       id: "lostfound",
       label: "Lost & Found",
       icon: "search-outline",

@@ -16,3 +16,9 @@ web-build/
 __pycache__/
 *.pyc
 *.keystore
+
+# Regenerate native projects from the checked-in Expo configuration.
+android/
+ios/
+.vscode/
+.env.*
