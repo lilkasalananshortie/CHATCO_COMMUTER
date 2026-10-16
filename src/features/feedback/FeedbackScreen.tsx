@@ -14,6 +14,9 @@ import * as Haptics from "expo-haptics";
 import { commuterColors } from "../../core/theme/colors";
 import { commuterService } from "../../core/api/commuter-service";
 import type { Trip, ResolvedCrew } from "../../core/domain/types";
+import { Mascot } from "../../shared/ui/Mascot";
+import { getMascotErrorState } from "../../shared/ui/mascot-error";
+import { feedbackPayload } from "./feedback-payload";
 
 interface FeedbackScreenProps {
   initialTrip?: Trip | null;
@@ -67,10 +70,14 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
   initialTrip,
   onFeedbackComplete,
 }) => {
+  const pending = useRef(false);
+  const generation = useRef(0);
+  useEffect(() => () => { generation.current++; }, []);
   const [scanStatus, setScanStatus] = useState<ScanStatus>(
     initialTrip ? "resolved" : "scanning"
   );
   const [scanError, setScanError] = useState<string | null>(null);
+  const [scanErrorPose, setScanErrorPose] = useState<"offline" | "not-found">("not-found");
   const [manualToken, setManualToken] = useState(
     initialTrip?.transaction_id || ""
   );
@@ -93,11 +100,12 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
   const [crew, setCrew] = useState<ResolvedCrew | null>(
     initialTrip
       ? {
-          unitNumber: initialTrip.unit_number || "J-04",
-          plateNumber: initialTrip.plate_number || "NDB-5821",
+          shiftId: initialTrip.shift_id ?? "",
+          unitNumber: initialTrip.unit_number || "",
+          plateNumber: initialTrip.plate_number || "",
           driverName: initialTrip.driver_name || "Assigned Driver",
           conductorName: initialTrip.conductor_name || "Assigned Conductor",
-          routeTitle: initialTrip.route_name || "Calumpit - Meycauayan Line",
+          routeTitle: initialTrip.route_name || "",
         }
       : null
   );
@@ -158,13 +166,18 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
   };
 
   const handleResolveToken = async (rawToken: string) => {
-    const cleanToken = extractFeedbackToken(rawToken);
+    if (pending.current) return;
+    // Keep permanent vehicle JSON intact so the API adapter can select scan-public.
+    const cleanToken = rawToken.trim().startsWith("{") ? rawToken.trim() : extractFeedbackToken(rawToken);
     if (!cleanToken.trim()) return;
+    pending.current = true;
+    const attempt = generation.current;
     setScanStatus("resolving");
     setScanError(null);
 
     try {
       const resolved = await commuterService.scanQr(cleanToken.trim());
+      if (generation.current !== attempt) return;
       setCrew(resolved);
       setDriverRating(0);
       setDriverTags([]);
@@ -175,13 +188,15 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
       setIsSubmitted(false);
       setScanStatus("resolved");
     } catch (err: any) {
+      if (generation.current !== attempt) return;
       const msg =
         err?.response?.data?.message ||
         err?.message ||
         "Could not resolve active crew for this vehicle. Feedback is only available during or after a ride.";
       setScanError(msg);
+      setScanErrorPose(getMascotErrorState(err).pose);
       setScanStatus("error");
-    }
+    } finally { if (generation.current === attempt) pending.current = false; }
   };
 
   const handleBarcodeScanned = useCallback(
@@ -195,6 +210,8 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
   );
 
   const handleRescan = () => {
+    generation.current++; pending.current = false;
+    setCrew(null);
     setScanned(false);
     setScanStatus("scanning");
     setScanError(null);
@@ -216,35 +233,49 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
   };
 
   const handleSubmit = async () => {
-    if (!driverComplete || !conductorComplete) return;
+    if (!driverComplete || !conductorComplete || pending.current || initialTrip?.has_feedback) return;
+    if (initialTrip && initialTrip.can_leave_feedback !== true) {
+      setSubmitError("This payment is not eligible for feedback. Refresh Payment History first."); return;
+    }
+    pending.current = true;
+    const attempt = generation.current;
     setIsSubmitting(true);
     setSubmitError(null);
 
     try {
-      await commuterService.submitFeedback({
-        token: manualToken || undefined,
-        shift_id: initialTrip?.id || undefined,
-        driver_rating: driverRating,
-        driver_tags: driverTags,
-        driver_comment: driverComment.trim() || undefined,
-        conductor_rating: conductorRating,
-        conductor_tags: conductorTags,
-        conductor_comment: conductorComment.trim() || undefined,
-        rating: Math.round((driverRating + conductorRating) / 2),
-        comment: `Driver: ${driverRating} stars (${driverTags.join(", ")}). ${driverComment} | Conductor: ${conductorRating} stars (${conductorTags.join(", ")}). ${conductorComment}`,
-      });
+      await commuterService.submitFeedback(feedbackPayload({
+        shiftId: crew?.shiftId ?? initialTrip?.shift_id ?? "",
+        driverRating, driverTags, driverComment, conductorRating, conductorTags, conductorComment,
+      }));
+      if (generation.current !== attempt) return;
       setIsSubmitted(true);
       setCountdown(3);
     } catch (err: any) {
+      if (generation.current !== attempt) return;
       setSubmitError(
         err?.response?.data?.message ||
           err?.message ||
           "Could not submit feedback. Please try again."
       );
     } finally {
-      setIsSubmitting(false);
+      if (generation.current === attempt) { pending.current = false; setIsSubmitting(false); }
     }
   };
+
+  if (initialTrip?.has_feedback) {
+    const feedback = initialTrip.feedback;
+    return <ScrollView contentContainerStyle={styles.centeredScreen}>
+      <Text style={styles.statusTitle}>Feedback Submitted</Text>
+      <Text style={styles.statusSubtitle}>This ride has already been rated. Your saved feedback cannot be submitted again.</Text>
+      {feedback && <View style={styles.statusBox}>
+        <Text style={styles.statusSubtitle}>Driver: {feedback.rating}/5</Text>
+        {!!feedback.comment && <Text style={styles.statusSubtitle}>{feedback.comment}</Text>}
+        <Text style={styles.statusSubtitle}>Conductor: {feedback.conductor_rating ?? "Not rated"}/5</Text>
+        {!!feedback.conductor_comment && <Text style={styles.statusSubtitle}>{feedback.conductor_comment}</Text>}
+      </View>}
+      <TouchableOpacity style={styles.neutralButton} onPress={onFeedbackComplete}><Text style={styles.neutralButtonText}>Back to Home</Text></TouchableOpacity>
+    </ScrollView>;
+  }
 
   // 1. SCANNING STATE
   if (scanStatus === "scanning") {
@@ -326,7 +357,7 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
             <Text style={styles.manualLabel}>Or Enter Unit Code / Token</Text>
             <TextInput
               style={styles.textInput}
-              placeholder="e.g. UNIT-04 or scan payload token"
+              placeholder="Paste the feedback QR token"
               placeholderTextColor="rgba(255, 255, 255, 0.25)"
               value={manualToken}
               onChangeText={setManualToken}
@@ -345,23 +376,7 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
               <Text style={styles.primaryButtonText}>Verify Unit & Crew</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              onPress={() => {
-                setCrew({
-                  unitNumber: "Unit J-04",
-                  plateNumber: "NDB-5821",
-                  driverName: "Mang Carding (Driver)",
-                  conductorName: "Kuya Arnel (Conductor)",
-                  routeTitle: "Calumpit - Meycauayan Line",
-                });
-                setScanStatus("resolved");
-              }}
-              style={styles.demoTripBtn}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="sparkles-outline" size={15} color="#62A0EA" style={{ marginRight: 6 }} />
-              <Text style={styles.demoTripBtnText}>Rate Recent Ride (Unit J-04)</Text>
-            </TouchableOpacity>
+            <Text style={styles.reticleHint}>To rate a previous ride, select it from Payment History on Home.</Text>
           </View>
         </ScrollView>
       </View>
@@ -371,7 +386,7 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
   // 2. RESOLVING STATE
   if (scanStatus === "resolving") {
     return (
-      <View style={styles.centeredScreen}>
+      <ScrollView contentContainerStyle={styles.centeredScreen}>
         <View style={styles.statusBox}>
           <ActivityIndicator size="large" color="#62A0EA" />
           <Text style={styles.statusTitle}>Resolving today&apos;s crew…</Text>
@@ -379,19 +394,17 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
             Looking up the driver and conductor on duty for this unit.
           </Text>
         </View>
-      </View>
+      </ScrollView>
     );
   }
 
   // 3. ERROR STATE
   if (scanStatus === "error") {
     return (
-      <View style={styles.centeredScreen}>
+      <ScrollView contentContainerStyle={styles.centeredScreen}>
         <View style={styles.statusBox}>
-          <View style={styles.errorCircle}>
-            <Ionicons name="alert-circle-outline" size={32} color="#F87171" />
-          </View>
-          <Text style={styles.statusTitle}>Crew Not Found</Text>
+          <Mascot pose={scanErrorPose} size={128} />
+          <Text style={styles.statusTitle}>{scanErrorPose === "offline" ? "Connection interrupted" : "Crew Not Found"}</Text>
           <Text style={styles.statusSubtitle}>{scanError}</Text>
           <TouchableOpacity
             onPress={handleRescan}
@@ -401,18 +414,16 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
             <Text style={styles.primaryButtonText}>Try Again</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </ScrollView>
     );
   }
 
   // 4. SUCCESS STATE (POST-SUBMIT)
   if (isSubmitted) {
     return (
-      <View style={styles.centeredScreen}>
+      <ScrollView contentContainerStyle={styles.centeredScreen}>
         <View style={styles.statusBox}>
-          <View style={styles.successCircle}>
-            <Ionicons name="checkmark" size={36} color="#10B981" />
-          </View>
+          <Mascot pose="thanks" size={128} />
           <Text style={styles.statusTitle}>Thank You!</Text>
           <Text style={styles.statusSubtitle}>
             Your feedback has been recorded and will help us improve our service.
@@ -432,7 +443,7 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
             <Text style={styles.neutralButtonText}>Scan another unit</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </ScrollView>
     );
   }
 
@@ -1136,7 +1147,7 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   centeredScreen: {
-    flex: 1,
+    flexGrow: 1,
     backgroundColor: "#050F1A",
     alignItems: "center",
     justifyContent: "center",

@@ -7,9 +7,10 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Linking,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import * as Location from "expo-location";
+import { getSosLocation } from "./location-fix";
 import { commuterColors } from "../../core/theme/colors";
 import { commuterService } from "../../core/api/commuter-service";
 import type { SosAlert } from "../../core/domain/types";
@@ -27,10 +28,11 @@ type SosStatus =
   | "responded"
   | "error";
 
-const DEFAULT_LOCATION = { latitude: 14.8434, longitude: 120.875 };
 const POLL_INTERVAL_MS = 3000;
 
 export const SosModal: React.FC<SosModalProps> = ({ visible, onClose }) => {
+  const pending = useRef(false);
+  const generation = useRef(0);
   const [status, setStatus] = useState<SosStatus>("confirming");
   const [activeSeconds, setActiveSeconds] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string>("");
@@ -38,6 +40,7 @@ export const SosModal: React.FC<SosModalProps> = ({ visible, onClose }) => {
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastSosSentRef = useRef<number>(0);
 
   const resetState = () => {
     setStatus("confirming");
@@ -50,8 +53,10 @@ export const SosModal: React.FC<SosModalProps> = ({ visible, onClose }) => {
 
   useEffect(() => {
     if (!visible) {
+      generation.current++; pending.current = false;
       resetState();
     }
+    return () => { generation.current++; };
   }, [visible]);
 
   // Elapsed active timer
@@ -79,8 +84,10 @@ export const SosModal: React.FC<SosModalProps> = ({ visible, onClose }) => {
 
   const checkAlertStatus = useCallback(
     async (id: string) => {
+      const attempt = generation.current;
       try {
         const res = await commuterService.getSosStatus(id);
+        if (generation.current !== attempt) return;
         if (res.status === "ACKNOWLEDGED" || res.status === "RESOLVED") {
           stopPolling();
           setStatus("responded");
@@ -103,6 +110,7 @@ export const SosModal: React.FC<SosModalProps> = ({ visible, onClose }) => {
 
   // Trigger SOS dispatch
   const sendSos = useCallback(async (latitude: number, longitude: number) => {
+    const attempt = generation.current;
     setStatus("sending");
     try {
       const res = await commuterService.triggerSos({
@@ -113,6 +121,9 @@ export const SosModal: React.FC<SosModalProps> = ({ visible, onClose }) => {
         note: "Emergency distress triggered from Commuter Mobile App",
       });
 
+      if (generation.current !== attempt) return;
+      lastSosSentRef.current = Date.now();
+
       if (res.status === "ACKNOWLEDGED" || res.status === "RESOLVED") {
         setStatus("responded");
         return;
@@ -121,33 +132,44 @@ export const SosModal: React.FC<SosModalProps> = ({ visible, onClose }) => {
       setAlertId(res.id);
       setStatus("active");
     } catch (err: any) {
+      if (generation.current !== attempt) return;
       setStatus("error");
-      setErrorMessage(
-        err?.response?.data?.message ||
-          err?.message ||
-          "Unable to send the SOS signal. Please try again."
-      );
+      const rawMsg = String(err?.response?.data?.message || err?.message || "");
+      if (err?.status === 429 || rawMsg.toLowerCase().includes("too many") || rawMsg.toLowerCase().includes("recently") || rawMsg.toLowerCase().includes("slow down")) {
+        setErrorMessage("You have already sent an SOS recently. Please wait before trying again.");
+      } else {
+        setErrorMessage(
+          err?.response?.data?.message ||
+            err?.message ||
+            "Unable to send the SOS signal. Please try again."
+        );
+      }
     }
   }, []);
 
   const handleActivate = async () => {
-    setStatus("locating");
-    setErrorMessage("");
-
-    let lat = DEFAULT_LOCATION.latitude;
-    let lng = DEFAULT_LOCATION.longitude;
-
-    try {
-      const loc = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
-      lat = loc.coords.latitude;
-      lng = loc.coords.longitude;
-    } catch {
-      // Fallback to central route coordinate so distress alert is always sent
+    if (pending.current) return;
+    if (Date.now() - lastSosSentRef.current < 60000) {
+      setStatus("error");
+      setErrorMessage("You have already sent an SOS recently. Please wait before trying again.");
+      return;
     }
 
-    void sendSos(lat, lng);
+    setStatus("locating");
+    setErrorMessage("");
+    pending.current = true;
+    const attempt = generation.current;
+    try {
+      const loc = await getSosLocation();
+      if (generation.current !== attempt) return;
+      await sendSos(loc.latitude, loc.longitude);
+    } catch (error) {
+      if (generation.current !== attempt) return;
+      setStatus("error");
+      setErrorMessage(error instanceof Error ? error.message : "Location unavailable. Enable GPS and retry, or use the emergency call buttons below.");
+    } finally {
+      if (generation.current === attempt) pending.current = false;
+    }
   };
 
   const formatTimer = (seconds: number) => {
@@ -158,8 +180,9 @@ export const SosModal: React.FC<SosModalProps> = ({ visible, onClose }) => {
     return `${m}:${s}`;
   };
 
-  const handleCallHotline = (phone: string) => {
-    Linking.openURL(`tel:${phone}`);
+  const handleCallHotline = async (phone: string) => {
+    try { await Linking.openURL(`tel:${phone}`); }
+    catch { Alert.alert("Unable to open the phone dialer", `Please dial ${phone} manually if you need emergency assistance.`); }
   };
 
   const canClose =
@@ -195,7 +218,7 @@ export const SosModal: React.FC<SosModalProps> = ({ visible, onClose }) => {
               <Text style={styles.stateSubtitle}>
                 This will immediately share your{" "}
                 <Text style={{ color: "#FFFFFF", fontWeight: "700" }}>
-                  real-time live location
+                  current GPS location
                 </Text>{" "}
                 with the CHATCO Admin team.
               </Text>
@@ -288,8 +311,8 @@ export const SosModal: React.FC<SosModalProps> = ({ visible, onClose }) => {
               <Text style={styles.stateTitle}>Signal Received</Text>
               <Text style={styles.stateSubtitle}>
                 The CHATCO Admin team has successfully received your distress
-                signal. Respondents are being dispatched to your location. Please
-                stay calm and keep your location services turned on.
+                signal. An acknowledgement does not confirm that help has arrived.
+                Use the emergency call buttons if you need immediate assistance.
               </Text>
 
               <TouchableOpacity

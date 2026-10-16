@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -8,6 +8,8 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Linking,
+  ScrollView,
+  AppState,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from "expo-camera";
@@ -17,6 +19,8 @@ import {
   commuterService,
   type ClaimGcashResult,
 } from "../../core/api/commuter-service";
+import { notifyRewardsChanged } from "../../core/domain/rewards-events";
+import { voucherLabel } from "../../core/domain/rewards";
 
 interface QrScannerModalProps {
   visible: boolean;
@@ -30,6 +34,7 @@ type Step =
   | "voucher_offer"
   | "confirm"
   | "redirecting"
+  | "awaiting_payment"
   | "success"
   | "failed";
 
@@ -45,6 +50,9 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [torch, setTorch] = useState(false);
   const [scanned, setScanned] = useState(false);
+  const pending = useRef(false);
+  const generation = useRef(0);
+  const checking = useRef(false);
 
   const [permission, requestPermission] = useCameraPermissions();
 
@@ -69,9 +77,16 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
   };
 
   const handleClose = () => {
+    generation.current++;
+    pending.current = false;
     resetState();
     onClose();
   };
+
+  useEffect(() => {
+    if (!visible) { generation.current++; pending.current = false; resetState(); }
+    return () => { generation.current++; };
+  }, [visible]);
 
   const extractQrToken = (raw: string): string => {
     let val = raw.trim();
@@ -97,12 +112,15 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
   };
 
   const proceedToPayment = useCallback(async (result: ClaimGcashResult) => {
+    const attempt = generation.current;
     if (result.checkoutUrl) {
       setStep("redirecting");
       try {
         await Linking.openURL(result.checkoutUrl);
-        setStep("success");
+        if (generation.current !== attempt) return;
+        setStep("awaiting_payment"); // Opening checkout does not prove settlement.
       } catch {
+        if (generation.current !== attempt) return;
         setError("Unable to open the GCash payment page.");
         setStep("failed");
       }
@@ -119,13 +137,17 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
   }, [onPaymentSuccess]);
 
   const handleScanSuccess = useCallback(async (qrToken: string) => {
+    if (pending.current) return;
     const cleanToken = extractQrToken(qrToken);
     if (!cleanToken.trim()) return;
+    pending.current = true;
+    const attempt = generation.current;
     setStep("verifying");
     setError(null);
 
     try {
       const result = await commuterService.claimGcash(cleanToken.trim());
+      if (generation.current !== attempt) return;
       setClaimResult(result);
 
       if (result.voucherAvailable) {
@@ -135,6 +157,7 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
 
       await proceedToPayment(result);
     } catch (err: any) {
+      if (generation.current !== attempt) return;
       const status = err?.response?.status || err?.status;
       let msg = "Failed to claim this payment. The QR may be invalid or expired.";
       if (status === 404) {
@@ -152,6 +175,8 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
       }
       setError(msg);
       setStep("failed");
+    } finally {
+      if (generation.current === attempt) pending.current = false;
     }
   }, [proceedToPayment]);
 
@@ -166,35 +191,75 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
   );
 
   const handleUseVoucher = async () => {
-    if (!claimResult) return;
+    if (!claimResult || pending.current) return;
+    pending.current = true;
+    const attempt = generation.current;
     setStep("verifying");
     try {
-      const redeemed = await commuterService.redeemVoucherForGcash(claimResult.transactionId);
+      const redeemed = await commuterService.redeemVoucherForGcash(claimResult.transactionId, claimResult.availableVoucher?.id);
+      if (generation.current !== attempt) return;
       setClaimResult(redeemed);
       await proceedToPayment(redeemed);
     } catch (err: any) {
+      if (generation.current !== attempt) return;
       setError(err?.response?.data?.message || err?.message || "Unable to redeem your voucher for this ride.");
       setStep("failed");
+    } finally {
+      if (generation.current === attempt) pending.current = false;
     }
   };
 
-  const handleDeclineVoucher = () => {
-    if (!claimResult) return;
-    void proceedToPayment(claimResult);
+  const handleDeclineVoucher = async () => {
+    if (!claimResult || pending.current) return;
+    pending.current = true;
+    const attempt = generation.current;
+    try { await proceedToPayment(claimResult); }
+    finally { if (generation.current === attempt) pending.current = false; }
   };
 
   const handleConfirmPayment = async () => {
-    if (!claimResult) return;
+    if (!claimResult || pending.current) return;
+    pending.current = true;
+    const attempt = generation.current;
     setStep("redirecting");
     try {
-      await commuterService.simulatePayment(claimResult.transactionId, "PAID");
+      const result = await commuterService.simulatePayment(claimResult.transactionId, "PAID");
+      if (generation.current !== attempt) return;
+      if (result.status !== "PAID") throw new Error(`Payment is ${result.status.toLowerCase()}, not completed. Check your payment history.`);
       setStep("success");
       if (onPaymentSuccess) onPaymentSuccess();
     } catch (err: any) {
+      if (generation.current !== attempt) return;
       setError(err?.message || "Unable to complete the payment.");
       setStep("failed");
+    } finally {
+      if (generation.current === attempt) pending.current = false;
     }
   };
+
+  const checkPayment = useCallback(async () => {
+    if (!claimResult || checking.current) return;
+    checking.current = true;
+    const attempt = generation.current;
+    try {
+      const result = await commuterService.getPaymentStatus(claimResult.transactionId);
+      if (generation.current !== attempt) return;
+      if (result.status === "PAID") {
+        setError(null); setStep("success"); notifyRewardsChanged(); onPaymentSuccess?.();
+      } else if (["FAILED", "CANCELLED", "EXPIRED", "REFUNDED"].includes(result.status)) {
+        setError(`Payment ${result.status.toLowerCase()}. Check your history before trying another payment.`); setStep("failed");
+      } else setError(null);
+    } catch (e) { if (generation.current === attempt) setError((e as Error).message); }
+    finally { checking.current = false; }
+  }, [claimResult, onPaymentSuccess]);
+
+  useEffect(() => {
+    if (!visible || step !== "awaiting_payment") return;
+    void checkPayment();
+    const timer = setInterval(() => { if (AppState.currentState === "active") void checkPayment(); }, 5000);
+    const subscription = AppState.addEventListener("change", (state) => { if (state === "active") void checkPayment(); });
+    return () => { clearInterval(timer); subscription.remove(); };
+  }, [visible, step, checkPayment]);
 
   return (
     <Modal
@@ -218,17 +283,36 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
                 </Text>
               </View>
             </View>
-            <TouchableOpacity
-              onPress={handleClose}
-              style={styles.closeBtn}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="close" size={18} color="rgba(255,255,255,0.6)" />
-            </TouchableOpacity>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              {step === "scanning" && !showManualEntry && permission?.granted ? (
+                <TouchableOpacity
+                  onPress={() => setTorch((t) => !t)}
+                  style={[styles.headerTorchBtn, torch && styles.headerTorchBtnActive]}
+                  activeOpacity={0.7}
+                  accessibilityLabel={torch ? "Turn off flashlight" : "Turn on flashlight"}
+                >
+                  <Ionicons
+                    name={torch ? "flashlight" : "flashlight-outline"}
+                    size={16}
+                    color={torch ? "#FBBF24" : "#FFFFFF"}
+                  />
+                  <Text style={[styles.headerTorchText, torch && styles.headerTorchTextActive]}>
+                    {torch ? "Torch: ON" : "Torch"}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity
+                onPress={handleClose}
+                style={styles.closeBtn}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close" size={18} color="rgba(255,255,255,0.6)" />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Body based on state */}
-          <View style={styles.body}>
+          <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
             {step === "scanning" && (
               <View style={styles.scanningContainer}>
                 {!showManualEntry ? (
@@ -281,17 +365,38 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
                         <TouchableOpacity
                           activeOpacity={0.8}
                           onPress={() => setTorch((t) => !t)}
-                          style={styles.torchBtn}
+                          style={[styles.torchBtn, torch && styles.torchBtnActive]}
                           accessibilityLabel={torch ? "Turn off flashlight" : "Turn on flashlight"}
                         >
                           <Ionicons
-                            name={torch ? "flash" : "flash-outline"}
-                            size={18}
+                            name={torch ? "flashlight" : "flashlight-outline"}
+                            size={16}
                             color={torch ? "#FBBF24" : "#FFFFFF"}
                           />
+                          <Text style={[styles.torchBtnText, torch && styles.torchBtnTextActive]}>
+                            {torch ? "Torch: ON" : "Torch"}
+                          </Text>
                         </TouchableOpacity>
                       </View>
                     )}
+
+                    {/* Dedicated prominent Torch / Flashlight toggle bar */}
+                    {permission?.granted ? (
+                      <TouchableOpacity
+                        activeOpacity={0.8}
+                        onPress={() => setTorch((t) => !t)}
+                        style={[styles.torchBarBtn, torch && styles.torchBarBtnActive]}
+                      >
+                        <Ionicons
+                          name={torch ? "flashlight" : "flashlight-outline"}
+                          size={18}
+                          color={torch ? "#FBBF24" : "#62A0EA"}
+                        />
+                        <Text style={[styles.torchBarText, torch && styles.torchBarTextActive]}>
+                          {torch ? "Flashlight is ON (Tap to turn OFF)" : "Turn ON Flashlight / Torch"}
+                        </Text>
+                      </TouchableOpacity>
+                    ) : null}
 
                     <Text style={styles.reticleHint}>
                       Align the QR code shown by the conductor within the frame
@@ -361,11 +466,11 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
                 <View style={styles.successIconCircle}>
                   <Ionicons name="gift-outline" size={32} color="#10B981" />
                 </View>
-                <Text style={styles.stateTitle}>Use Your Free-Ride Voucher?</Text>
+                <Text style={styles.stateTitle}>{claimResult.availableVoucher ? `Use ${voucherLabel(claimResult.availableVoucher)}?` : "Use your voucher?"}</Text>
                 <Text style={styles.stateSubtitle}>
                   {claimResult.isGroup
-                    ? "You have a voucher available. It can cover your own seat for free — your companions will still need to pay their share via GCash."
-                    : "You have a voucher available. It can cover this entire ride for free."}
+                    ? "The voucher applies to your seat only, not your companions. Discount vouchers may leave a balance. The backend calculates the remaining GCash total."
+                    : "Free-ride vouchers cover your fare. Discount vouchers deduct their peso value; any remaining amount is paid through GCash."}
                 </Text>
 
                 <View style={styles.fareSummaryCard}>
@@ -507,6 +612,14 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
               </View>
             )}
 
+            {step === "awaiting_payment" && <View style={styles.centeredState}>
+              <Text style={styles.stateTitle}>Waiting for payment confirmation</Text>
+              <Text style={styles.stateSubtitle}>Opening checkout does not mean your fare is paid. We will confirm the status with ChatCo.</Text>
+              {!!error && <Text style={styles.stateSubtitle}>{error}</Text>}
+              <TouchableOpacity style={styles.primaryButton} onPress={() => void checkPayment()}><Text style={styles.primaryButtonText}>Check payment status</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.neutralButton} onPress={handleClose}><Text style={styles.neutralButtonText}>Close and check history later</Text></TouchableOpacity>
+            </View>}
+
             {step === "success" && claimResult && (
               <View style={styles.centeredState}>
                 <View style={styles.successIconCircle}>
@@ -589,7 +702,7 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
                 </View>
               </View>
             )}
-          </View>
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -662,6 +775,55 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  headerTorchBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.15)",
+  },
+  headerTorchBtnActive: {
+    backgroundColor: "rgba(251, 191, 36, 0.2)",
+    borderColor: "#FBBF24",
+  },
+  headerTorchText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  headerTorchTextActive: {
+    color: "#FBBF24",
+  },
+  torchBarBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    width: "100%",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginTop: 12,
+    backgroundColor: "rgba(98, 160, 234, 0.12)",
+    borderWidth: 1.5,
+    borderColor: "rgba(98, 160, 234, 0.3)",
+  },
+  torchBarBtnActive: {
+    backgroundColor: "rgba(251, 191, 36, 0.2)",
+    borderColor: "#FBBF24",
+  },
+  torchBarText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#62A0EA",
+  },
+  torchBarTextActive: {
+    color: "#FBBF24",
+  },
   body: {
     padding: 20,
   },
@@ -702,15 +864,31 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 12,
     right: 12,
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: "rgba(5, 15, 26, 0.7)",
+    minWidth: 76,
+    height: 34,
+    paddingHorizontal: 10,
+    borderRadius: 17,
+    backgroundColor: "rgba(5, 15, 26, 0.85)",
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
+    borderColor: "rgba(255, 255, 255, 0.25)",
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 10,
+    gap: 6,
+    zIndex: 9999,
+    elevation: 25,
+  },
+  torchBtnActive: {
+    backgroundColor: "rgba(251, 191, 36, 0.25)",
+    borderColor: "#FBBF24",
+  },
+  torchBtnText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  torchBtnTextActive: {
+    color: "#FBBF24",
   },
   permissionBox: {
     width: "100%",

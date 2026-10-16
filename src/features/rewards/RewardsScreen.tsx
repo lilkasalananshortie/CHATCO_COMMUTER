@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -9,12 +9,21 @@ import {
   ActivityIndicator,
   Modal,
   Platform,
+  AppState,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import { commuterColors } from "../../core/theme/colors";
 import { commuterService } from "../../core/api/commuter-service";
 import { ReceiptScanModal } from "../scanner/ReceiptScanModal";
+import { Mascot } from "../../shared/ui/Mascot";
+import { MascotMessage } from "../../shared/ui/MascotMessage";
+import { getMascotErrorState } from "../../shared/ui/mascot-error";
+import { loadRewardsAndUpdates } from "./load-rewards";
+import { isVoucherAvailable, voucherLabel } from "../../core/domain/rewards";
+import { subscribeRewardsChanged } from "../../core/domain/rewards-events";
+import { FeatureButton } from "../../shared/ui/FeatureControls";
+import type { RenewalState } from "../student-renewal/renewal-types";
 import type {
   RewardProgress,
   Voucher,
@@ -24,12 +33,15 @@ import type {
 
 interface RewardsScreenProps {
   onOpenReceiptScan?: () => void;
+  onOpenRenewal?: () => void;
+  renewalState?: RenewalState | null;
 }
 
 const announcementConfig: Record<
   AnnouncementType,
   { color: string; bg: string; border: string; label: string; emoji: string }
 > = {
+  VOUCHER: { color: "#34D399", bg: "rgba(16,185,129,0.1)", border: "rgba(16,185,129,0.2)", label: "Voucher", emoji: "🎟️" },
   PROMO: {
     color: "#FBBF24",
     bg: "rgba(245, 158, 11, 0.1)",
@@ -93,12 +105,17 @@ function formatRelativeTime(iso?: string | null): string {
 
 export const RewardsScreen: React.FC<RewardsScreenProps> = ({
   onOpenReceiptScan,
+  onOpenRenewal,
+  renewalState,
 }) => {
   const [data, setData] = useState<RewardProgress | null>(null);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [announcementsError, setAnnouncementsError] = useState<unknown>(null);
+  const fetching = useRef(false);
+  const mounted = useRef(true);
 
   // Modals
   const [showReceiptScanLocal, setShowReceiptScanLocal] = useState(false);
@@ -109,71 +126,40 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
   const [selectedAnnouncement, setSelectedAnnouncement] = useState<Announcement | null>(null);
 
   const fetchData = useCallback(async () => {
-    setError(null);
+    if (fetching.current) return;
+    fetching.current = true;
     try {
-      const [rewardRes, announcementRes] = await Promise.allSettled([
-        commuterService.getRewards(),
-        commuterService.getAnnouncements(),
-      ]);
+      const { rewards: rewardRes, announcements: announcementRes } = await loadRewardsAndUpdates(commuterService);
+      if (!mounted.current) return;
 
       if (rewardRes.status === "fulfilled") {
         setData(rewardRes.value);
+        setError(null);
       } else {
-        // Fallback loyalty data matching web
-        setData({
-          currentCycleRides: 7,
-          ridesNeeded: 10,
-          availableVoucherCount: 1,
-          vouchers: [
-            {
-              id: "v-welcome-01",
-              code: "CHATCO-FREE-RIDE",
-              discount_amount: 15,
-              status: "AVAILABLE",
-              expires_at: new Date(Date.now() + 14 * 86400000).toISOString(),
-            } as any,
-          ],
-        });
+        setError(rewardRes.reason ?? new Error("Rewards unavailable"));
       }
 
       if (announcementRes.status === "fulfilled") {
         setAnnouncements(announcementRes.value || []);
+        setAnnouncementsError(null);
       } else {
-        setAnnouncements([
-          {
-            id: "ann-01",
-            title: "MacArthur Highway Trip Advisory",
-            content: "Modern jeepneys operating normally along the Calumpit - Meycauayan line. Fare discounts automatically apply for validated IDs.",
-            type: "SYSTEM",
-            is_read: false,
-            created_at: new Date().toISOString(),
-          },
-        ]);
+        setAnnouncementsError(announcementRes.reason ?? new Error("Updates unavailable"));
       }
-    } catch {
-      // Offline fallback
-      setData({
-        currentCycleRides: 7,
-        ridesNeeded: 10,
-        availableVoucherCount: 1,
-        vouchers: [
-          {
-            id: "v-welcome-01",
-            code: "CHATCO-FREE-RIDE",
-            discount_amount: 15,
-            status: "AVAILABLE",
-            expires_at: new Date(Date.now() + 14 * 86400000).toISOString(),
-          } as any,
-        ],
-      });
+    } catch (err) {
+      if (mounted.current) setError(err ?? new Error("Rewards unavailable"));
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      fetching.current = false;
+      if (mounted.current) { setLoading(false); setRefreshing(false); }
     }
   }, []);
 
   useEffect(() => {
-    fetchData();
+    mounted.current = true;
+    void fetchData();
+    const unsubscribe = subscribeRewardsChanged(() => { void fetchData(); });
+    const interval = setInterval(() => { if (AppState.currentState === "active") void fetchData(); }, 30000);
+    const subscription = AppState.addEventListener("change", (state) => { if (state === "active") void fetchData(); });
+    return () => { mounted.current = false; unsubscribe(); clearInterval(interval); subscription.remove(); };
   }, [fetchData]);
 
   const onRefresh = () => {
@@ -215,8 +201,7 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
   };
 
   const redeemVoucher = (voucher: Voucher) => {
-    if (voucher.status !== "AVAILABLE") return;
-    if (voucher.expires_at && new Date(voucher.expires_at).getTime() <= Date.now()) return;
+    if (error || !isVoucherAvailable(voucher)) return;
     setActiveVoucherCode(voucher.code);
     setVoucherCopied(false);
     setShowVoucherModal(true);
@@ -241,19 +226,11 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
     );
   }
 
-  if (error || !data) {
+  if (!data) {
     return (
       <View style={styles.errorScreen}>
-        <Text style={styles.errorText}>
-          {error ?? "Unable to load rewards right now."}
-        </Text>
-        <TouchableOpacity
-          onPress={fetchData}
-          style={styles.retryButton}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.retryButtonText}>Try Again</Text>
-        </TouchableOpacity>
+        <MascotMessage {...getMascotErrorState(error)} onRetry={onRefresh} retrying={refreshing} />
+        {onOpenRenewal && <FeatureButton label="Student renewal" onPress={onOpenRenewal} />}
       </View>
     );
   }
@@ -275,14 +252,7 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
           </Text>
         </View>
 
-        {/* Scan receipt QR button top right */}
-        <TouchableOpacity
-          onPress={handleOpenReceiptScanner}
-          style={styles.receiptScanIconBtn}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="qr-code-outline" size={20} color="rgba(255,255,255,0.7)" />
-        </TouchableOpacity>
+        {/* Only GCash transactions earn rewards per specification */}
       </View>
 
       {/* --- SCROLLING BODY --- */}
@@ -296,6 +266,17 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
           />
         }
       >
+        {onOpenRenewal && <View style={{ marginBottom: 16, gap: 8 }}>
+          {renewalState?.notice_active && <Text style={{ color: "#FBBF24", lineHeight: 21 }}>Student renewal: {renewalState.renewal_period}. Check your eligibility and submit enrollment proof.</Text>}
+          <FeatureButton label={renewalState?.notice_active ? "Review student renewal" : "Student renewal and eligibility"} onPress={onOpenRenewal} />
+        </View>}
+        {Boolean(error) && (
+          <MascotMessage
+            {...getMascotErrorState(error)}
+            message="Showing your last loaded rewards. Reconnect and refresh before using a voucher."
+            compact onRetry={onRefresh} retrying={refreshing}
+          />
+        )}
         {/* --- 1. LATEST UPDATES (ANNOUNCEMENTS) --- */}
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
@@ -386,12 +367,10 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
               );
             })}
 
-            {announcements.length === 0 && (
-              <View style={styles.emptyCard}>
-                <Text style={styles.emptyCardText}>
-                  No announcements right now.
-                </Text>
-              </View>
+            {Boolean(announcementsError) ? (
+              <MascotMessage {...getMascotErrorState(announcementsError)} message="We couldn't refresh announcements. Please try again." compact onRetry={onRefresh} retrying={refreshing} />
+            ) : announcements.length === 0 && (
+              <MascotMessage pose="noticeboard" title="All caught up" message="No announcements right now. Check back for updates." compact />
             )}
           </View>
         </View>
@@ -432,9 +411,7 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
                 : `${ridesRemaining} Rides to Free Ride`}
             </Text>
             <Text style={styles.progressDescription}>
-              Complete {targetRides} paid rides to earn a free ride voucher —
-              GCash counts automatically, cash counts once you scan the receipt
-              QR. Your total completed rides:{" "}
+              Complete {targetRides} eligible paid rides to earn a free ride voucher. Eligible GCash rides count automatically; claim eligible cash receipts to add those rides. Your total completed rides:{" "}
               <Text style={{ color: "#62A0EA", fontWeight: "700" }}>
                 {data.totalRides}
               </Text>
@@ -459,12 +436,12 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
         {/* --- 3. VOUCHERS LIST --- */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>My Vouchers</Text>
+          {!error && vouchers.some((voucher) => voucher.status === "AVAILABLE" && (!voucher.expires_at || new Date(voucher.expires_at).getTime() > Date.now())) && (
+            <MascotMessage pose="reward" title="You have vouchers!" message="Check each voucher's value and expiry below." compact />
+          )}
           <View style={styles.vouchersList}>
             {vouchers.map((voucher) => {
-              const isAvailable =
-                voucher.status === "AVAILABLE" &&
-                (!voucher.expires_at ||
-                  new Date(voucher.expires_at).getTime() > Date.now());
+              const isAvailable = !error && isVoucherAvailable(voucher);
 
               return (
                 <View
@@ -491,7 +468,7 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
                       />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.voucherTitle}>Free Ride Voucher</Text>
+                      <Text style={styles.voucherTitle}>{voucherLabel(voucher)}</Text>
                       <Text style={styles.voucherMeta}>
                         Source: {voucher.rideOrigin || "Completed Ride"} • Exp:{" "}
                         {voucher.expires_at
@@ -566,13 +543,13 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
                   <Text style={styles.stepNumberText}>1</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.stepTitle}>Ride and pay</Text>
+                  <Text style={styles.stepTitle}>Ride and pay with GCash</Text>
                   <Text style={styles.stepDesc}>
-                    Every ride you pay for counts as{" "}
-                    <Text style={{ color: "#FFFFFF", fontWeight: "700" }}>+1</Text>{" "}
-                    toward your next free ride. Pay with{" "}
+                    Every ride you pay with{" "}
                     <Text style={{ color: "#FFFFFF", fontWeight: "700" }}>GCash</Text>{" "}
-                    and it&apos;s counted automatically the moment the fare is recorded.
+                    automatically counts as{" "}
+                    <Text style={{ color: "#FFFFFF", fontWeight: "700" }}>+1 reward ride</Text>{" "}
+                    toward your next free ride.
                   </Text>
                 </View>
               </View>
@@ -582,12 +559,9 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
                   <Text style={styles.stepNumberText}>2</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.stepTitle}>Paid in cash? Scan the receipt</Text>
+                  <Text style={styles.stepTitle}>Reach {targetRides} rides</Text>
                   <Text style={styles.stepDesc}>
-                    Cash fares aren&apos;t linked to your account on their own. The
-                    conductor&apos;s paper receipt has a QR on it — tap the scan
-                    button at the top right of this page and scan it to claim
-                    that ride.
+                    1 GCash ride = 1 reward step. Complete {targetRides} rides to finish the cycle and unlock your reward.
                   </Text>
                 </View>
               </View>
@@ -598,11 +572,11 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.stepTitle}>
-                    Hit {targetRides} and a voucher appears
+                    1 Free Ride Voucher Unlocked
                   </Text>
                   <Text style={styles.stepDesc}>
-                    At {targetRides} rides a free ride voucher is added to &ldquo;My
-                    Vouchers&rdquo; below, and the counter resets to zero.
+                    At {targetRides} rides, a free ride voucher (₱0.00 fare) is added to &ldquo;My
+                    Vouchers&rdquo; below, and your counter resets to start your next cycle.
                   </Text>
                 </View>
               </View>
@@ -649,8 +623,10 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
       <Modal visible={showVoucherModal} animationType="fade" transparent>
         <View style={styles.modalBackdrop}>
           <View style={styles.voucherModalCard}>
+            <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
             <View style={styles.voucherModalHeader}>
-              <Text style={styles.voucherModalTitle}>Voucher Activated!</Text>
+              <Mascot pose="reward" size={96} />
+              <Text style={styles.voucherModalTitle}>{voucherLabel(vouchers.find((v) => v.code === activeVoucherCode) ?? {})}</Text>
               <Text style={styles.voucherModalSubtitle}>
                 No scan is required—the conductor enters this code.
               </Text>
@@ -658,14 +634,14 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
 
             <View style={styles.voucherModalBody}>
               <View style={styles.codeContainer}>
-                <Text style={styles.codeLabel}>FREE RIDE CODE</Text>
+                <Text style={styles.codeLabel}>VOUCHER CODE</Text>
                 <Text style={styles.codeDisplay}>{activeVoucherCode}</Text>
               </View>
 
               <View style={styles.instructionsList}>
                 <Text style={styles.instructionItem}>
                   <Text style={{ color: "#34D399", fontWeight: "700" }}>1. </Text>
-                  Tell the conductor you are using a free ride voucher.
+                  Tell the conductor you are using this voucher. Discount vouchers may leave a fare balance to collect in cash.
                 </Text>
                 <Text style={styles.instructionItem}>
                   <Text style={{ color: "#34D399", fontWeight: "700" }}>2. </Text>
@@ -673,7 +649,7 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
                 </Text>
                 <Text style={styles.instructionItem}>
                   <Text style={{ color: "#34D399", fontWeight: "700" }}>3. </Text>
-                  The voucher becomes used when the free fare is recorded.
+                  The voucher becomes used when applied to the fare. Showing the code does not activate or redeem it.
                 </Text>
               </View>
 
@@ -703,6 +679,7 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
                 <Text style={styles.neutralModalButtonText}>Close</Text>
               </TouchableOpacity>
             </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1264,6 +1241,7 @@ const styles = StyleSheet.create({
   voucherModalCard: {
     width: "100%",
     maxWidth: 360,
+    maxHeight: "90%",
     backgroundColor: "#071A2E",
     borderRadius: 20,
     borderWidth: 1,

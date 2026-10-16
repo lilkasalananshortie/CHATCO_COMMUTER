@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -9,19 +9,33 @@ import {
   Modal,
   ActivityIndicator,
   Linking,
+  Alert,
+  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { commuterColors } from "../../core/theme/colors";
 import { commuterService } from "../../core/api/commuter-service";
 import { authService } from "../../core/api/auth-service";
 import type { User, CommuterProfile } from "../../core/domain/types";
+import { DiscountApplicationEntry } from "../discount-application/DiscountApplicationEntry";
+import type { ApplicationState } from "../discount-application/application-types";
+import { pickProfilePhoto, profilePhotoForm } from "./profile-photo";
 
 interface ProfileScreenProps {
   onLogout: () => void;
+  onProfileSaved?: (profile: CommuterProfile) => void;
   onOpenTour?: () => void;
+  serverProfile?: CommuterProfile | null;
+  discountApplicationState?: ApplicationState | null;
+  discountApplicationLoading?: boolean;
+  discountApplicationError?: string;
+  onOpenDiscountApplication?: () => void;
 }
 
-export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onOpenTour }) => {
+export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onProfileSaved, onOpenTour, serverProfile, discountApplicationState = null, discountApplicationLoading = false, discountApplicationError = "", onOpenDiscountApplication }) => {
+  const mounted = useRef(true);
+  const mutation = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const [profile, setProfile] = useState<CommuterProfile | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -47,45 +61,54 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onOpenTo
   const [resendSecondsLeft, setResendSecondsLeft] = useState(0);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [failedPhotoUrl, setFailedPhotoUrl] = useState<string | null>(null);
+
+  const handlePhoto = async () => {
+    if (mutation.current) return;
+    mutation.current = true;
+    setPhotoUploading(true); setPhotoError(null);
+    try {
+      const photo = await pickProfilePhoto();
+      if (!photo || !mounted.current) return;
+      const updated = await commuterService.uploadProfilePhoto(profilePhotoForm(photo));
+      if (!mounted.current) return;
+      setProfile(previous => previous ? { ...previous, profile_image_url: updated.profile_image_url } : updated);
+      onProfileSaved?.(updated);
+      setSuccessMessage("Profile photo updated.");
+    } catch (reason) {
+      if (mounted.current) setPhotoError(reason instanceof Error ? reason.message : "Couldn't upload your photo. Please try again.");
+    } finally {
+      mutation.current = false;
+      if (mounted.current) setPhotoUploading(false);
+    }
+  };
 
   const fetchProfile = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     try {
       const data = await commuterService.getProfile();
+      if (!mounted.current) return;
       setUser(data.user);
       setProfile(data.profile);
       setContactNumber(data.profile?.contact_number || "");
     } catch (err: any) {
-      // Offline fallback: load cached session so commuter is never blocked
-      const storedUser = await authService.getStoredUser();
-      if (storedUser) {
-        setUser(storedUser);
-        const fallbackProfile: CommuterProfile = {
-          id: storedUser.id,
-          first_name: storedUser.name?.split(" ")[0] || "Commuter",
-          middle_name: "",
-          surname: storedUser.name?.split(" ")[1] || "Member",
-          birthdate: "2000-01-01",
-          gender: "Prefer not to say",
-          commuter_type: "REGULAR",
-          account_status: "ACTIVE",
-          contact_number: "09171234567",
-          username: storedUser.email?.split("@")[0] || "commuter",
-        };
-        setProfile(fallbackProfile);
-        setContactNumber("09171234567");
-      } else {
-        setLoadError("Couldn't load profile. Check your connection.");
-      }
+      // Never invent identity, phone or verification status after a failed read.
+      if (mounted.current) setLoadError(err?.message || "Couldn't load profile. Check your connection.");
     } finally {
-      setLoading(false);
+      if (mounted.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     fetchProfile();
   }, [fetchProfile]);
+
+  useEffect(() => {
+    if (serverProfile) { setProfile(serverProfile); setContactNumber(serverProfile.contact_number || ""); }
+  }, [serverProfile]);
 
   // Resend code countdown timer
   useEffect(() => {
@@ -104,33 +127,39 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onOpenTo
   }, [successMessage]);
 
   const handleSaveProfile = async () => {
+    if (mutation.current) return;
     if (!contactNumber.trim()) {
       setSaveError("Please enter a contact number.");
       return;
     }
+    mutation.current = true;
     setIsSaving(true);
     setSaveError(null);
     try {
       const updated = await commuterService.updateProfile({
         contact_number: contactNumber.trim(),
       });
-      setProfile((prev) =>
-        prev ? { ...prev, contact_number: updated.contact_number } : null
-      );
+      if (!mounted.current) return;
+      setProfile(updated);
+      setContactNumber(updated.contact_number || "");
+      onProfileSaved?.(updated);
       setIsEditing(false);
       setSuccessMessage("Profile updated successfully!");
     } catch (err: any) {
+      if (!mounted.current) return;
       setSaveError(
         err?.response?.data?.message ||
           err?.message ||
           "Failed to update profile."
       );
     } finally {
-      setIsSaving(false);
+      mutation.current = false;
+      if (mounted.current) setIsSaving(false);
     }
   };
 
   const handleRequestPasswordCode = async () => {
+    if (mutation.current) return;
     if (!currentPassword || !newPassword || !confirmNewPassword) {
       setPasswordError("Please fill out all password fields.");
       return;
@@ -144,37 +173,45 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onOpenTo
       return;
     }
 
+    mutation.current = true;
     setIsChangingPassword(true);
     setPasswordError(null);
     try {
-      await commuterService.requestPasswordChangeCode();
+      await commuterService.requestPasswordChangeCode({ current_password: currentPassword, password: newPassword, password_confirmation: confirmNewPassword });
+      if (!mounted.current) return;
       setPasswordStep("code");
       setResendSecondsLeft(60);
     } catch (err: any) {
+      if (!mounted.current) return;
       setPasswordError(
         err?.response?.data?.message ||
           err?.message ||
           "Could not send verification code."
       );
     } finally {
-      setIsChangingPassword(false);
+      mutation.current = false;
+      if (mounted.current) setIsChangingPassword(false);
     }
   };
 
   const handleConfirmPassword = async () => {
+    if (mutation.current) return;
     if (verificationCode.trim().length !== 6) {
       setPasswordError("Please enter the 6-digit verification code.");
       return;
     }
 
+    mutation.current = true;
     setIsChangingPassword(true);
     setPasswordError(null);
     try {
       await commuterService.confirmPasswordChange({
         code: verificationCode.trim(),
-        new_password: newPassword,
-        new_password_confirmation: confirmNewPassword,
+        current_password: currentPassword,
+        password: newPassword,
+        password_confirmation: confirmNewPassword,
       });
+      if (!mounted.current) return;
       setShowPasswordModal(false);
       setPasswordStep("form");
       setCurrentPassword("");
@@ -183,17 +220,20 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onOpenTo
       setVerificationCode("");
       setSuccessMessage("Password changed successfully!");
     } catch (err: any) {
+      if (!mounted.current) return;
       setPasswordError(
         err?.response?.data?.message ||
           err?.message ||
           "Invalid code or password change failed."
       );
     } finally {
-      setIsChangingPassword(false);
+      mutation.current = false;
+      if (mounted.current) setIsChangingPassword(false);
     }
   };
 
   const closePasswordModal = () => {
+    if (mutation.current) return;
     setShowPasswordModal(false);
     setPasswordStep("form");
     setPasswordError(null);
@@ -201,6 +241,16 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onOpenTo
     setNewPassword("");
     setConfirmNewPassword("");
     setVerificationCode("");
+  };
+
+  const signOut = async () => {
+    if (mutation.current) return;
+    mutation.current = true;
+    try {
+      const result = await authService.logout();
+      onLogout();
+      if (!result.serverRevoked) Alert.alert("Signed out on this device", "The server could not confirm session revocation. Your local login has been removed.");
+    } finally { mutation.current = false; }
   };
 
   if (loading) {
@@ -227,6 +277,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onOpenTo
         >
           <Text style={styles.primaryButtonText}>Try again</Text>
         </TouchableOpacity>
+        <TouchableOpacity onPress={() => void signOut()} style={styles.primaryButton}><Text style={styles.primaryButtonText}>Log Out</Text></TouchableOpacity>
       </View>
     );
   }
@@ -235,9 +286,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onOpenTo
   const surname = profile.surname || user?.name?.split(" ")[1] || "";
   const initialFirst = firstName[0] || "C";
   const initialLast = surname[0] || "";
-  const commuterType = (profile.commuter_type || "REGULAR").toUpperCase();
+  const commuterType = (discountApplicationState?.commuter_type ?? profile.commuter_type ?? "REGULAR").toUpperCase();
   const accountStatus = (profile.account_status || "ACTIVE").toUpperCase();
-  const discountPercentage = commuterType === "REGULAR" ? 0 : 20;
+  const effectiveFareType = discountApplicationState?.effective_fare_type ?? profile.effective_fare_type ?? commuterType;
+  const discountPercentage = effectiveFareType.toUpperCase() === "REGULAR" ? 0 : 20;
 
   const getStatusBadge = () => {
     if (accountStatus === "ACTIVE" || accountStatus === "APPROVED") {
@@ -279,11 +331,16 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onOpenTo
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Header & Avatar Row */}
         <View style={styles.profileHeader}>
-          <View style={styles.avatarCircle}>
-            <Text style={styles.avatarInitials}>
-              {initialFirst}
-              {initialLast}
-            </Text>
+          <View style={{ alignItems: "center", width: 90 }}>
+            <View style={styles.avatarCircle}>
+              {profile.profile_image_url && failedPhotoUrl !== profile.profile_image_url ? (
+                <Image source={{ uri: profile.profile_image_url }} accessibilityLabel="Your profile photo" style={{ width: "100%", height: "100%", borderRadius: 40 }} onError={() => setFailedPhotoUrl(profile.profile_image_url ?? null)} />
+              ) : <Text style={styles.avatarInitials}>{initialFirst}{initialLast}</Text>}
+            </View>
+            <TouchableOpacity accessibilityRole="button" disabled={photoUploading} onPress={() => void handlePhoto()} style={{ minHeight: 44, justifyContent: "center" }}>
+              <Text style={{ color: "#99C1F1", fontSize: 12 }}>{photoUploading ? "Uploading…" : "Change photo"}</Text>
+            </TouchableOpacity>
+            {photoError && <Text accessibilityRole="alert" style={{ color: "#FCA5A5", fontSize: 12, textAlign: "center" }}>{photoError}</Text>}
           </View>
           <View style={styles.profileMeta}>
             <Text style={styles.fullName}>
@@ -351,6 +408,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onOpenTo
             </View>
           </View>
         )}
+
+        {onOpenDiscountApplication && <DiscountApplicationEntry state={discountApplicationState} loading={discountApplicationLoading}
+          error={discountApplicationError} commuterType={commuterType} onOpen={onOpenDiscountApplication} />}
 
         {/* Action Buttons Row */}
         <View style={styles.actionButtonsRow}>
@@ -574,8 +634,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onOpenTo
               <TouchableOpacity
                 onPress={async () => {
                   setShowLogoutConfirm(false);
-                  await authService.logout();
-                  onLogout();
+                  await signOut();
                 }}
                 style={[styles.dangerModalButton, { flex: 1 }]}
                 activeOpacity={0.8}

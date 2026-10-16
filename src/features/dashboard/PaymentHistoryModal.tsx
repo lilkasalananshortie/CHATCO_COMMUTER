@@ -316,7 +316,7 @@ export const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                           </View>
 
                           {/* Leave Feedback Action */}
-                          {onSelectFeedback && (
+                          {onSelectFeedback && (tx.can_leave_feedback || (tx.has_feedback && tx.feedback)) && (
                             <TouchableOpacity
                               onPress={() => {
                                 onClose();
