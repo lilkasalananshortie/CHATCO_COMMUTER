@@ -10,13 +10,17 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Modal,
+  useWindowDimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { commuterColors } from "../../core/theme/colors";
-import { CommuterButton } from "../../shared/ui/CommuterButton";
 import { authService } from "../../core/api/auth-service";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
+import { AuthBackgroundGraphic } from "./AuthBackgroundGraphic";
+import { Mascot } from "../../shared/ui/Mascot";
+import { RegistrationConsent } from "./RegistrationConsent";
+import { registrationAgreement, type AgreementChoices } from "./registration-agreement";
 
 interface RegisterScreenProps {
   onRegisterSuccess: () => void;
@@ -114,8 +118,13 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
   onRegisterSuccess,
   onGoToLogin,
 }) => {
+  const { width: windowWidth } = useWindowDimensions();
+  const isTablet = windowWidth >= 768;
+
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [agreement, setAgreement] = useState<AgreementChoices>({ terms: false, privacy: false, confirmation: false });
+  const submitting = useRef(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -148,6 +157,10 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  // Active Focus Field
+  const [focusedField, setFocusedField] = useState<string | null>(null);
 
   // Field validation errors
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -179,7 +192,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
       if (!birthdate.trim()) {
         errors.birthdate = "Enter your birthdate (YYYY-MM-DD).";
       } else if (!/^\d{4}-\d{2}-\d{2}$/.test(birthdate.trim())) {
-        errors.birthdate = "Use format YYYY-MM-DD (e.g. 2002-05-18).";
+        errors.birthdate = "Use format YYYY-MM-DD.";
       }
     }
 
@@ -195,7 +208,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
       if (!cleanPhone) {
         errors.contactNumber = "Enter your contact number.";
       } else if (!PHONE_PATTERN.test(cleanPhone)) {
-        errors.contactNumber = "Must be an 11-digit mobile number starting with 09 (e.g. 09171234567).";
+        errors.contactNumber = "Must be an 11-digit mobile number starting with 09.";
       }
 
       if (!idFileBlob && !idFileName) {
@@ -232,7 +245,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
   const handleRequestCode = async () => {
     if (!validateCurrentStep(2)) return;
 
-    // If this address is already verified, skip OTP step directly to step 4
     if (isEmailVerified && verifiedEmail === email.trim().toLowerCase()) {
       setStep(4);
       return;
@@ -247,15 +259,12 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
       setCode("");
       setStep(3);
     } catch (err: any) {
-      // If code was already requested recently (rate limit / 429), allow moving to enter code
       const msg = err?.message || "";
       if (msg.includes("429") || msg.includes("already requested")) {
         setResendIn(60);
         setStep(3);
       } else {
-        // Fallback: if mail service is temporarily offline or in dev, still let the user proceed
-        setErrorMessage("Verification email initiated. If running in offline test mode, enter 123456 or proceed.");
-        setStep(3);
+        setErrorMessage(err?.message || "Could not send verification code. Please check your email address.");
       }
     } finally {
       setIsSendingCode(false);
@@ -278,15 +287,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
       setVerifiedEmail(email.trim().toLowerCase());
       setStep(4);
     } catch (err: any) {
-      // If backend verification endpoint is reachable and fails:
-      if (code.trim() === "123456" || __DEV__) {
-        // Dev fallback bypass
-        setIsEmailVerified(true);
-        setVerifiedEmail(email.trim().toLowerCase());
-        setStep(4);
-      } else {
-        setErrorMessage(err?.message || "Invalid or expired verification code. Please check your inbox or resend.");
-      }
+      setErrorMessage(err?.message || "Invalid or expired verification code. Please check your inbox or resend.");
     } finally {
       setIsVerifyingCode(false);
     }
@@ -390,13 +391,69 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
 
   // Final Step 4 -> Submit Registration
   const handleSubmitRegistration = async () => {
+    if (submitting.current) return;
     if (!validateCurrentStep(4)) return;
+    let accepted: Record<string, string>;
+    try { accepted = registrationAgreement(agreement); }
+    catch (error) { setErrorMessage((error as Error).message); return; }
+    if (!isEmailVerified || verifiedEmail !== email.trim().toLowerCase()) {
+      setErrorMessage("Verify your current email address before submitting.");
+      setStep(2);
+      return;
+    }
 
+    submitting.current = true;
     setLoading(true);
     setErrorMessage(null);
 
     try {
+      if (Platform.OS !== "web") {
+        let fileUri: string;
+        if (
+          idFileBlob &&
+          typeof idFileBlob === "object" &&
+          "uri" in idFileBlob &&
+          typeof idFileBlob.uri === "string" &&
+          !idFileBlob.uri.startsWith("data:")
+        ) {
+          const rawUri = idFileBlob.uri;
+          fileUri =
+            rawUri.startsWith("file://") || rawUri.startsWith("content://")
+              ? rawUri
+              : `file://${rawUri}`;
+        } else {
+          const sample = await createSampleIdFile();
+          fileUri = (sample as any).uri;
+        }
+
+        const parameters: Record<string, string> = {
+          ...accepted,
+          first_name: String(firstName || "").trim(),
+          surname: String(surname || "").trim(),
+          birthdate: String(birthdate || "").trim(),
+          gender: String(gender || ""),
+          email: String(email || "").trim().toLowerCase(),
+          contact_number: String(contactNumber || "").trim(),
+          username: String(username || "").trim(),
+          applied_type: String(appliedType || "REGULAR"),
+          password: String(password),
+          password_confirmation: String(passwordConfirmation),
+        };
+        if (middleName && middleName.trim()) {
+          parameters.middle_name = String(middleName).trim();
+        }
+        if (suffix && suffix !== "None") {
+          parameters.suffix = String(suffix);
+        }
+
+        await authService.register({ fileUri, parameters });
+        setIsSuccess(true);
+        return;
+      }
+
+      // Web multipart
       const formData = new FormData();
+      Object.entries(accepted).forEach(([key, value]) => formData.append(key, value));
       formData.append("first_name", String(firstName || "").trim());
       if (middleName && middleName.trim()) {
         formData.append("middle_name", String(middleName).trim());
@@ -414,33 +471,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
       formData.append("password", String(password));
       formData.append("password_confirmation", String(passwordConfirmation));
 
-      // Attach ID safely (guaranteeing valid file:// or content:// URI on Native, never a Blob or data: URI)
-      let fileToAttach: any;
-      if (Platform.OS === "web") {
-        fileToAttach = idFileBlob || (await createSampleIdFile());
-      } else {
-        if (
-          idFileBlob &&
-          typeof idFileBlob === "object" &&
-          "uri" in idFileBlob &&
-          typeof idFileBlob.uri === "string" &&
-          !idFileBlob.uri.startsWith("data:")
-        ) {
-          const rawUri = idFileBlob.uri;
-          const safeUri =
-            rawUri.startsWith("file://") || rawUri.startsWith("content://")
-              ? rawUri
-              : `file://${rawUri}`;
-          fileToAttach = {
-            uri: safeUri,
-            name: String(idFileBlob.name || "id_upload.jpg"),
-            type: String(idFileBlob.type || "image/jpeg"),
-          };
-        } else {
-          fileToAttach = await createSampleIdFile();
-        }
-      }
-
+      const fileToAttach = idFileBlob || (await createSampleIdFile());
       formData.append("id_image", fileToAttach as any);
 
       await authService.register(formData);
@@ -452,789 +483,869 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
         "Registration could not be completed. Please review your details.";
       setErrorMessage(msg);
     } finally {
+      submitting.current = false;
       setLoading(false);
     }
   };
 
-  // ── SUCCESS: PENDING ADMIN REVIEW SCREEN (1:1 Web Match) ──
+  // ── SUCCESS: PENDING ADMIN REVIEW SCREEN ──
   if (isSuccess) {
     return (
-      <View style={styles.successContainer}>
-        <View style={styles.successCard}>
-          <View style={styles.successIconCircle}>
-            <Ionicons name="time" size={44} color="#D97706" />
-          </View>
+      <View style={styles.outerContainer}>
+        <AuthBackgroundGraphic />
+        <ScrollView contentContainerStyle={styles.successContainer}>
+          <View style={styles.successCard}>
+            <Mascot pose="envelope" size={120} />
 
-          <Text style={styles.successTitle}>Registration Submitted!</Text>
+            <Text style={styles.successTitle}>Registration Submitted</Text>
 
-          <Text style={styles.successBody}>
-            Your account is{" "}
-            <Text style={{ fontWeight: "700", color: "#D97706" }}>
-              pending admin approval
+            <Text style={styles.successBody}>
+              Your account is{" "}
+              <Text style={{ fontWeight: "700", color: "#F59E0B" }}>
+                pending admin approval
+              </Text>
+              . An administrator will review your valid ID and verify your discount tier.
             </Text>
-            . An administrator will review your valid ID and verify your discount tier.
-          </Text>
 
-          <Text style={styles.successSubtext}>
-            We'll email{" "}
-            <Text style={{ fontWeight: "600", color: commuterColors.navyDeep }}>
-              {email.trim().toLowerCase()}
-            </Text>{" "}
-            as soon as your account is approved. You cannot log in until then.
-          </Text>
+            <Text style={styles.successSubtext}>
+              We will email{" "}
+              <Text style={{ fontWeight: "600", color: "#62A0EA" }}>
+                {email.trim().toLowerCase()}
+              </Text>{" "}
+              as soon as your account is approved.
+            </Text>
 
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={onRegisterSuccess}
-            style={styles.backToLoginBtn}
-          >
-            <Text style={styles.backToLoginBtnText}>Back to Login</Text>
-          </TouchableOpacity>
-        </View>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={onRegisterSuccess}
+              style={styles.primaryButton}
+            >
+              <Text style={styles.primaryButtonText}>Back to Login</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
       </View>
     );
   }
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      style={styles.container}
-    >
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+    <View style={styles.outerContainer}>
+      {/* Background Graphic Layer: Luminous ambient glows & transit grid */}
+      <AuthBackgroundGraphic />
+
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.container}
       >
-        {/* Top Header & Branding (Mirroring Web) */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={onGoToLogin}
-            activeOpacity={0.7}
-            accessibilityLabel="Go back to login"
-          >
-            <Ionicons name="arrow-back" size={20} color={commuterColors.navyDeep} />
-          </TouchableOpacity>
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
+            isTablet && styles.scrollContentTablet,
+          ]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.formWrapper}>
+            {/* Top Navigation Bar */}
+            <View style={styles.navBar}>
+              <TouchableOpacity
+                style={styles.backButton}
+                  onPress={onGoToLogin}
+                  disabled={loading}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Go back to login"
+              >
+                <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+              </TouchableOpacity>
 
-          <View style={styles.brandRow}>
-            <View style={styles.logoBadge}>
-              <Ionicons name="bus" size={16} color="#FFFFFF" />
+              <View style={styles.brandRow}>
+                <Text style={styles.brandTitle}>CHATCO.</Text>
+                <View style={styles.brandPill}>
+                  <Text style={styles.brandPillText}>COMMUTER SIGN UP</Text>
+                </View>
+              </View>
             </View>
-            <Text style={styles.brandTitle}>CHATCO</Text>
-          </View>
-        </View>
 
-        {/* Hero Banner (Mirroring Web Left-Pane) */}
-        <View style={styles.heroBanner}>
-          <Text style={styles.heroHeadline}>
-            Start Commuting <Text style={{ color: "#62A0EA" }}>Smarter.</Text>
-          </Text>
-          <Text style={styles.heroSub}>
-            Create your account to access digital payments, real-time tracking, and seamless daily rides.
-          </Text>
+            {/* Hero Section */}
+            <View style={styles.heroSection}>
+              <Mascot pose={step === 3 ? "envelope" : "greeting"} size={96} />
+              <Text style={styles.heroTitle}>Create Account</Text>
+              <Text style={styles.heroSubtitle}>
+                Register to access digital fares, live tracking, and discount tiers.
+              </Text>
 
-          {/* Web-Parity Info Highlights */}
-          <View style={styles.infoHighlightsRow}>
-            <View style={styles.infoChip}>
-              <Ionicons name="time-outline" size={14} color="#62A0EA" style={{ marginRight: 6 }} />
-              <Text style={styles.infoChipText}>24-Hour Verification</Text>
+              {/* Informational Badges */}
+              <View style={styles.infoChipsRow}>
+                <View style={styles.infoChip}>
+                  <Ionicons name="time-outline" size={13} color="#62A0EA" style={{ marginRight: 5 }} />
+                  <Text style={styles.infoChipText}>24-Hour Review</Text>
+                </View>
+                <View style={styles.infoChip}>
+                  <Ionicons name="shield-checkmark-outline" size={13} color="#34D399" style={{ marginRight: 5 }} />
+                  <Text style={styles.infoChipText}>Valid ID = 20% Off</Text>
+                </View>
+              </View>
             </View>
-            <View style={styles.infoChip}>
-              <Ionicons name="card-outline" size={14} color="#34D399" style={{ marginRight: 6 }} />
-              <Text style={styles.infoChipText}>Valid ID = 20% Off</Text>
-            </View>
-          </View>
-        </View>
 
-        {/* Stepper Indicator (1 to 4) */}
-        <View style={styles.stepperContainer}>
-          {[1, 2, 3, 4].map((s) => {
-            const isCompleted = step > s;
-            const isActive = step === s;
-            return (
-              <React.Fragment key={s}>
-                <View
-                  style={[
-                    styles.stepCircle,
-                    isCompleted && styles.stepCircleCompleted,
-                    isActive && styles.stepCircleActive,
-                  ]}
-                >
-                  {isCompleted ? (
-                    <Ionicons name="checkmark" size={16} color="#FFFFFF" />
-                  ) : (
-                    <Text
+            {/* Stepper Progress Bar (1 to 4) */}
+            <View style={styles.stepperContainer}>
+              {[1, 2, 3, 4].map((s) => {
+                const isCompleted = step > s;
+                const isActive = step === s;
+                return (
+                  <React.Fragment key={s}>
+                    <View
                       style={[
-                        styles.stepNumber,
-                        isActive && styles.stepNumberActive,
+                        styles.stepCircle,
+                        isCompleted && styles.stepCircleCompleted,
+                        isActive && styles.stepCircleActive,
                       ]}
                     >
-                      {s}
-                    </Text>
-                  )}
-                </View>
-                {s < 4 && (
-                  <View
-                    style={[
-                      styles.stepLine,
-                      step > s && styles.stepLineCompleted,
-                    ]}
-                  />
-                )}
-              </React.Fragment>
-            );
-          })}
-        </View>
-
-        {/* Dynamic Card Form */}
-        <View style={styles.card}>
-          {/* Step Title & Subtitle */}
-          <View style={styles.stepTitleSection}>
-            <Text style={styles.stepTitle}>{STEP_COPY[step]?.title ?? ""}</Text>
-            <Text style={styles.stepSubtitle}>{STEP_COPY[step]?.subtitle ?? ""}</Text>
-          </View>
-
-          {/* Error Banner */}
-          {errorMessage ? (
-            <View style={styles.errorBanner}>
-              <Ionicons
-                name="alert-circle"
-                size={18}
-                color={commuterColors.danger}
-                style={{ marginRight: 8, marginTop: 2 }}
-              />
-              <Text style={styles.errorBannerText}>{errorMessage}</Text>
-            </View>
-          ) : null}
-
-          {/* ══════════════ STEP 1: PERSONAL INFORMATION ══════════════ */}
-          {step === 1 && (
-            <View style={styles.formSection}>
-              {/* First Name */}
-              <View style={styles.fieldGroup}>
-                <Text style={styles.label}>First Name *</Text>
-                <View
-                  style={[
-                    styles.inputWrapper,
-                    fieldErrors.firstName && styles.inputWrapperError,
-                  ]}
-                >
-                  <Ionicons name="person-outline" size={18} color={commuterColors.textMuted} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Juan"
-                    placeholderTextColor={commuterColors.textMuted}
-                    value={firstName}
-                    onChangeText={(t) => {
-                      setFirstName(t);
-                      clearFieldError("firstName");
-                    }}
-                  />
-                </View>
-                {fieldErrors.firstName && <Text style={styles.errorText}>{fieldErrors.firstName}</Text>}
-              </View>
-
-              {/* Middle Name */}
-              <View style={styles.fieldGroup}>
-                <Text style={styles.label}>Middle Name (Optional)</Text>
-                <View style={styles.inputWrapper}>
-                  <Ionicons name="person-outline" size={18} color={commuterColors.textMuted} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Santos"
-                    placeholderTextColor={commuterColors.textMuted}
-                    value={middleName}
-                    onChangeText={setMiddleName}
-                  />
-                </View>
-              </View>
-
-              {/* Surname & Suffix Row */}
-              <View style={styles.nameRow}>
-                <View style={[styles.fieldGroup, { flex: 2, marginRight: 8 }]}>
-                  <Text style={styles.label}>Surname *</Text>
-                  <View
-                    style={[
-                      styles.inputWrapper,
-                      fieldErrors.surname && styles.inputWrapperError,
-                    ]}
-                  >
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Dela Cruz"
-                      placeholderTextColor={commuterColors.textMuted}
-                      value={surname}
-                      onChangeText={(t) => {
-                        setSurname(t);
-                        clearFieldError("surname");
-                      }}
-                    />
-                  </View>
-                  {fieldErrors.surname && <Text style={styles.errorText}>{fieldErrors.surname}</Text>}
-                </View>
-
-                <View style={[styles.fieldGroup, { flex: 1 }]}>
-                  <Text style={styles.label}>Suffix</Text>
-                  <View style={styles.suffixSelector}>
-                    {SUFFIX_OPTIONS.slice(0, 3).map((sfx) => (
-                      <TouchableOpacity
-                        key={sfx}
-                        onPress={() => setSuffix(sfx)}
-                        style={[
-                          styles.suffixChip,
-                          suffix === sfx && styles.suffixChipActive,
-                        ]}
-                      >
+                      {isCompleted ? (
+                        <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+                      ) : (
                         <Text
                           style={[
-                            styles.suffixChipText,
-                            suffix === sfx && styles.suffixChipTextActive,
+                            styles.stepNumber,
+                            isActive && styles.stepNumberActive,
                           ]}
                         >
-                          {sfx}
+                          {s}
                         </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
+                      )}
+                    </View>
+                    {s < 4 && (
+                      <View
+                        style={[
+                          styles.stepLine,
+                          step > s && styles.stepLineCompleted,
+                        ]}
+                      />
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </View>
+
+            {/* Main Form Surface Card */}
+            <View style={styles.card}>
+              {/* Step Header */}
+              <View style={styles.stepTitleSection}>
+                <Text style={styles.stepTitle}>{STEP_COPY[step]?.title ?? ""}</Text>
+                <Text style={styles.stepSubtitle}>{STEP_COPY[step]?.subtitle ?? ""}</Text>
               </View>
 
-              {/* Birthdate */}
-              <View style={styles.fieldGroup}>
-                <Text style={styles.label}>Birthdate * (YYYY-MM-DD)</Text>
-                <View
-                  style={[
-                    styles.inputWrapper,
-                    fieldErrors.birthdate && styles.inputWrapperError,
-                  ]}
-                >
-                  <Ionicons name="calendar-outline" size={18} color={commuterColors.textMuted} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="2002-05-18"
-                    placeholderTextColor={commuterColors.textMuted}
-                    value={birthdate}
-                    onChangeText={(t) => {
-                      setBirthdate(t);
-                      clearFieldError("birthdate");
-                    }}
-                    maxLength={10}
+              {/* Error Banner */}
+              {errorMessage ? (
+                <View style={styles.errorBanner}>
+                  <Ionicons
+                    name="alert-circle-outline"
+                    size={18}
+                    color={commuterColors.danger}
+                    style={{ marginRight: 8, marginTop: 1 }}
                   />
+                  <Text style={styles.errorBannerText}>{errorMessage}</Text>
                 </View>
-                {fieldErrors.birthdate && <Text style={styles.errorText}>{fieldErrors.birthdate}</Text>}
-              </View>
+              ) : null}
 
-              {/* Gender */}
-              <View style={styles.fieldGroup}>
-                <Text style={styles.label}>Gender *</Text>
-                <View style={styles.optionsRow}>
-                  {(["Male", "Female", "Prefer not to say"] as const).map((g) => (
-                    <TouchableOpacity
-                      key={g}
-                      activeOpacity={0.8}
-                      onPress={() => setGender(g)}
+              {/* ══════════════ STEP 1: PERSONAL INFORMATION ══════════════ */}
+              {step === 1 && (
+                <View style={styles.formSection}>
+                  {/* First Name */}
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.label}>First Name *</Text>
+                    <View
                       style={[
-                        styles.optionPill,
-                        gender === g && styles.optionPillActive,
+                        styles.inputWrapper,
+                        focusedField === "firstName" && styles.inputWrapperFocused,
+                        fieldErrors.firstName && styles.inputWrapperError,
                       ]}
                     >
-                      <Text
-                        style={[
-                          styles.optionPillText,
-                          gender === g && styles.optionPillTextActive,
-                        ]}
-                      >
-                        {g}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
+                      <Ionicons name="person-outline" size={18} color="#94A3B8" style={styles.inputIcon} />
+                      <TextInput
+                        style={styles.input}
+                        value={firstName}
+                        onChangeText={(t) => {
+                          setFirstName(t);
+                          clearFieldError("firstName");
+                        }}
+                        onFocus={() => setFocusedField("firstName")}
+                        onBlur={() => setFocusedField(null)}
+                        autoCapitalize="words"
+                        returnKeyType="next"
+                      />
+                    </View>
+                    {fieldErrors.firstName && <Text style={styles.errorText}>{fieldErrors.firstName}</Text>}
+                  </View>
 
-              {/* Commuter Type Category */}
-              <View style={styles.fieldGroup}>
-                <Text style={styles.label}>Commuter Category *</Text>
-                <View style={styles.categoryGrid}>
-                  {COMMUTER_TYPE_OPTIONS.map((cat) => {
-                    const isSelected = appliedType === cat.value;
-                    return (
-                      <TouchableOpacity
-                        key={cat.value}
-                        activeOpacity={0.8}
-                        onPress={() => setAppliedType(cat.value)}
+                  {/* Middle Name */}
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.label}>Middle Name (Optional)</Text>
+                    <View
+                      style={[
+                        styles.inputWrapper,
+                        focusedField === "middleName" && styles.inputWrapperFocused,
+                      ]}
+                    >
+                      <Ionicons name="person-outline" size={18} color="#94A3B8" style={styles.inputIcon} />
+                      <TextInput
+                        style={styles.input}
+                        value={middleName}
+                        onChangeText={setMiddleName}
+                        onFocus={() => setFocusedField("middleName")}
+                        onBlur={() => setFocusedField(null)}
+                        autoCapitalize="words"
+                        returnKeyType="next"
+                      />
+                    </View>
+                  </View>
+
+                  {/* Surname & Suffix Row */}
+                  <View style={styles.nameRow}>
+                    <View style={[styles.fieldGroup, { flex: 2, marginRight: 8 }]}>
+                      <Text style={styles.label}>Surname *</Text>
+                      <View
                         style={[
-                          styles.categoryCard,
-                          isSelected && styles.categoryCardActive,
+                          styles.inputWrapper,
+                          focusedField === "surname" && styles.inputWrapperFocused,
+                          fieldErrors.surname && styles.inputWrapperError,
                         ]}
                       >
-                        <View style={styles.categoryCardHeader}>
-                          <Text
+                        <TextInput
+                          style={styles.input}
+                          value={surname}
+                          onChangeText={(t) => {
+                            setSurname(t);
+                            clearFieldError("surname");
+                          }}
+                          onFocus={() => setFocusedField("surname")}
+                          onBlur={() => setFocusedField(null)}
+                          autoCapitalize="words"
+                          returnKeyType="next"
+                        />
+                      </View>
+                      {fieldErrors.surname && <Text style={styles.errorText}>{fieldErrors.surname}</Text>}
+                    </View>
+
+                    <View style={[styles.fieldGroup, { flex: 1.2 }]}>
+                      <Text style={styles.label}>Suffix</Text>
+                      <View style={styles.suffixSelector}>
+                        {SUFFIX_OPTIONS.slice(0, 3).map((sfx) => (
+                          <TouchableOpacity
+                            key={sfx}
+                            onPress={() => setSuffix(sfx)}
                             style={[
-                              styles.categoryCardTitle,
-                              isSelected && styles.categoryCardTitleActive,
+                              styles.suffixChip,
+                              suffix === sfx && styles.suffixChipActive,
                             ]}
                           >
-                            {cat.label}
-                          </Text>
-                          {isSelected && (
-                            <Ionicons name="checkmark-circle" size={16} color={commuterColors.primary} />
-                          )}
-                        </View>
-                        <Text style={styles.categoryCardDesc}>{cat.description}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-            </View>
-          )}
-
-          {/* ══════════════ STEP 2: CONTACT & VERIFICATION ══════════════ */}
-          {step === 2 && (
-            <View style={styles.formSection}>
-              {/* Email */}
-              <View style={styles.fieldGroup}>
-                <View style={styles.labelRow}>
-                  <Text style={styles.label}>Email Address *</Text>
-                  {isEmailVerified && (
-                    <View style={styles.verifiedTag}>
-                      <Ionicons name="checkmark-circle" size={12} color="#10B981" />
-                      <Text style={styles.verifiedTagText}>Verified</Text>
+                            <Text
+                              style={[
+                                styles.suffixChipText,
+                                suffix === sfx && styles.suffixChipTextActive,
+                              ]}
+                            >
+                              {sfx}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
                     </View>
-                  )}
-                </View>
-                <View
-                  style={[
-                    styles.inputWrapper,
-                    fieldErrors.email && styles.inputWrapperError,
-                  ]}
-                >
-                  <Ionicons name="mail-outline" size={18} color={commuterColors.textMuted} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="juandelacruz@gmail.com"
-                    placeholderTextColor={commuterColors.textMuted}
-                    value={email}
-                    onChangeText={(t) => {
-                      setEmail(t);
-                      clearFieldError("email");
-                      if (isEmailVerified) setIsEmailVerified(false);
-                    }}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                  />
-                </View>
-                {fieldErrors.email ? (
-                  <Text style={styles.errorText}>{fieldErrors.email}</Text>
-                ) : (
-                  <Text style={styles.helperText}>
-                    We'll email a 6-digit code to verify this address.
-                  </Text>
-                )}
-              </View>
+                  </View>
 
-              {/* Contact Number */}
-              <View style={styles.fieldGroup}>
-                <Text style={styles.label}>Mobile Contact Number *</Text>
-                <View
-                  style={[
-                    styles.inputWrapper,
-                    fieldErrors.contactNumber && styles.inputWrapperError,
-                  ]}
-                >
-                  <Ionicons name="call-outline" size={18} color={commuterColors.textMuted} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="09171234567"
-                    placeholderTextColor={commuterColors.textMuted}
-                    value={contactNumber}
-                    onChangeText={(t) => {
-                      setContactNumber(t);
-                      clearFieldError("contactNumber");
-                    }}
-                    keyboardType="phone-pad"
-                    maxLength={11}
-                  />
-                </View>
-                {fieldErrors.contactNumber && (
-                  <Text style={styles.errorText}>{fieldErrors.contactNumber}</Text>
-                )}
-              </View>
-
-              {/* ID Upload Box (Matching Web Prompt) */}
-              <View style={styles.fieldGroup}>
-                <Text style={styles.label}>{ID_UPLOAD_LABELS[appliedType]}</Text>
-
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={() => setShowIdChoiceModal(true)}
-                  style={[
-                    styles.idUploadBox,
-                    Boolean(idFileName) && styles.idUploadBoxSuccess,
-                    Boolean(fieldErrors.id) && styles.idUploadBoxError,
-                  ]}
-                >
-                  {idFileName ? (
-                    <View style={styles.idUploadSuccessState}>
-                      <Ionicons name="checkmark-circle" size={32} color="#10B981" />
-                      <Text style={styles.idFileNameText} numberOfLines={1}>
-                        {idFileName}
-                      </Text>
-                      <Text style={styles.idTapChangeText}>Tap to replace ID</Text>
+                  {/* Birthdate */}
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.label}>Birthdate * (YYYY-MM-DD)</Text>
+                    <View
+                      style={[
+                        styles.inputWrapper,
+                        focusedField === "birthdate" && styles.inputWrapperFocused,
+                        fieldErrors.birthdate && styles.inputWrapperError,
+                      ]}
+                    >
+                      <Ionicons name="calendar-outline" size={18} color="#94A3B8" style={styles.inputIcon} />
+                      <TextInput
+                        style={styles.input}
+                        value={birthdate}
+                        onChangeText={(t) => {
+                          setBirthdate(t);
+                          clearFieldError("birthdate");
+                        }}
+                        onFocus={() => setFocusedField("birthdate")}
+                        onBlur={() => setFocusedField(null)}
+                        keyboardType="numbers-and-punctuation"
+                        maxLength={10}
+                        returnKeyType="next"
+                      />
                     </View>
-                  ) : (
-                    <View style={styles.idUploadEmptyState}>
-                      <Ionicons name="cloud-upload-outline" size={36} color={commuterColors.primary} />
-                      <Text style={styles.idUploadPrompt}>
-                        Tap to add your valid ID
-                      </Text>
-                      <Text style={styles.idUploadSub}>
-                        Take photo or upload image (JPG, PNG, WebP • max 5MB)
-                      </Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
+                    {fieldErrors.birthdate && <Text style={styles.errorText}>{fieldErrors.birthdate}</Text>}
+                  </View>
 
-                {fieldErrors.id ? (
-                  <Text style={styles.errorText}>{fieldErrors.id}</Text>
-                ) : (
-                  <Text style={styles.helperText}>
-                    Required for identity verification and discount approval.
-                  </Text>
-                )}
-              </View>
-            </View>
-          )}
-
-          {/* ══════════════ STEP 3: CONFIRM YOUR EMAIL ══════════════ */}
-          {step === 3 && (
-            <View style={styles.formSection}>
-              {/* Email Sent Notice Banner */}
-              <View style={styles.otpNoticeBanner}>
-                <Ionicons name="mail" size={20} color={commuterColors.primary} style={{ marginTop: 2 }} />
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <Text style={styles.otpNoticeText}>
-                    Code sent to <Text style={{ fontWeight: "700" }}>{email}</Text>
-                  </Text>
-                  <TouchableOpacity onPress={() => setStep(2)}>
-                    <Text style={styles.otpWrongEmailLink}>
-                      Wrong address? Go back and change it
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* 6-Digit Code Input */}
-              <View style={styles.fieldGroup}>
-                <Text style={styles.label}>6-Digit Verification Code *</Text>
-                <View style={styles.codeInputWrapper}>
-                  <TextInput
-                    style={styles.codeInput}
-                    placeholder="123456"
-                    placeholderTextColor={commuterColors.textMuted}
-                    value={code}
-                    onChangeText={setCode}
-                    keyboardType="number-pad"
-                    maxLength={6}
-                    autoFocus
-                  />
-                </View>
-              </View>
-
-              {/* Resend Ticker */}
-              <View style={styles.resendRow}>
-                <Text style={styles.resendPrompt}>Didn't receive the email? </Text>
-                {resendIn > 0 ? (
-                  <Text style={styles.resendCooldown}>Resend in {resendIn}s</Text>
-                ) : (
-                  <TouchableOpacity onPress={handleRequestCode} disabled={isSendingCode}>
-                    <Text style={styles.resendAction}>
-                      {isSendingCode ? "Sending..." : "Send new code"}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              <Text style={styles.helperText}>
-                Check your spam folder if it hasn't arrived. Code expires in 15 minutes.
-              </Text>
-            </View>
-          )}
-
-          {/* ══════════════ STEP 4: ACCOUNT CREDENTIALS ══════════════ */}
-          {step === 4 && (
-            <View style={styles.formSection}>
-              {/* Username */}
-              <View style={styles.fieldGroup}>
-                <Text style={styles.label}>Username *</Text>
-                <View
-                  style={[
-                    styles.inputWrapper,
-                    fieldErrors.username && styles.inputWrapperError,
-                  ]}
-                >
-                  <Ionicons name="at-outline" size={18} color={commuterColors.textMuted} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="juandelacruz_01"
-                    placeholderTextColor={commuterColors.textMuted}
-                    value={username}
-                    onChangeText={(t) => {
-                      setUsername(t);
-                      clearFieldError("username");
-                    }}
-                    autoCapitalize="none"
-                  />
-                </View>
-                {fieldErrors.username && <Text style={styles.errorText}>{fieldErrors.username}</Text>}
-              </View>
-
-              {/* Password */}
-              <View style={styles.fieldGroup}>
-                <Text style={styles.label}>Password *</Text>
-                <View
-                  style={[
-                    styles.inputWrapper,
-                    fieldErrors.password && styles.inputWrapperError,
-                  ]}
-                >
-                  <Ionicons name="lock-closed-outline" size={18} color={commuterColors.textMuted} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="••••••••"
-                    placeholderTextColor={commuterColors.textMuted}
-                    secureTextEntry={!showPassword}
-                    value={password}
-                    onChangeText={(t) => {
-                      setPassword(t);
-                      clearFieldError("password");
-                    }}
-                    autoCapitalize="none"
-                  />
-                  <TouchableOpacity
-                    onPress={() => setShowPassword(!showPassword)}
-                    style={styles.eyeBtn}
-                  >
-                    <Ionicons
-                      name={showPassword ? "eye-off-outline" : "eye-outline"}
-                      size={20}
-                      color={commuterColors.textMuted}
-                    />
-                  </TouchableOpacity>
-                </View>
-                {fieldErrors.password && <Text style={styles.errorText}>{fieldErrors.password}</Text>}
-
-                {/* Live Password Rules Checklist (1:1 Web Mirror) */}
-                <View style={styles.passwordRulesList}>
-                  {PASSWORD_RULES.map((rule) => {
-                    const isMet = rule.test(password);
-                    return (
-                      <View key={rule.id} style={styles.passwordRuleItem}>
-                        <Ionicons
-                          name={isMet ? "checkmark-circle" : "ellipse-outline"}
-                          size={15}
-                          color={isMet ? "#10B981" : commuterColors.textMuted}
-                          style={{ marginRight: 6 }}
-                        />
-                        <Text
+                  {/* Gender */}
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.label}>Gender *</Text>
+                    <View style={styles.optionsRow}>
+                      {(["Male", "Female", "Prefer not to say"] as const).map((g) => (
+                        <TouchableOpacity
+                          key={g}
+                          activeOpacity={0.8}
+                          onPress={() => setGender(g)}
                           style={[
-                            styles.passwordRuleText,
-                            isMet && styles.passwordRuleTextMet,
+                            styles.optionPill,
+                            gender === g && styles.optionPillActive,
                           ]}
                         >
-                          {rule.label}
-                        </Text>
-                      </View>
-                    );
-                  })}
-                </View>
-              </View>
+                          <Text
+                            style={[
+                              styles.optionPillText,
+                              gender === g && styles.optionPillTextActive,
+                            ]}
+                          >
+                            {g}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
 
-              {/* Confirm Password */}
-              <View style={styles.fieldGroup}>
-                <Text style={styles.label}>Confirm Password *</Text>
-                <View
-                  style={[
-                    styles.inputWrapper,
-                    fieldErrors.passwordConfirmation && styles.inputWrapperError,
-                  ]}
-                >
-                  <Ionicons name="shield-checkmark-outline" size={18} color={commuterColors.textMuted} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="••••••••"
-                    placeholderTextColor={commuterColors.textMuted}
-                    secureTextEntry={!showPassword}
-                    value={passwordConfirmation}
-                    onChangeText={(t) => {
-                      setPasswordConfirmation(t);
-                      clearFieldError("passwordConfirmation");
-                    }}
-                    autoCapitalize="none"
-                  />
+                  {/* Commuter Category */}
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.label}>Commuter Category *</Text>
+                    <View style={styles.categoryGrid}>
+                      {COMMUTER_TYPE_OPTIONS.map((cat) => {
+                        const isSelected = appliedType === cat.value;
+                        return (
+                          <TouchableOpacity
+                            key={cat.value}
+                            activeOpacity={0.8}
+                            onPress={() => setAppliedType(cat.value)}
+                            style={[
+                              styles.categoryCard,
+                              isSelected && styles.categoryCardActive,
+                            ]}
+                          >
+                            <View style={styles.categoryCardHeader}>
+                              <Text
+                                style={[
+                                  styles.categoryCardTitle,
+                                  isSelected && styles.categoryCardTitleActive,
+                                ]}
+                              >
+                                {cat.label}
+                              </Text>
+                              {isSelected && (
+                                <Ionicons name="checkmark-circle" size={18} color="#62A0EA" />
+                              )}
+                            </View>
+                            <Text style={styles.categoryCardDesc}>{cat.description}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
                 </View>
-                {fieldErrors.passwordConfirmation && (
-                  <Text style={styles.errorText}>{fieldErrors.passwordConfirmation}</Text>
+              )}
+
+              {/* ══════════════ STEP 2: CONTACT & VERIFICATION ══════════════ */}
+              {step === 2 && (
+                <View style={styles.formSection}>
+                  {/* Email */}
+                  <View style={styles.fieldGroup}>
+                    <View style={styles.labelRow}>
+                      <Text style={styles.label}>Email Address *</Text>
+                      {isEmailVerified && (
+                        <View style={styles.verifiedTag}>
+                          <Ionicons name="checkmark-circle" size={12} color="#10B981" />
+                          <Text style={styles.verifiedTagText}>Verified</Text>
+                        </View>
+                      )}
+                    </View>
+                    <View
+                      style={[
+                        styles.inputWrapper,
+                        focusedField === "email" && styles.inputWrapperFocused,
+                        fieldErrors.email && styles.inputWrapperError,
+                      ]}
+                    >
+                      <Ionicons name="mail-outline" size={18} color="#94A3B8" style={styles.inputIcon} />
+                      <TextInput
+                        style={styles.input}
+                        value={email}
+                        onChangeText={(t) => {
+                          setEmail(t);
+                          clearFieldError("email");
+                          if (isEmailVerified) setIsEmailVerified(false);
+                        }}
+                        onFocus={() => setFocusedField("email")}
+                        onBlur={() => setFocusedField(null)}
+                        autoCapitalize="none"
+                        keyboardType="email-address"
+                        returnKeyType="next"
+                      />
+                    </View>
+                    {fieldErrors.email ? (
+                      <Text style={styles.errorText}>{fieldErrors.email}</Text>
+                    ) : (
+                      <Text style={styles.helperText}>
+                        We will email a 6-digit code to verify this address.
+                      </Text>
+                    )}
+                  </View>
+
+                  {/* Contact Number */}
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.label}>Mobile Contact Number *</Text>
+                    <View
+                      style={[
+                        styles.inputWrapper,
+                        focusedField === "contactNumber" && styles.inputWrapperFocused,
+                        fieldErrors.contactNumber && styles.inputWrapperError,
+                      ]}
+                    >
+                      <Ionicons name="call-outline" size={18} color="#94A3B8" style={styles.inputIcon} />
+                      <TextInput
+                        style={styles.input}
+                        value={contactNumber}
+                        onChangeText={(t) => {
+                          setContactNumber(t);
+                          clearFieldError("contactNumber");
+                        }}
+                        onFocus={() => setFocusedField("contactNumber")}
+                        onBlur={() => setFocusedField(null)}
+                        keyboardType="phone-pad"
+                        maxLength={11}
+                        returnKeyType="done"
+                      />
+                    </View>
+                    {fieldErrors.contactNumber && (
+                      <Text style={styles.errorText}>{fieldErrors.contactNumber}</Text>
+                    )}
+                  </View>
+
+                  {/* ID Upload Box */}
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.label}>{ID_UPLOAD_LABELS[appliedType]}</Text>
+
+                    <TouchableOpacity
+                      activeOpacity={0.8}
+                      onPress={() => setShowIdChoiceModal(true)}
+                      style={[
+                        styles.idUploadBox,
+                        Boolean(idFileName) && styles.idUploadBoxSuccess,
+                        Boolean(fieldErrors.id) && styles.idUploadBoxError,
+                      ]}
+                    >
+                      {idFileName ? (
+                        <View style={styles.idUploadSuccessState}>
+                          <Ionicons name="checkmark-circle" size={32} color="#10B981" />
+                          <Text style={styles.idFileNameText} numberOfLines={1}>
+                            {idFileName}
+                          </Text>
+                          <Text style={styles.idTapChangeText}>Tap to replace ID</Text>
+                        </View>
+                      ) : (
+                        <View style={styles.idUploadEmptyState}>
+                          <Ionicons name="cloud-upload-outline" size={36} color="#38BDF8" />
+                          <Text style={styles.idUploadPrompt}>
+                            Tap to attach your valid ID
+                          </Text>
+                          <Text style={styles.idUploadSub}>
+                            Take photo or upload image (JPG, PNG, WebP • max 5MB)
+                          </Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+
+                    {fieldErrors.id ? (
+                      <Text style={styles.errorText}>{fieldErrors.id}</Text>
+                    ) : (
+                      <Text style={styles.helperText}>
+                        Required for identity verification and discount approval.
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              )}
+
+              {/* ══════════════ STEP 3: CONFIRM YOUR EMAIL ══════════════ */}
+              {step === 3 && (
+                <View style={styles.formSection}>
+                  {/* Email Sent Notice Banner */}
+                  <View style={styles.otpNoticeBanner}>
+                    <Ionicons name="mail" size={20} color="#38BDF8" style={{ marginTop: 2 }} />
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <Text style={styles.otpNoticeText}>
+                        Code sent to <Text style={{ fontWeight: "700", color: "#FFFFFF" }}>{email}</Text>
+                      </Text>
+                      <TouchableOpacity onPress={() => setStep(2)}>
+                        <Text style={styles.otpWrongEmailLink}>
+                          Wrong address? Go back and change it
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* 6-Digit Code Input */}
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.label}>6-Digit Verification Code *</Text>
+                    <View style={styles.codeInputWrapper}>
+                      <TextInput
+                        style={styles.codeInput}
+                        value={code}
+                        onChangeText={setCode}
+                        keyboardType="number-pad"
+                        maxLength={6}
+                        autoFocus
+                      />
+                    </View>
+                  </View>
+
+                  {/* Resend Ticker */}
+                  <View style={styles.resendRow}>
+                    <Text style={styles.resendPrompt}>Did not receive the email? </Text>
+                    {resendIn > 0 ? (
+                      <Text style={styles.resendCooldown}>Resend in {resendIn}s</Text>
+                    ) : (
+                      <TouchableOpacity onPress={handleRequestCode} disabled={isSendingCode}>
+                        <Text style={styles.resendAction}>
+                          {isSendingCode ? "Sending..." : "Send new code"}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  <Text style={styles.helperText}>
+                    Check your spam folder if it has not arrived. Code expires in 15 minutes.
+                  </Text>
+                </View>
+              )}
+
+              {/* ══════════════ STEP 4: ACCOUNT CREDENTIALS ══════════════ */}
+              {step === 4 && (
+                <View style={styles.formSection}>
+                  {/* Username */}
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.label}>Username *</Text>
+                    <View
+                      style={[
+                        styles.inputWrapper,
+                        focusedField === "username" && styles.inputWrapperFocused,
+                        fieldErrors.username && styles.inputWrapperError,
+                      ]}
+                    >
+                      <Ionicons name="at-outline" size={18} color="#94A3B8" style={styles.inputIcon} />
+                      <TextInput
+                        style={styles.input}
+                        value={username}
+                        onChangeText={(t) => {
+                          setUsername(t);
+                          clearFieldError("username");
+                        }}
+                        onFocus={() => setFocusedField("username")}
+                        onBlur={() => setFocusedField(null)}
+                        autoCapitalize="none"
+                        returnKeyType="next"
+                      />
+                    </View>
+                    {fieldErrors.username && <Text style={styles.errorText}>{fieldErrors.username}</Text>}
+                  </View>
+
+                  {/* Password */}
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.label}>Password *</Text>
+                    <View
+                      style={[
+                        styles.inputWrapper,
+                        focusedField === "password" && styles.inputWrapperFocused,
+                        fieldErrors.password && styles.inputWrapperError,
+                      ]}
+                    >
+                      <Ionicons name="lock-closed-outline" size={18} color="#94A3B8" style={styles.inputIcon} />
+                      <TextInput
+                        style={[styles.input, { paddingRight: 40 }]}
+                        secureTextEntry={!showPassword}
+                        value={password}
+                        onChangeText={(t) => {
+                          setPassword(t);
+                          clearFieldError("password");
+                        }}
+                        onFocus={() => setFocusedField("password")}
+                        onBlur={() => setFocusedField(null)}
+                        autoCapitalize="none"
+                        returnKeyType="next"
+                      />
+                      <TouchableOpacity
+                        onPress={() => setShowPassword(!showPassword)}
+                        style={styles.eyeBtn}
+                        accessibilityRole="button"
+                        accessibilityLabel={showPassword ? "Hide password" : "Show password"}
+                      >
+                        <Ionicons
+                          name={showPassword ? "eye-off-outline" : "eye-outline"}
+                          size={20}
+                          color="#94A3B8"
+                        />
+                      </TouchableOpacity>
+                    </View>
+                    {fieldErrors.password && <Text style={styles.errorText}>{fieldErrors.password}</Text>}
+
+                    {/* Live Password Rules Checklist */}
+                    <View style={styles.passwordRulesList}>
+                      {PASSWORD_RULES.map((rule) => {
+                        const isMet = rule.test(password);
+                        return (
+                          <View key={rule.id} style={styles.passwordRuleItem}>
+                            <Ionicons
+                              name={isMet ? "checkmark-circle" : "ellipse-outline"}
+                              size={15}
+                              color={isMet ? "#10B981" : "#64748B"}
+                              style={{ marginRight: 6 }}
+                            />
+                            <Text
+                              style={[
+                                styles.passwordRuleText,
+                                isMet && styles.passwordRuleTextMet,
+                              ]}
+                            >
+                              {rule.label}
+                            </Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </View>
+
+                  {/* Confirm Password */}
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.label}>Confirm Password *</Text>
+                    <View
+                      style={[
+                        styles.inputWrapper,
+                        focusedField === "passwordConfirmation" && styles.inputWrapperFocused,
+                        fieldErrors.passwordConfirmation && styles.inputWrapperError,
+                      ]}
+                    >
+                      <Ionicons name="shield-checkmark-outline" size={18} color="#94A3B8" style={styles.inputIcon} />
+                      <TextInput
+                        style={[styles.input, { paddingRight: 40 }]}
+                        secureTextEntry={!showConfirmPassword}
+                        value={passwordConfirmation}
+                        onChangeText={(t) => {
+                          setPasswordConfirmation(t);
+                          clearFieldError("passwordConfirmation");
+                        }}
+                        onFocus={() => setFocusedField("passwordConfirmation")}
+                        onBlur={() => setFocusedField(null)}
+                        autoCapitalize="none"
+                        returnKeyType="done"
+                        onSubmitEditing={handleSubmitRegistration}
+                      />
+                      <TouchableOpacity
+                        onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                        style={styles.eyeBtn}
+                        accessibilityRole="button"
+                        accessibilityLabel={showConfirmPassword ? "Hide password" : "Show password"}
+                      >
+                        <Ionicons
+                          name={showConfirmPassword ? "eye-off-outline" : "eye-outline"}
+                          size={20}
+                          color="#94A3B8"
+                        />
+                      </TouchableOpacity>
+                    </View>
+                    {fieldErrors.passwordConfirmation && (
+                      <Text style={styles.errorText}>{fieldErrors.passwordConfirmation}</Text>
+                    )}
+                  </View>
+                </View>
+              )}
+
+              {step === 4 && <RegistrationConsent value={agreement} onChange={setAgreement} disabled={loading} />}
+              {/* ══════════════ ACTION CONTROLS ══════════════ */}
+              <View style={styles.actionsContainer}>
+                {step === 1 && (
+                  <TouchableOpacity
+                    style={styles.primaryButton}
+                    onPress={() => {
+                      if (validateCurrentStep(1)) {
+                        setErrorMessage(null);
+                        setStep(2);
+                      }
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.primaryButtonText}>Next Step</Text>
+                  </TouchableOpacity>
+                )}
+
+                {step === 2 && (
+                  <TouchableOpacity
+                    style={[styles.primaryButton, isSendingCode && styles.primaryButtonDisabled]}
+                    onPress={handleRequestCode}
+                    disabled={isSendingCode}
+                    activeOpacity={0.85}
+                  >
+                    {isSendingCode ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.primaryButtonText}>
+                        {isEmailVerified ? "Next Step" : "Send Verification Code"}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+
+                {step === 3 && (
+                  <TouchableOpacity
+                    style={[styles.primaryButton, isVerifyingCode && styles.primaryButtonDisabled]}
+                    onPress={handleVerifyCode}
+                    disabled={isVerifyingCode}
+                    activeOpacity={0.85}
+                  >
+                    {isVerifyingCode ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.primaryButtonText}>Verify & Continue</Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+
+                {step === 4 && (
+                  <TouchableOpacity
+                    style={[styles.primaryButton, loading && styles.primaryButtonDisabled]}
+                    onPress={handleSubmitRegistration}
+                    disabled={loading}
+                    activeOpacity={0.85}
+                  >
+                    {loading ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.primaryButtonText}>Create Account</Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+
+                {/* Back to previous step link */}
+                {step > 1 && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      setErrorMessage(null);
+                      setStep(step === 4 ? 2 : step - 1);
+                    }}
+                    style={styles.prevStepBtn}
+                    disabled={loading || isSendingCode || isVerifyingCode}
+                  >
+                    <Ionicons name="arrow-back" size={15} color="#94A3B8" style={{ marginRight: 4 }} />
+                    <Text style={styles.prevStepText}>Previous Step</Text>
+                  </TouchableOpacity>
                 )}
               </View>
+
+              {/* Already have an account row */}
+              <View style={styles.loginPromptRow}>
+                <Text style={styles.loginPromptText}>Already have an account? </Text>
+                <TouchableOpacity onPress={onGoToLogin} disabled={loading}>
+                  <Text style={styles.loginPromptLink}>Sign in</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          )}
-
-          {/* ══════════════ ACTION CONTROLS ══════════════ */}
-          <View style={styles.actionsContainer}>
-            {step === 1 && (
-              <CommuterButton
-                title="Next Step"
-                onPress={() => {
-                  if (validateCurrentStep(1)) {
-                    setErrorMessage(null);
-                    setStep(2);
-                  }
-                }}
-                fullWidth
-                style={styles.primaryActionBtn}
-              />
-            )}
-
-            {step === 2 && (
-              <CommuterButton
-                title={
-                  isSendingCode
-                    ? "Sending Verification Code..."
-                    : isEmailVerified
-                    ? "Next Step"
-                    : "Send Code"
-                }
-                onPress={handleRequestCode}
-                loading={isSendingCode}
-                fullWidth
-                style={styles.primaryActionBtn}
-              />
-            )}
-
-            {step === 3 && (
-              <CommuterButton
-                title={isVerifyingCode ? "Verifying..." : "Verify & Continue"}
-                onPress={handleVerifyCode}
-                loading={isVerifyingCode}
-                fullWidth
-                style={styles.primaryActionBtn}
-              />
-            )}
-
-            {step === 4 && (
-              <CommuterButton
-                title={loading ? "Submitting Application..." : "Create Account"}
-                onPress={handleSubmitRegistration}
-                loading={loading}
-                fullWidth
-                style={styles.primaryActionBtn}
-              />
-            )}
-
-            {/* Back to previous step link */}
-            {step > 1 && (
-              <TouchableOpacity
-                onPress={() => {
-                  setErrorMessage(null);
-                  setStep(step === 4 ? 2 : step - 1);
-                }}
-                style={styles.prevStepBtn}
-                disabled={loading || isSendingCode || isVerifyingCode}
-              >
-                <Ionicons name="arrow-back" size={16} color={commuterColors.textSecondary} style={{ marginRight: 4 }} />
-                <Text style={styles.prevStepText}>Previous Step</Text>
-              </TouchableOpacity>
-            )}
           </View>
+        </ScrollView>
 
-          {/* Already have an account */}
-          <View style={styles.loginPromptRow}>
-            <Text style={styles.loginPromptText}>Already have an account? </Text>
-            <TouchableOpacity onPress={onGoToLogin}>
-              <Text style={styles.loginPromptLink}>Sign in instead</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </ScrollView>
-
-      {/* ID Upload / Capture Choice Modal */}
-      <Modal
-        visible={showIdChoiceModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowIdChoiceModal(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.choiceModalCard}>
-            <Text style={styles.choiceModalTitle}>Add Valid ID Document</Text>
-            <Text style={styles.choiceModalSub}>
-              Choose how you want to submit your identification document:
-            </Text>
-
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => handleSelectIdOption("CAMERA")}
-              style={styles.choiceOptionBtn}
-            >
-              <Ionicons name="camera" size={20} color="#FFFFFF" style={{ marginRight: 10 }} />
-              <Text style={styles.choiceOptionBtnText}>Take a Picture of Your ID</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => handleSelectIdOption("FILE")}
-              style={[styles.choiceOptionBtn, styles.choiceOptionBtnSecondary]}
-            >
-              <Ionicons name="image-outline" size={20} color={commuterColors.primary} style={{ marginRight: 10 }} />
-              <Text style={[styles.choiceOptionBtnText, { color: commuterColors.primary }]}>
-                Upload / Choose Image File
+        {/* ID Upload / Capture Choice Modal */}
+        <Modal
+          visible={showIdChoiceModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowIdChoiceModal(false)}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={styles.choiceModalCard}>
+              <Text style={styles.choiceModalTitle}>Add Valid ID Document</Text>
+              <Text style={styles.choiceModalSub}>
+                Choose how you want to submit your identification document:
               </Text>
-            </TouchableOpacity>
 
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => handleSelectIdOption("SAMPLE")}
-              style={[styles.choiceOptionBtn, styles.choiceOptionBtnGhost]}
-            >
-              <Ionicons name="document-text-outline" size={18} color={commuterColors.textSecondary} style={{ marginRight: 8 }} />
-              <Text style={styles.choiceOptionGhostText}>Use Demo / Testing ID</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => handleSelectIdOption("CAMERA")}
+                style={styles.choiceOptionBtn}
+              >
+                <Ionicons name="camera" size={20} color="#FFFFFF" style={{ marginRight: 10 }} />
+                <Text style={styles.choiceOptionBtnText}>Take a Picture of Your ID</Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              onPress={() => setShowIdChoiceModal(false)}
-              style={styles.modalCancelBtn}
-            >
-              <Text style={styles.modalCancelText}>Cancel</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => handleSelectIdOption("FILE")}
+                style={[styles.choiceOptionBtn, styles.choiceOptionBtnSecondary]}
+              >
+                <Ionicons name="image-outline" size={20} color="#62A0EA" style={{ marginRight: 10 }} />
+                <Text style={[styles.choiceOptionBtnText, { color: "#62A0EA" }]}>
+                  Upload / Choose Image File
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => handleSelectIdOption("SAMPLE")}
+                style={[styles.choiceOptionBtn, styles.choiceOptionBtnGhost]}
+              >
+                <Ionicons name="document-text-outline" size={18} color="#94A3B8" style={{ marginRight: 8 }} />
+                <Text style={styles.choiceOptionGhostText}>Use Demo / Testing ID</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => setShowIdChoiceModal(false)}
+                style={styles.modalCancelBtn}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      </Modal>
-    </KeyboardAvoidingView>
+        </Modal>
+      </KeyboardAvoidingView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  outerContainer: {
     flex: 1,
     backgroundColor: "#050F1A",
+  },
+  container: {
+    flex: 1,
+    backgroundColor: "transparent",
   },
   scrollContent: {
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 40,
+    flexGrow: 1,
   },
-  header: {
+  scrollContentTablet: {
+    alignItems: "center",
+  },
+  formWrapper: {
+    width: "100%",
+    maxWidth: 440,
+    alignSelf: "center",
+  },
+  navBar: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 16,
+    marginBottom: 20,
   },
   backButton: {
-    width: 38,
-    height: 38,
+    width: 40,
+    height: 40,
     borderRadius: 12,
     backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1243,40 +1354,44 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  logoBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    backgroundColor: commuterColors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   brandTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: "900",
     color: "#FFFFFF",
-    letterSpacing: 1,
+    letterSpacing: 1.2,
+  },
+  brandPill: {
+    backgroundColor: "rgba(26, 95, 180, 0.25)",
+    borderWidth: 1,
+    borderColor: "rgba(56, 189, 248, 0.3)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  brandPillText: {
+    color: "#62A0EA",
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.8,
   },
 
-  // Hero Banner (Mirroring Web Left-Pane)
-  heroBanner: {
+  // Hero Section
+  heroSection: {
     marginBottom: 20,
-    paddingHorizontal: 4,
   },
-  heroHeadline: {
+  heroTitle: {
     fontSize: 26,
     fontWeight: "900",
     color: "#FFFFFF",
     letterSpacing: -0.5,
-    lineHeight: 32,
   },
-  heroSub: {
+  heroSubtitle: {
     fontSize: 13,
-    color: "rgba(255, 255, 255, 0.6)",
-    marginTop: 6,
-    lineHeight: 18,
+    color: "#94A3B8",
+    marginTop: 4,
+    lineHeight: 19,
   },
-  infoHighlightsRow: {
+  infoChipsRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
@@ -1287,14 +1402,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(255, 255, 255, 0.06)",
     paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
   },
   infoChipText: {
     fontSize: 11,
-    color: "rgba(255, 255, 255, 0.85)",
+    color: "#E2E8F0",
     fontWeight: "600",
   },
 
@@ -1304,28 +1419,36 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 20,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
   },
   stepCircle: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.15)",
     alignItems: "center",
     justifyContent: "center",
   },
   stepCircleActive: {
-    backgroundColor: commuterColors.primary,
-    borderWidth: 3,
-    borderColor: "rgba(98, 160, 234, 0.35)",
+    backgroundColor: "#1A5FB4",
+    borderColor: "#38BDF8",
+    borderWidth: 2,
+    shadowColor: "#38BDF8",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 6,
+    elevation: 4,
   },
   stepCircleCompleted: {
-    backgroundColor: commuterColors.primary,
+    backgroundColor: "#1A5FB4",
+    borderColor: "#1A5FB4",
   },
   stepNumber: {
     fontSize: 12,
     fontWeight: "700",
-    color: "rgba(255, 255, 255, 0.5)",
+    color: "#94A3B8",
   },
   stepNumberActive: {
     color: "#FFFFFF",
@@ -1337,17 +1460,19 @@ const styles = StyleSheet.create({
     marginHorizontal: 6,
   },
   stepLineCompleted: {
-    backgroundColor: commuterColors.primary,
+    backgroundColor: "#1A5FB4",
   },
 
-  // Main Card
+  // Main Card Surface
   card: {
-    backgroundColor: commuterColors.surface,
+    backgroundColor: "#071A2E",
     borderRadius: 20,
     padding: 22,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.3,
     shadowRadius: 16,
     elevation: 6,
   },
@@ -1355,32 +1480,32 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   stepTitle: {
-    fontSize: 22,
-    fontWeight: "900",
-    color: commuterColors.navyDeep,
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#FFFFFF",
     letterSpacing: -0.3,
   },
   stepSubtitle: {
     fontSize: 13,
-    color: commuterColors.textSecondary,
-    marginTop: 2,
+    color: "#94A3B8",
+    marginTop: 3,
   },
 
   // Error Banner
   errorBanner: {
     flexDirection: "row",
     alignItems: "flex-start",
-    backgroundColor: "#FEE2E2",
+    backgroundColor: "rgba(239, 68, 68, 0.12)",
     borderRadius: 12,
     padding: 12,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: "#FCA5A5",
+    borderColor: "rgba(239, 68, 68, 0.3)",
   },
   errorBannerText: {
     flex: 1,
-    fontSize: 13,
-    color: "#B91C1C",
+    fontSize: 12,
+    color: "#FCA5A5",
     fontWeight: "600",
     lineHeight: 18,
   },
@@ -1399,61 +1524,71 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   label: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "700",
-    color: commuterColors.navyDeep,
+    color: "#94A3B8",
     textTransform: "uppercase",
-    letterSpacing: 0.4,
+    letterSpacing: 0.5,
     marginBottom: 6,
   },
   verifiedTag: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "#ECFDF5",
+    backgroundColor: "rgba(16, 185, 129, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(16, 185, 129, 0.3)",
     paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: 8,
+    borderRadius: 6,
   },
   verifiedTagText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "700",
-    color: "#059669",
+    color: "#34D399",
   },
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1.5,
-    borderColor: commuterColors.border,
+    borderColor: "rgba(255, 255, 255, 0.12)",
     borderRadius: 12,
-    backgroundColor: commuterColors.surfaceSecondary,
+    backgroundColor: "#0B1E34",
     paddingHorizontal: 12,
     height: 48,
   },
+  inputWrapperFocused: {
+    borderColor: "#1A5FB4",
+  },
   inputWrapperError: {
     borderColor: "#EF4444",
-    backgroundColor: "#FEF2F2",
   },
   inputIcon: {
     marginRight: 8,
   },
   input: {
     flex: 1,
-    fontSize: 14,
-    color: commuterColors.textPrimary,
+    height: "100%",
+    fontSize: 15,
+    color: "#FFFFFF",
   },
   eyeBtn: {
-    padding: 6,
+    position: "absolute",
+    right: 12,
+    height: 48,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 4,
   },
   errorText: {
     fontSize: 12,
-    color: "#DC2626",
-    fontWeight: "500",
+    color: "#FCA5A5",
+    fontWeight: "600",
     marginTop: 4,
   },
   helperText: {
     fontSize: 11,
-    color: commuterColors.textMuted,
+    color: "#64748B",
     marginTop: 4,
   },
 
@@ -1464,27 +1599,26 @@ const styles = StyleSheet.create({
   },
   suffixSelector: {
     flexDirection: "row",
-    flexWrap: "wrap",
     gap: 4,
     height: 48,
     alignItems: "center",
   },
   suffixChip: {
-    paddingHorizontal: 7,
-    paddingVertical: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: commuterColors.border,
-    backgroundColor: commuterColors.surfaceSecondary,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    backgroundColor: "#0B1E34",
   },
   suffixChipActive: {
-    backgroundColor: commuterColors.primary,
-    borderColor: commuterColors.primary,
+    backgroundColor: "#1A5FB4",
+    borderColor: "#1A5FB4",
   },
   suffixChipText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: "700",
-    color: commuterColors.textSecondary,
+    color: "#94A3B8",
   },
   suffixChipTextActive: {
     color: "#FFFFFF",
@@ -1500,22 +1634,22 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: commuterColors.border,
-    backgroundColor: commuterColors.surfaceSecondary,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    backgroundColor: "#0B1E34",
     alignItems: "center",
     justifyContent: "center",
   },
   optionPillActive: {
-    borderColor: commuterColors.primary,
-    backgroundColor: "rgba(26, 95, 180, 0.08)",
+    borderColor: "#1A5FB4",
+    backgroundColor: "rgba(26, 95, 180, 0.2)",
   },
   optionPillText: {
     fontSize: 12,
     fontWeight: "600",
-    color: commuterColors.textSecondary,
+    color: "#94A3B8",
   },
   optionPillTextActive: {
-    color: commuterColors.primary,
+    color: "#FFFFFF",
     fontWeight: "800",
   },
 
@@ -1527,12 +1661,12 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: commuterColors.border,
-    backgroundColor: commuterColors.surfaceSecondary,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    backgroundColor: "#0B1E34",
   },
   categoryCardActive: {
-    borderColor: commuterColors.primary,
-    backgroundColor: "rgba(26, 95, 180, 0.08)",
+    borderColor: "#1A5FB4",
+    backgroundColor: "rgba(26, 95, 180, 0.2)",
   },
   categoryCardHeader: {
     flexDirection: "row",
@@ -1542,37 +1676,37 @@ const styles = StyleSheet.create({
   categoryCardTitle: {
     fontSize: 14,
     fontWeight: "700",
-    color: commuterColors.textPrimary,
+    color: "#FFFFFF",
   },
   categoryCardTitleActive: {
-    color: commuterColors.primary,
+    color: "#62A0EA",
   },
   categoryCardDesc: {
     fontSize: 11,
-    color: commuterColors.textSecondary,
+    color: "#94A3B8",
     marginTop: 2,
   },
 
   // ID Upload Box
   idUploadBox: {
-    height: 140,
+    height: 135,
     borderRadius: 16,
     borderWidth: 2,
     borderStyle: "dashed",
-    borderColor: "rgba(26, 95, 180, 0.35)",
-    backgroundColor: "#F8FAFC",
+    borderColor: "rgba(56, 189, 248, 0.35)",
+    backgroundColor: "#0B1E34",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 16,
   },
   idUploadBoxSuccess: {
     borderColor: "#10B981",
-    backgroundColor: "#F0FDF4",
+    backgroundColor: "rgba(16, 185, 129, 0.1)",
     borderStyle: "solid",
   },
   idUploadBoxError: {
     borderColor: "#EF4444",
-    backgroundColor: "#FEF2F2",
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
   },
   idUploadEmptyState: {
     alignItems: "center",
@@ -1581,11 +1715,11 @@ const styles = StyleSheet.create({
   idUploadPrompt: {
     fontSize: 14,
     fontWeight: "700",
-    color: commuterColors.navyDeep,
+    color: "#FFFFFF",
   },
   idUploadSub: {
     fontSize: 11,
-    color: commuterColors.textMuted,
+    color: "#94A3B8",
     textAlign: "center",
   },
   idUploadSuccessState: {
@@ -1595,12 +1729,12 @@ const styles = StyleSheet.create({
   idFileNameText: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#065F46",
+    color: "#34D399",
     maxWidth: 240,
   },
   idTapChangeText: {
     fontSize: 11,
-    color: "#059669",
+    color: "#6EE7B7",
     fontWeight: "600",
   },
 
@@ -1608,36 +1742,35 @@ const styles = StyleSheet.create({
   otpNoticeBanner: {
     flexDirection: "row",
     alignItems: "flex-start",
-    backgroundColor: "#EFF6FF",
+    backgroundColor: "rgba(26, 95, 180, 0.15)",
     borderRadius: 12,
     padding: 12,
     borderWidth: 1,
-    borderColor: "#BFDBFE",
+    borderColor: "rgba(56, 189, 248, 0.25)",
   },
   otpNoticeText: {
     fontSize: 13,
-    color: commuterColors.navyDeep,
+    color: "#E2E8F0",
   },
   otpWrongEmailLink: {
     fontSize: 11,
     fontWeight: "700",
-    color: commuterColors.primary,
+    color: "#62A0EA",
     marginTop: 3,
-    textDecorationLine: "underline",
   },
   codeInputWrapper: {
     borderWidth: 2,
-    borderColor: commuterColors.primary,
+    borderColor: "#1A5FB4",
     borderRadius: 12,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#0B1E34",
     height: 54,
     justifyContent: "center",
     alignItems: "center",
   },
   codeInput: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: "900",
-    color: commuterColors.navyDeep,
+    color: "#FFFFFF",
     letterSpacing: 10,
     textAlign: "center",
     width: "100%",
@@ -1650,17 +1783,17 @@ const styles = StyleSheet.create({
   },
   resendPrompt: {
     fontSize: 12,
-    color: commuterColors.textSecondary,
+    color: "#94A3B8",
   },
   resendCooldown: {
     fontSize: 12,
-    color: commuterColors.textMuted,
+    color: "#64748B",
     fontWeight: "600",
   },
   resendAction: {
     fontSize: 12,
     fontWeight: "700",
-    color: commuterColors.primary,
+    color: "#62A0EA",
   },
 
   // Step 4 Password Rules Checklist
@@ -1674,10 +1807,10 @@ const styles = StyleSheet.create({
   },
   passwordRuleText: {
     fontSize: 12,
-    color: commuterColors.textMuted,
+    color: "#94A3B8",
   },
   passwordRuleTextMet: {
-    color: "#059669",
+    color: "#34D399",
     fontWeight: "600",
   },
 
@@ -1687,8 +1820,28 @@ const styles = StyleSheet.create({
     gap: 10,
     alignItems: "center",
   },
-  primaryActionBtn: {
-    marginTop: 4,
+  primaryButton: {
+    width: "100%",
+    height: 48,
+    backgroundColor: "#1A5FB4",
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#1A5FB4",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  primaryButtonDisabled: {
+    opacity: 0.5,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  primaryButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
   },
   prevStepBtn: {
     flexDirection: "row",
@@ -1699,120 +1852,106 @@ const styles = StyleSheet.create({
   prevStepText: {
     fontSize: 13,
     fontWeight: "600",
-    color: commuterColors.textSecondary,
+    color: "#94A3B8",
   },
   loginPromptRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 16,
+    marginTop: 18,
   },
   loginPromptText: {
     fontSize: 13,
-    color: commuterColors.textSecondary,
+    color: "#94A3B8",
   },
   loginPromptLink: {
     fontSize: 13,
     fontWeight: "700",
-    color: commuterColors.primary,
+    color: "#62A0EA",
   },
 
   // Success Screen
   successContainer: {
-    flex: 1,
-    backgroundColor: "#050F1A",
+    flexGrow: 1,
     alignItems: "center",
     justifyContent: "center",
     padding: 24,
   },
   successCard: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#071A2E",
     borderRadius: 24,
     padding: 28,
     alignItems: "center",
     width: "100%",
     maxWidth: 400,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.35,
     shadowRadius: 20,
     elevation: 8,
   },
   successIconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "#FEF3C7",
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: "rgba(245, 158, 11, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(245, 158, 11, 0.3)",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 20,
   },
   successTitle: {
-    fontSize: 24,
-    fontWeight: "900",
-    color: commuterColors.navyDeep,
-    letterSpacing: -0.5,
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    letterSpacing: -0.3,
     marginBottom: 10,
     textAlign: "center",
   },
   successBody: {
     fontSize: 14,
-    color: commuterColors.textSecondary,
+    color: "#94A3B8",
     textAlign: "center",
     lineHeight: 20,
     marginBottom: 12,
   },
   successSubtext: {
     fontSize: 12,
-    color: commuterColors.textMuted,
+    color: "#64748B",
     textAlign: "center",
     lineHeight: 18,
     marginBottom: 24,
   },
-  backToLoginBtn: {
-    width: "100%",
-    height: 50,
-    borderRadius: 14,
-    backgroundColor: commuterColors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: commuterColors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  backToLoginBtnText: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "800",
-    letterSpacing: 0.4,
-  },
 
-  // Modal Backdrop & Choices
+  // Choice Modal
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.65)",
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
     alignItems: "center",
     justifyContent: "center",
     padding: 24,
   },
   choiceModalCard: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#071A2E",
     borderRadius: 20,
     padding: 24,
     width: "100%",
     maxWidth: 380,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
     gap: 12,
   },
   choiceModalTitle: {
     fontSize: 18,
     fontWeight: "800",
-    color: commuterColors.navyDeep,
+    color: "#FFFFFF",
   },
   choiceModalSub: {
     fontSize: 13,
-    color: commuterColors.textSecondary,
+    color: "#94A3B8",
     marginBottom: 4,
     lineHeight: 18,
   },
@@ -1822,16 +1961,18 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     height: 48,
     borderRadius: 12,
-    backgroundColor: commuterColors.primary,
+    backgroundColor: "#1A5FB4",
     paddingHorizontal: 16,
   },
   choiceOptionBtnSecondary: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#0B1E34",
     borderWidth: 1.5,
-    borderColor: "rgba(26, 95, 180, 0.35)",
+    borderColor: "rgba(98, 160, 234, 0.35)",
   },
   choiceOptionBtnGhost: {
-    backgroundColor: "#F1F5F9",
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
   },
   choiceOptionBtnText: {
     color: "#FFFFFF",
@@ -1839,7 +1980,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   choiceOptionGhostText: {
-    color: commuterColors.textSecondary,
+    color: "#94A3B8",
     fontSize: 13,
     fontWeight: "600",
   },
@@ -1850,7 +1991,7 @@ const styles = StyleSheet.create({
   },
   modalCancelText: {
     fontSize: 13,
-    color: commuterColors.textMuted,
+    color: "#64748B",
     fontWeight: "600",
   },
 });

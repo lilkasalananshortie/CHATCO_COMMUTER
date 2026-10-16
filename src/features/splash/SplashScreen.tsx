@@ -9,7 +9,6 @@ import {
   Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { commuterColors } from "../../core/theme/colors";
 
 interface SplashScreenProps {
   onFinish: () => void;
@@ -20,91 +19,167 @@ const { width } = Dimensions.get("window");
 
 export const SplashScreen: React.FC<SplashScreenProps> = ({
   onFinish,
-  minDurationMs = 2200,
+  minDurationMs = 2300,
 }) => {
-  // Animation values
-  const logoScale = useRef(new Animated.Value(0.7)).current;
+  // Entrance & exit values
+  const logoScale = useRef(new Animated.Value(0.72)).current;
   const logoOpacity = useRef(new Animated.Value(0)).current;
   const textOpacity = useRef(new Animated.Value(0)).current;
-  const textTranslateY = useRef(new Animated.Value(18)).current;
-  const routeProgress = useRef(new Animated.Value(0)).current;
-  const pulseRing1 = useRef(new Animated.Value(0.8)).current;
-  const pulseOpacity1 = useRef(new Animated.Value(0.8)).current;
-  const jeepneyHover = useRef(new Animated.Value(0)).current;
+  const textTranslateY = useRef(new Animated.Value(20)).current;
   const exitOpacity = useRef(new Animated.Value(1)).current;
+  const exitScale = useRef(new Animated.Value(1)).current;
 
+  // Living ambient animations
+  const jeepneyHover = useRef(new Animated.Value(0)).current;
+  const pulseRing1 = useRef(new Animated.Value(0.85)).current;
+  const pulseOpacity1 = useRef(new Animated.Value(0.75)).current;
+  const pulseRing2 = useRef(new Animated.Value(0.85)).current;
+  const pulseOpacity2 = useRef(new Animated.Value(0.55)).current;
+  const antennaPulse = useRef(new Animated.Value(0.5)).current;
+  const routeProgress = useRef(new Animated.Value(0)).current;
+
+  // Status ticker transitions
   const [statusMessage, setStatusMessage] = useState("Connecting to Bulacan transit network…");
+  const statusOpacity = useRef(new Animated.Value(1)).current;
+  const statusTranslateY = useRef(new Animated.Value(0)).current;
+
+  const triggerStatusTransition = (newMessage: string) => {
+    Animated.parallel([
+      Animated.timing(statusOpacity, {
+        toValue: 0,
+        duration: 120,
+        useNativeDriver: true,
+      }),
+      Animated.timing(statusTranslateY, {
+        toValue: -6,
+        duration: 120,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setStatusMessage(newMessage);
+      statusTranslateY.setValue(8);
+      Animated.parallel([
+        Animated.timing(statusOpacity, {
+          toValue: 1,
+          duration: 220,
+          useNativeDriver: true,
+        }),
+        Animated.spring(statusTranslateY, {
+          toValue: 0,
+          friction: 6,
+          tension: 60,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    });
+  };
 
   useEffect(() => {
-    // 1. Entrance animation sequence
+    // 1. Kinetic entrance sequence
     Animated.parallel([
       Animated.timing(logoOpacity, {
         toValue: 1,
-        duration: 600,
+        duration: 500,
         useNativeDriver: true,
       }),
       Animated.spring(logoScale, {
         toValue: 1,
-        friction: 6,
-        tension: 40,
+        friction: 5,
+        tension: 45,
         useNativeDriver: true,
       }),
       Animated.timing(textOpacity, {
         toValue: 1,
-        duration: 700,
-        delay: 300,
+        duration: 650,
+        delay: 260,
         useNativeDriver: true,
       }),
       Animated.timing(textTranslateY, {
         toValue: 0,
-        duration: 700,
-        delay: 300,
+        duration: 650,
+        delay: 260,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
     ]).start();
 
-    // 2. Pulse ring loop
+    // 2. Dual-Layer Radial Pulse Waves (Staggered Shockwaves)
     Animated.loop(
       Animated.parallel([
         Animated.timing(pulseRing1, {
-          toValue: 1.8,
-          duration: 1800,
-          easing: Easing.out(Easing.ease),
+          toValue: 2.1,
+          duration: 1900,
+          easing: Easing.out(Easing.quad),
           useNativeDriver: true,
         }),
         Animated.timing(pulseOpacity1, {
           toValue: 0,
-          duration: 1800,
+          duration: 1900,
           useNativeDriver: true,
         }),
       ])
     ).start();
 
-    // 3. Subtle jeepney suspension hover loop
+    const p2Timeout = setTimeout(() => {
+      Animated.loop(
+        Animated.parallel([
+          Animated.timing(pulseRing2, {
+            toValue: 2.3,
+            duration: 1900,
+            easing: Easing.out(Easing.quad),
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseOpacity2, {
+            toValue: 0,
+            duration: 1900,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    }, 600);
+
+    // 3. Modern Jeepney Chassis Suspension Breathing (Idling Engine)
     Animated.loop(
       Animated.sequence([
         Animated.timing(jeepneyHover, {
-          toValue: -4,
-          duration: 900,
+          toValue: -5,
+          duration: 950,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
         }),
         Animated.timing(jeepneyHover, {
-          toValue: 2,
-          duration: 900,
+          toValue: 2.5,
+          duration: 950,
           easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
         }),
       ])
     ).start();
 
-    // 4. Moving transit blip along the route line
+    // 4. GPS Antenna Beacon Glow Loop
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(antennaPulse, {
+          toValue: 1,
+          duration: 700,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(antennaPulse, {
+          toValue: 0.35,
+          duration: 700,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    // 5. Transit Line Moving Route Blip
     Animated.loop(
       Animated.sequence([
         Animated.timing(routeProgress, {
           toValue: 1,
-          duration: 1600,
+          duration: 1700,
           easing: Easing.inOut(Easing.cubic),
           useNativeDriver: true,
         }),
@@ -116,28 +191,37 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
       ])
     ).start();
 
-    // Micro-status changes
+    // Micro-status changes with smooth text transitions
     const t1 = setTimeout(() => {
-      setStatusMessage("Locating active modern jeepneys…");
-    }, 1100);
+      triggerStatusTransition("Locating active modern jeepneys…");
+    }, 1050);
 
     const t2 = setTimeout(() => {
-      setStatusMessage("Fleet online • Welcome commuter!");
+      triggerStatusTransition("Fleet online • Welcome commuter!");
     }, 1800);
 
-    // 5. Exit transition
+    // 6. Cinematic dissolve exit handoff (Forward zoom + gradual fade)
     const exitTimer = setTimeout(() => {
-      Animated.timing(exitOpacity, {
-        toValue: 0,
-        duration: 450,
-        easing: Easing.in(Easing.cubic),
-        useNativeDriver: true,
-      }).start(() => {
+      Animated.parallel([
+        Animated.timing(exitOpacity, {
+          toValue: 0,
+          duration: 420,
+          easing: Easing.in(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(exitScale, {
+          toValue: 1.06,
+          duration: 420,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
         onFinish();
       });
     }, minDurationMs);
 
     return () => {
+      clearTimeout(p2Timeout);
       clearTimeout(t1);
       clearTimeout(t2);
       clearTimeout(exitTimer);
@@ -150,26 +234,57 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
     routeProgress,
     pulseRing1,
     pulseOpacity1,
+    pulseRing2,
+    pulseOpacity2,
     jeepneyHover,
+    antennaPulse,
     exitOpacity,
+    exitScale,
     minDurationMs,
     onFinish,
   ]);
 
+  // Derived chassis tilt from suspension hover
+  const jeepneyTilt = jeepneyHover.interpolate({
+    inputRange: [-5, 0, 2.5],
+    outputRange: ["-1.5deg", "0deg", "1.2deg"],
+  });
+
+  // Derived ground shadow scale and opacity
+  const shadowScaleX = jeepneyHover.interpolate({
+    inputRange: [-5, 2.5],
+    outputRange: [0.82, 1.18],
+  });
+
+  const shadowOpacity = jeepneyHover.interpolate({
+    inputRange: [-5, 2.5],
+    outputRange: [0.22, 0.55],
+  });
+
+  // Transit blip progression
   const blipTranslateX = routeProgress.interpolate({
     inputRange: [0, 1],
-    outputRange: [-70, 70],
+    outputRange: [-72, 72],
   });
 
   return (
-    <Animated.View style={[styles.container, { opacity: exitOpacity }]}>
-      {/* Background ambient light circles */}
+    <Animated.View
+      style={[
+        styles.container,
+        {
+          opacity: exitOpacity,
+          transform: [{ scale: exitScale }],
+        },
+      ]}
+    >
+      {/* Dynamic ambient luminous backgrounds */}
       <View style={styles.ambientGlowTop} />
       <View style={styles.ambientGlowBottom} />
 
       <View style={styles.content}>
-        {/* Pulsing ring + Brand Logo Box */}
+        {/* Living Logo Stage with Dual Shockwaves & Ground Shadow */}
         <View style={styles.logoAnchor}>
+          {/* Primary Pulse Shockwave */}
           <Animated.View
             style={[
               styles.pulseRing,
@@ -180,23 +295,70 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
             ]}
           />
 
+          {/* Secondary Staggered Shockwave */}
+          <Animated.View
+            style={[
+              styles.pulseRing,
+              styles.pulseRingSecondary,
+              {
+                transform: [{ scale: pulseRing2 }],
+                opacity: pulseOpacity2,
+              },
+            ]}
+          />
+
+          {/* Dynamic Ground Contact Shadow */}
+          <Animated.View
+            style={[
+              styles.groundShadow,
+              {
+                transform: [{ scaleX: shadowScaleX }],
+                opacity: shadowOpacity,
+              },
+            ]}
+          />
+
+          {/* Chassis Box with Organic Suspension Idle & Rotational Pitch */}
           <Animated.View
             style={[
               styles.logoBox,
               {
                 opacity: logoOpacity,
-                transform: [{ scale: logoScale }, { translateY: jeepneyHover }],
+                transform: [
+                  { scale: logoScale },
+                  { translateY: jeepneyHover },
+                  { rotate: jeepneyTilt },
+                ],
               },
             ]}
           >
+            {/* Top Gloss Highlight Edge */}
+            <View style={styles.logoGlossEdge} />
+
             <View style={styles.logoInner}>
-              <Ionicons name="bus" size={44} color="#FFFFFF" />
-              <View style={styles.antennaDot} />
+              <Ionicons name="bus" size={46} color="#FFFFFF" />
+
+              {/* Glowing Real-Time GPS Antenna Beacon */}
+              <Animated.View
+                style={[
+                  styles.antennaDot,
+                  {
+                    opacity: antennaPulse,
+                    transform: [{ scale: antennaPulse }],
+                  },
+                ]}
+              />
+
+              {/* Headlight Beams */}
+              <View style={styles.headlightContainer}>
+                <View style={styles.headlightLeft} />
+                <View style={styles.headlightRight} />
+              </View>
             </View>
           </Animated.View>
         </View>
 
-        {/* Brand Text Section */}
+        {/* Brand Typography Section */}
         <Animated.View
           style={[
             styles.textSection,
@@ -209,6 +371,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
           <View style={styles.titleRow}>
             <Text style={styles.brandTitle}>CHATCO</Text>
             <View style={styles.commuterPill}>
+              <View style={styles.commuterPillDot} />
               <Text style={styles.commuterPillText}>COMMUTER</Text>
             </View>
           </View>
@@ -217,7 +380,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
             Calumpit • Meycauayan Transit Line
           </Text>
 
-          {/* Lively Route Track Simulation */}
+          {/* Dynamic Route Conveyor Track */}
           <View style={styles.routeContainer}>
             <View style={styles.stationLabelLeft}>
               <View style={styles.stationDot} />
@@ -226,6 +389,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
 
             <View style={styles.routeTrack}>
               <View style={styles.routeBaseLine} />
+              <View style={styles.routeDashedOverlay} />
               <Animated.View
                 style={[
                   styles.routeBlip,
@@ -234,6 +398,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
                   },
                 ]}
               >
+                <View style={styles.routeBlipHalo} />
                 <View style={styles.routeBlipDot} />
               </Animated.View>
             </View>
@@ -246,13 +411,21 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
         </Animated.View>
       </View>
 
-      {/* Bottom Status Indicator */}
+      {/* Bottom Status Indicator with Smooth Slide-and-Fade Morphing */}
       <Animated.View style={[styles.footerStatus, { opacity: textOpacity }]}>
         <View style={styles.liveIndicator}>
           <View style={styles.liveDot} />
           <Text style={styles.liveText}>BULACAN COOP TRANSIT</Text>
         </View>
-        <Text style={styles.statusTicker}>{statusMessage}</Text>
+
+        <Animated.View
+          style={{
+            opacity: statusOpacity,
+            transform: [{ translateY: statusTranslateY }],
+          }}
+        >
+          <Text style={styles.statusTicker}>{statusMessage}</Text>
+        </Animated.View>
       </Animated.View>
     </Animated.View>
   );
@@ -278,9 +451,9 @@ const styles = StyleSheet.create({
     width: 320,
     height: 320,
     borderRadius: 160,
-    backgroundColor: "rgba(26, 95, 180, 0.25)",
+    backgroundColor: "rgba(26, 95, 180, 0.28)",
     ...Platform.select({
-      web: { filter: "blur(70px)" },
+      web: { filter: "blur(75px)" },
     }),
   },
   ambientGlowBottom: {
@@ -290,9 +463,9 @@ const styles = StyleSheet.create({
     width: 260,
     height: 260,
     borderRadius: 130,
-    backgroundColor: "rgba(16, 185, 129, 0.15)",
+    backgroundColor: "rgba(16, 185, 129, 0.16)",
     ...Platform.select({
-      web: { filter: "blur(60px)" },
+      web: { filter: "blur(65px)" },
     }),
   },
   content: {
@@ -303,8 +476,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   logoAnchor: {
-    width: 120,
-    height: 120,
+    width: 140,
+    height: 140,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 24,
@@ -312,27 +485,50 @@ const styles = StyleSheet.create({
   },
   pulseRing: {
     position: "absolute",
-    width: 104,
-    height: 104,
-    borderRadius: 52,
+    width: 108,
+    height: 108,
+    borderRadius: 54,
     borderWidth: 2,
     borderColor: "#62A0EA",
-    backgroundColor: "rgba(98, 160, 234, 0.15)",
+    backgroundColor: "rgba(98, 160, 234, 0.14)",
+  },
+  pulseRingSecondary: {
+    borderColor: "#34D399",
+    backgroundColor: "rgba(52, 211, 153, 0.08)",
+  },
+  groundShadow: {
+    position: "absolute",
+    bottom: 8,
+    width: 76,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
   },
   logoBox: {
-    width: 86,
-    height: 86,
-    borderRadius: 24,
+    width: 90,
+    height: 90,
+    borderRadius: 26,
     backgroundColor: "#1A5FB4",
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#62A0EA",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.5,
-    shadowRadius: 16,
-    elevation: 12,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.55,
+    shadowRadius: 18,
+    elevation: 14,
     borderWidth: 2,
-    borderColor: "rgba(255, 255, 255, 0.2)",
+    borderColor: "rgba(255, 255, 255, 0.25)",
+    overflow: "hidden",
+  },
+  logoGlossEdge: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 38,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
   },
   logoInner: {
     alignItems: "center",
@@ -343,12 +539,43 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: -2,
     right: -4,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
     backgroundColor: "#34D399",
+    shadowColor: "#34D399",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 6,
     borderWidth: 1.5,
     borderColor: "#050F1A",
+  },
+  headlightContainer: {
+    position: "absolute",
+    bottom: -6,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: 32,
+  },
+  headlightLeft: {
+    width: 5,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: "#FDE047",
+    shadowColor: "#FDE047",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.9,
+    shadowRadius: 4,
+  },
+  headlightRight: {
+    width: 5,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: "#FDE047",
+    shadowColor: "#FDE047",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.9,
+    shadowRadius: 4,
   },
   textSection: {
     alignItems: "center",
@@ -362,15 +589,24 @@ const styles = StyleSheet.create({
     fontSize: 34,
     fontWeight: "900",
     color: "#FFFFFF",
-    letterSpacing: 2,
+    letterSpacing: 2.2,
   },
   commuterPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
     backgroundColor: "rgba(98, 160, 234, 0.18)",
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 3.5,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: "rgba(98, 160, 234, 0.4)",
+    borderColor: "rgba(98, 160, 234, 0.45)",
+  },
+  commuterPillDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: "#62A0EA",
   },
   commuterPillText: {
     color: "#62A0EA",
@@ -380,10 +616,10 @@ const styles = StyleSheet.create({
   },
   brandSubtitle: {
     fontSize: 13,
-    color: "rgba(255, 255, 255, 0.65)",
+    color: "rgba(255, 255, 255, 0.68)",
     marginTop: 6,
     fontWeight: "500",
-    letterSpacing: 0.4,
+    letterSpacing: 0.5,
   },
   routeContainer: {
     flexDirection: "row",
@@ -394,7 +630,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "rgba(255, 255, 255, 0.09)",
   },
   stationLabelLeft: {
     flexDirection: "row",
@@ -414,7 +650,7 @@ const styles = StyleSheet.create({
   },
   stationText: {
     fontSize: 11,
-    color: "rgba(255, 255, 255, 0.7)",
+    color: "rgba(255, 255, 255, 0.72)",
     fontWeight: "600",
   },
   routeTrack: {
@@ -429,13 +665,28 @@ const styles = StyleSheet.create({
     position: "absolute",
     width: "100%",
     height: 2,
-    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    backgroundColor: "rgba(255, 255, 255, 0.16)",
     borderRadius: 1,
+  },
+  routeDashedOverlay: {
+    position: "absolute",
+    width: "100%",
+    height: 2,
+    borderStyle: "dashed",
+    borderWidth: 1,
+    borderColor: "rgba(98, 160, 234, 0.35)",
   },
   routeBlip: {
     position: "absolute",
     alignItems: "center",
     justifyContent: "center",
+  },
+  routeBlipHalo: {
+    position: "absolute",
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "rgba(98, 160, 234, 0.25)",
   },
   routeBlipDot: {
     width: 12,
@@ -444,25 +695,26 @@ const styles = StyleSheet.create({
     backgroundColor: "#62A0EA",
     shadowColor: "#62A0EA",
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 6,
+    shadowOpacity: 1,
+    shadowRadius: 7,
     borderWidth: 2,
     borderColor: "#FFFFFF",
   },
   footerStatus: {
     alignItems: "center",
-    gap: 6,
+    gap: 7,
+    minHeight: 48,
   },
   liveIndicator: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: "rgba(16, 185, 129, 0.12)",
+    backgroundColor: "rgba(16, 185, 129, 0.14)",
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "rgba(16, 185, 129, 0.25)",
+    borderColor: "rgba(16, 185, 129, 0.28)",
   },
   liveDot: {
     width: 6,
@@ -478,7 +730,8 @@ const styles = StyleSheet.create({
   },
   statusTicker: {
     fontSize: 12,
-    color: "rgba(255, 255, 255, 0.45)",
+    color: "rgba(255, 255, 255, 0.52)",
     fontWeight: "500",
+    textAlign: "center",
   },
 });
