@@ -61,7 +61,9 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   const payload = (await response.json().catch(() => null)) as Envelope<T> | null;
 
   if (!response.ok) {
-    if (response.status === 401 && path !== "/auth/login") {
+    // A late failure from an old token must not sign out a newer login.
+    if (response.status === 401 && path !== "/mobile/auth/login"
+      && token && await appStorage.getItem(TOKEN_KEY) === token) {
       await appStorage.removeItem(TOKEN_KEY);
       if (!sessionEndedNotified) {
         sessionEndedNotified = true;
@@ -79,7 +81,10 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
       const dist = (payload as any).distance_m ? ` (${Math.round((payload as any).distance_m)}m away)` : "";
       message = `Vehicle is outside the 1km hail radius${dist}.`;
     }
-    throw new Error(`${message} [HTTP ${response.status}]`);
+    const err = new Error(message);
+    (err as any).status = response.status;
+    (err as any).response = { status: response.status, data: payload };
+    throw err;
   }
 
   return payload?.data as T;

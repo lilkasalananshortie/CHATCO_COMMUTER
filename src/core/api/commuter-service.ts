@@ -1,4 +1,7 @@
 import { del, post, put, request } from "./api-client";
+import { normalizeRewards } from "../domain/rewards";
+import { mapTrip } from "../domain/trips";
+import { notifyRewardsChanged } from "../domain/rewards-events";
 import type {
   Announcement,
   ClaimData,
@@ -25,6 +28,7 @@ export interface ClaimGcashResult {
   dropoffName?: string | null;
   checkoutUrl?: string | null;
   voucherAvailable?: boolean;
+  availableVoucher?: { id: string; type: "FREE_RIDE" | "DISCOUNT" | "REWARD"; amount: number | null } | null;
   isGroup?: boolean;
 }
 
@@ -39,24 +43,28 @@ export interface ReceiptClaimResult {
   message: string;
 }
 
+export interface PasswordChangeInput {
+  current_password: string;
+  password: string;
+  password_confirmation: string;
+}
+
+function profileEnvelope(res: any): { user: User; profile: CommuterProfile } {
+  if (!res?.user?.id || !res?.profile?.commuter_type) throw new Error("The server did not return a commuter profile.");
+  return { user: res.user, profile: { ...res.profile, id: res.profile.id ?? res.user.id } };
+}
+
 export const commuterService = {
   // Profile
   async getProfile(): Promise<{ user: User; profile: CommuterProfile }> {
     try {
-      const res = await request<any>("/commuter/profile");
-      return {
-        user: res.user || res,
-        profile: res.profile || res,
-      };
+      return profileEnvelope(await request("/mobile/commuter/profile"));
     } catch (err: any) {
-      // Fallback to /user if /commuter/profile is unroutable
+      // Only a missing route may use the legacy user envelope. Never mask 401/403/offline.
+      if (err?.status !== 404) throw err;
       try {
-        const userRes = await request<any>("/user");
-        const rawUser = userRes.user || userRes;
-        return {
-          user: rawUser,
-          profile: userRes.profile || rawUser,
-        };
+        const userRes = await request<any>("/mobile/user");
+        return profileEnvelope(userRes);
       } catch {
         throw err;
       }
@@ -64,20 +72,24 @@ export const commuterService = {
   },
 
   async updateProfile(data: { contact_number?: string; email?: string; language_preference?: string }): Promise<CommuterProfile> {
-    return put("/commuter/profile", data);
+    return profileEnvelope(await put("/mobile/commuter/profile", data)).profile;
   },
 
-  async requestPasswordChangeCode(): Promise<{ message: string }> {
-    return post("/commuter/change-password/request-code");
+  async uploadProfilePhoto(body: FormData): Promise<CommuterProfile> {
+    return profileEnvelope(await post("/mobile/commuter/profile/photo", body)).profile;
   },
 
-  async confirmPasswordChange(data: { code: string; new_password: string; new_password_confirmation: string }): Promise<{ message: string }> {
-    return post("/commuter/change-password/confirm", data);
+  async requestPasswordChangeCode(data: PasswordChangeInput): Promise<{ message: string }> {
+    return post("/mobile/commuter/change-password/request-code", data);
+  },
+
+  async confirmPasswordChange(data: PasswordChangeInput & { code: string }): Promise<{ message: string }> {
+    return post("/mobile/commuter/change-password/confirm", data);
   },
 
   // Live Vehicle Tracking
   async getVehicleLocations(): Promise<VehicleLocation[]> {
-    const raw = await request<any[]>("/vehicles/locations");
+    const raw = await request<any[]>("/mobile/commuter/vehicles/locations");
     if (!Array.isArray(raw)) return [];
     return raw.map((item) => {
       const lat = Number(item.latitude ?? item.lat ?? 0);
@@ -114,7 +126,7 @@ export const commuterService = {
       totalPoints: number;
     };
   }> {
-    return request("/fare-matrix");
+    return request("/mobile/fare-matrix");
   },
 
   // Hail / "Pick Me Up"
@@ -134,7 +146,7 @@ export const commuterService = {
       commuter_lat: lat,
       commuter_lng: lng,
     };
-    const res = await post<any>("/commuter/hail", payload);
+    const res = await post<any>("/mobile/commuter/hail", payload);
     return {
       id: res.id,
       pickup_name: data.pickup_name || "Commuter Location",
@@ -151,12 +163,58 @@ export const commuterService = {
   },
 
   async cancelHail(id: string): Promise<void> {
-    return del(`/commuter/hail/${encodeURIComponent(id)}`);
+    return del(`/mobile/commuter/hail/${encodeURIComponent(id)}`);
+  },
+
+  async getHailStatus(id: string): Promise<HailRequest | null> {
+    try {
+      const res = await request<any>(`/mobile/commuter/hail/${encodeURIComponent(id)}`);
+      const data = res?.data || res;
+      if (!data || !data.id) return null;
+      return {
+        id: data.id,
+        pickup_name: data.pickup_name || "Commuter Location",
+        passenger_count: Number(data.passenger_count ?? 1),
+        status: data.status || "PENDING",
+        created_at: data.created_at || new Date().toISOString(),
+        accepted_by: data.vehicle
+          ? {
+              unit_number: data.vehicle.unit_number || "JEEP",
+              driver_name: data.vehicle.driver_name,
+            }
+          : null,
+      };
+    } catch {
+      return null;
+    }
+  },
+
+  async getActiveHail(): Promise<HailRequest | null> {
+    try {
+      const res = await request<any>("/mobile/commuter/hails/active");
+      const data = res?.data || res;
+      if (!data || !data.id) return null;
+      return {
+        id: data.id,
+        pickup_name: data.pickup_name || "Commuter Location",
+        passenger_count: Number(data.passenger_count ?? 1),
+        status: data.status || "PENDING",
+        created_at: data.created_at || new Date().toISOString(),
+        accepted_by: data.vehicle
+          ? {
+              unit_number: data.vehicle.unit_number || "JEEP",
+              driver_name: data.vehicle.driver_name,
+            }
+          : null,
+      };
+    } catch {
+      return null;
+    }
   },
 
   // Payments & GCash Claim
   async claimGcash(qrToken: string): Promise<ClaimGcashResult> {
-    const res = await post<any>("/commuter/payments/claim", { qr_token: qrToken });
+    const res = await post<any>("/mobile/commuter/payments/claim", { qr_token: qrToken });
     return {
       transactionId: res.transaction_id || res.id || "",
       amount: Number(res.amount ?? res.final_amount ?? 0),
@@ -167,12 +225,14 @@ export const commuterService = {
       dropoffName: res.dropoff_name ?? res.destination_name ?? null,
       checkoutUrl: res.checkout_url ?? null,
       voucherAvailable: Boolean(res.voucher_available ?? res.can_redeem_voucher),
+      availableVoucher: res.available_voucher ? { ...res.available_voucher, amount: res.available_voucher.amount == null ? null : Number(res.available_voucher.amount) } : null,
       isGroup: Boolean(res.is_group ?? (res.passenger_count > 1)),
     };
   },
 
-  async redeemVoucherForGcash(transactionId: string): Promise<ClaimGcashResult> {
-    const res = await post<any>(`/commuter/payments/${encodeURIComponent(transactionId)}/redeem-voucher`);
+  async redeemVoucherForGcash(transactionId: string, voucherId?: string): Promise<ClaimGcashResult> {
+    const res = await post<any>(`/mobile/commuter/payments/${encodeURIComponent(transactionId)}/redeem-voucher`, voucherId ? { voucher_id: voucherId } : {});
+    notifyRewardsChanged();
     return {
       transactionId: res.transaction_id || transactionId,
       amount: Number(res.amount ?? res.final_amount ?? 0),
@@ -182,16 +242,27 @@ export const commuterService = {
       dropoffName: res.dropoff_name ?? null,
       checkoutUrl: res.checkout_url ?? null,
       voucherAvailable: false,
+      availableVoucher: null,
       isGroup: Boolean(res.is_group),
     };
   },
 
   async simulatePayment(transactionId: string, status: "PAID" | "FAILED" = "PAID"): Promise<{ status: string }> {
-    return post(`/payments/${encodeURIComponent(transactionId)}/simulate`, { status });
+    const result = await post<{ status: string }>(`/mobile/payments/${encodeURIComponent(transactionId)}/simulate`, { status });
+    notifyRewardsChanged();
+    return result;
+  },
+
+  async getPaymentStatus(transactionId: string): Promise<{ status: string }> {
+    return request(`/mobile/payments/${encodeURIComponent(transactionId)}/status`);
   },
 
   async claimReceipt(receiptToken: string): Promise<ReceiptClaimResult> {
-    const res = await post<any>("/commuter/receipts/claim", { receipt_token: receiptToken });
+    const res = await post<any>("/mobile/commuter/receipts/claim", {
+      qr_token: receiptToken,
+      receipt_token: receiptToken,
+    });
+    notifyRewardsChanged();
     return {
       transactionId: res.transaction_id || res.id || "",
       amount: Number(res.amount ?? res.final_amount ?? 0),
@@ -216,30 +287,10 @@ export const commuterService = {
     query.set("per_page", String(perPage));
     if (filter && filter !== "all") query.set("filter", filter);
 
-    const res = await request<any>(`/commuter/payments?${query.toString()}`);
+    const res = await request<any>(`/mobile/commuter/payments?${query.toString()}`);
     const rows = Array.isArray(res) ? res : res.data || [];
     return {
-      items: rows.map((r: any) => ({
-        id: r.id,
-        transaction_id: r.transaction_id || r.reference_no,
-        route_name: r.route_name || "Calumpit - Meycauayan Line",
-        pickup_name: r.pickup_name || r.origin_name,
-        dropoff_name: r.dropoff_name || r.destination_name,
-        gross_amount: Number(r.gross_amount || r.regular_amount || r.amount || 0),
-        discount_amount: Number(r.discount_amount || 0),
-        final_amount: Number(r.final_amount || r.amount || 0),
-        fare_amount: Number(r.final_amount || r.amount || 0),
-        payment_method: (r.payment_method || "GCASH").toUpperCase(),
-        status: (r.status || "PAID").toUpperCase(),
-        paid_at: r.paid_at || r.created_at,
-        completed_at: r.completed_at || r.paid_at || r.created_at,
-        created_at: r.created_at,
-        unit_number: r.unit_number || "J-04",
-        plate_number: r.plate_number || "NDB-5821",
-        driver_name: r.driver_name,
-        conductor_name: r.conductor_name,
-        has_feedback: Boolean(r.has_feedback),
-      })),
+      items: rows.map(mapTrip),
       page: res.current_page ?? page,
       lastPage: res.last_page ?? 1,
       total: res.total ?? rows.length,
@@ -248,29 +299,9 @@ export const commuterService = {
 
   // Trips & Ride History
   async getTrips(): Promise<Trip[]> {
-    const res = await request<any>("/commuter/trips");
+    const res = await request<any>("/mobile/commuter/trips");
     const rows = Array.isArray(res) ? res : res.data || [];
-    return rows.map((r: any) => ({
-      id: r.id,
-      transaction_id: r.transaction_id || r.reference_no,
-      route_name: r.route_name || "Calumpit - Meycauayan Line",
-      pickup_name: r.pickup_name || r.origin_name,
-      dropoff_name: r.dropoff_name || r.destination_name,
-      gross_amount: Number(r.gross_amount || r.regular_amount || r.amount || 0),
-      discount_amount: Number(r.discount_amount || 0),
-      final_amount: Number(r.final_amount || r.amount || 0),
-      fare_amount: Number(r.final_amount || r.amount || 0),
-      payment_method: (r.payment_method || "GCASH").toUpperCase(),
-      status: (r.status || "PAID").toUpperCase(),
-      paid_at: r.paid_at || r.created_at,
-      completed_at: r.completed_at || r.paid_at || r.created_at,
-      created_at: r.created_at,
-      unit_number: r.unit_number || "J-04",
-      plate_number: r.plate_number || "NDB-5821",
-      driver_name: r.driver_name,
-      conductor_name: r.conductor_name,
-      has_feedback: Boolean(r.has_feedback),
-    }));
+    return rows.map(mapTrip);
   },
 
   // Share Ride
@@ -279,80 +310,62 @@ export const commuterService = {
     expires_at: string;
     share_url: string;
   }> {
-    return post("/commuter/share-ride", data);
+    return post("/mobile/commuter/share-ride", data);
   },
 
   async updateShareRideLocation(data: { lat: number; lng: number }): Promise<void> {
-    return post("/commuter/location", data);
+    return post("/mobile/commuter/location", data);
   },
 
   async stopShareRide(): Promise<void> {
-    return del("/commuter/share-ride");
+    return del("/mobile/commuter/share-ride");
   },
 
   // Rewards
   async getRewards(): Promise<RewardProgress> {
-    const res = await request<any>("/commuter/rewards");
-    const currentCycleRides = Number(res.current_cycle_rides ?? res.current_rides ?? res.rides_completed ?? 0);
-    const ridesNeeded = Number(res.rides_needed ?? res.target_rides ?? res.rides_required ?? 10);
-    const totalRides = Number(res.total_rides ?? res.rides_completed ?? 0);
-    const vouchers = (res.vouchers || []).map((v: any) => ({
-      id: v.id,
-      code: v.code,
-      status: (v.status || "AVAILABLE").toUpperCase(),
-      discount_amount: Number(v.discount_amount || 100),
-      valid_until: v.valid_until || v.expires_at,
-      expires_at: v.expires_at,
-      expiresAt: v.expires_at,
-      rideOrigin: v.ride_origin || "Cashless Ride Promo",
-      is_used: Boolean(v.is_used || v.status === "USED"),
-    }));
-
-    return {
-      rides_completed: totalRides,
-      current_rides: currentCycleRides,
-      target_rides: ridesNeeded,
-      currentCycleRides,
-      ridesNeeded,
-      totalRides,
-      availableVoucherCount: vouchers.filter((v: any) => v.status === "AVAILABLE").length,
-      archivedVoucherCount: vouchers.filter((v: any) => v.status !== "AVAILABLE").length,
-      progressPercent: Math.min(100, Math.round((currentCycleRides / ridesNeeded) * 100)),
-      ridesRemaining: Math.max(0, ridesNeeded - currentCycleRides),
-      vouchers,
-    };
+    const res = await request<any>("/mobile/commuter/rewards");
+    return normalizeRewards(res);
   },
 
   // Feedback & QR Resolution
   async scanQr(token: string): Promise<ResolvedCrew> {
-    const res = await post<any>("/qr/scan", { token });
+    // Permanent unit QR is JSON with vehicle_id; signed QR remains on /scan.
+    let vehicleId: string | undefined;
+    let signedToken = token;
+    try {
+      const parsed = JSON.parse(token);
+      if (typeof parsed.vehicle_id === "string") vehicleId = parsed.vehicle_id;
+      else if (typeof (parsed.token ?? parsed.qr_token) === "string") signedToken = parsed.token ?? parsed.qr_token;
+    } catch { /* Bare signed token. */ }
+    const res = vehicleId
+      ? await post<any>("/mobile/commuter/qr/scan-public", { vehicle_id: vehicleId })
+      : await post<any>("/mobile/commuter/qr/scan", { token: signedToken });
     const data = res.data || res;
+    if (!data.shift_id) throw new Error("No shift was returned for this unit. Please scan again.");
     return {
+      shiftId: data.shift_id,
       unitNumber: data.unit_number || data.unitNumber,
-      plateNumber: data.plate_number || data.plateNumber || "NDB-5821",
+      plateNumber: data.plate_number || data.plateNumber || "",
       driverName: data.driver_name || data.driverName || "Assigned Driver",
       conductorName: data.conductor_name || data.conductorName || "Assigned Conductor",
-      routeTitle: data.route_name || data.routeTitle || "Calumpit - Meycauayan Line",
+      routeTitle: data.route_name || data.routeTitle || "",
     };
   },
 
   async submitFeedback(data: {
-    token?: string;
-    shift_id?: string;
-    rating?: number;
+    shift_id: string;
+    rating: number;
+    category?: string;
     comment?: string;
-    driver_rating?: number;
-    driver_tags?: string[];
-    driver_comment?: string;
-    conductor_rating?: number;
-    conductor_tags?: string[];
+    conductor_rating: number;
+    conductor_category?: string;
     conductor_comment?: string;
   }): Promise<void> {
-    return post("/commuter/feedback", data);
+    return post("/mobile/commuter/feedback", data);
   },
 
   async getFeedback(): Promise<Feedback[]> {
-    return request<Feedback[]>("/commuter/feedback");
+    return request<Feedback[]>("/mobile/commuter/feedback");
   },
 
   // Emergency SOS
@@ -365,7 +378,7 @@ export const commuterService = {
   }): Promise<SosAlert> {
     const lat = Number(data.lat ?? data.latitude ?? 0);
     const lng = Number(data.lng ?? data.longitude ?? 0);
-    return post("/commuter/sos", {
+    return post("/mobile/commuter/sos", {
       lat,
       lng,
       note: data.note || "Emergency distress triggered from Commuter Mobile App",
@@ -373,7 +386,7 @@ export const commuterService = {
   },
 
   async getSosStatus(id: string): Promise<SosAlert> {
-    return request(`/commuter/sos/${encodeURIComponent(id)}`);
+    return request(`/mobile/commuter/sos/${encodeURIComponent(id)}`);
   },
 
   // Lost & Found
@@ -452,7 +465,7 @@ export const commuterService = {
     if (params.date) query.set("date", params.date);
     if (params.search?.trim()) query.set("search", params.search.trim());
 
-    const res = await request<any>(`/commuter/claims?${query.toString()}`);
+    const res = await request<any>(`/mobile/commuter/claims?${query.toString()}`);
     const rows = Array.isArray(res) ? res : res.data || [];
     return {
       claims: rows.map((r: any) => ({
@@ -504,7 +517,7 @@ export const commuterService = {
     if (params.date) query.set("date", params.date);
     if (params.search?.trim()) query.set("search", params.search.trim());
 
-    const res = await request<any>(`/commuter/watchlist?${query.toString()}`);
+    const res = await request<any>(`/mobile/commuter/watchlist?${query.toString()}`);
     const rows = Array.isArray(res) ? res : res.data || [];
     return {
       items: rows
@@ -544,15 +557,15 @@ export const commuterService = {
 
   // Announcements
   async getAnnouncements(): Promise<Announcement[]> {
-    const res = await request<any>("/announcements");
+    const res = await request<any>("/mobile/commuter/announcements");
     const rows = Array.isArray(res) ? res : res.data || [];
     return rows.map((a: any) => ({
       id: a.id,
       title: a.title,
       content: a.message || a.content || "",
       message: a.message || a.content || "",
-      type: (a.type || "SYSTEM").toUpperCase(),
-      rawType: a.raw_type || a.rawType || null,
+      type: String(a.type).toLowerCase() === "voucher_received" ? "VOUCHER" : /^(student_renewal|discount_application)/i.test(String(a.type)) ? "SYSTEM" : (a.type || "SYSTEM").toUpperCase(),
+      rawType: a.raw_type || a.rawType || a.type || null,
       is_read: Boolean(a.is_read ?? a.isRead),
       isRead: Boolean(a.is_read ?? a.isRead),
       created_at: a.created_at,
@@ -561,15 +574,15 @@ export const commuterService = {
   },
 
   async getUnreadAnnouncementCount(): Promise<number> {
-    const res = await request<{ count: number }>("/announcements/unread-count");
+    const res = await request<{ count: number }>("/mobile/commuter/announcements/unread-count");
     return res.count ?? 0;
   },
 
   async markAnnouncementRead(id: string): Promise<void> {
-    return post(`/announcements/${encodeURIComponent(id)}/read`);
+    return post(`/mobile/commuter/announcements/${encodeURIComponent(id)}/read`);
   },
 
   async markAllAnnouncementsRead(): Promise<void> {
-    return post("/announcements/mark-all-read");
+    return post("/mobile/commuter/announcements/mark-all-read");
   },
 };

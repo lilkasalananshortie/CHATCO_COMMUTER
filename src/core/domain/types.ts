@@ -17,9 +17,12 @@ export interface CommuterProfile {
   applied_type?: string | null;
   username: string;
   language_preference?: string | null;
-  account_status: "ACTIVE" | "PENDING" | "REJECTED" | "SUSPENDED";
+  account_status: "ACTIVE" | "APPROVED" | "PENDING" | "REJECTED" | "SUSPENDED";
   id_image_url?: string | null;
+  profile_image_url?: string | null;
   verified_at?: string | null;
+  student_discount_expires_at?: string | null;
+  effective_fare_type?: string;
 }
 
 export interface VehicleLocation {
@@ -88,6 +91,10 @@ export interface HailRequest {
 
 export interface Trip {
   id: string;
+  shift_id?: string | null;
+  can_leave_feedback?: boolean;
+  feedback?: Feedback | null;
+  payment_reconciliation_status?: string | null;
   transaction_id?: string;
   route_name?: string;
   pickup_name?: string;
@@ -99,7 +106,7 @@ export interface Trip {
   final_amount?: number;
   fare_amount?: number;
   payment_method: "CASH" | "GCASH" | "VOUCHER";
-  status?: "PAID" | "PENDING" | "FAILED" | "CANCELLED";
+  status?: "PAID" | "PENDING" | "FAILED" | "CANCELLED" | "EXPIRED" | "REFUNDED";
   paid_at?: string | null;
   completed_at?: string | null;
   created_at?: string;
@@ -131,6 +138,8 @@ export interface RewardProgress {
 export interface Voucher {
   id: string;
   code: string;
+  type?: "FREE_RIDE" | "DISCOUNT" | "REWARD";
+  amount?: number | null;
   status?: "AVAILABLE" | "CLAIMED" | "USED" | "EXPIRED";
   discount_amount?: number;
   discount_type?: string;
@@ -146,6 +155,10 @@ export interface Feedback {
   id: string;
   shift_id: string;
   rating: number;
+  category?: string | null;
+  conductor_rating?: number | null;
+  conductor_category?: string | null;
+  conductor_comment?: string | null;
   comment?: string | null;
   created_at: string;
 }
@@ -186,7 +199,7 @@ export interface ClaimData {
   item: LostItem | null;
 }
 
-export type AnnouncementType = "PROMO" | "SAFETY" | "SYSTEM" | "MAINTENANCE" | "CLAIM_UPDATE" | "CUSTOM";
+export type AnnouncementType = "PROMO" | "SAFETY" | "SYSTEM" | "MAINTENANCE" | "CLAIM_UPDATE" | "CUSTOM" | "VOUCHER";
 
 export interface Announcement {
   id: string;
@@ -213,6 +226,7 @@ export interface SosAlert {
 }
 
 export interface ResolvedCrew {
+  shiftId: string;
   unitNumber?: string | null;
   plateNumber: string;
   driverName: string;
@@ -220,5 +234,5 @@ export interface ResolvedCrew {
   routeTitle?: string | null;
 }
 
-export type CommuterTab = "home" | "lostfound" | "rewards" | "feedback" | "profile";
+export type CommuterTab = "home" | "fare" | "lostfound" | "rewards" | "feedback" | "profile";
 
