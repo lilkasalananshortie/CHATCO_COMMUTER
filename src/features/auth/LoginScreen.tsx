@@ -32,6 +32,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   onGoToRegister,
   onResetOnboarding,
 }) => {
+  const colors = commuterColors;
+  const styles = baseStyles;
   const { width: windowWidth } = useWindowDimensions();
   const isTablet = windowWidth >= 768;
 
@@ -152,7 +154,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               <Ionicons
                 name="alert-circle-outline"
                 size={18}
-                color={commuterColors.danger}
+                  color={colors.danger}
                 style={{ marginRight: 8 }}
               />
               <Text style={styles.errorBannerText}>{errorMessage}</Text>
@@ -223,7 +225,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 <Ionicons
                   name={showPassword ? "eye-off-outline" : "eye-outline"}
                   size={20}
-                  color={commuterColors.textMuted}
+                  color={colors.textMuted}
                 />
               </TouchableOpacity>
             </View>
@@ -288,7 +290,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   forgotLink: { minHeight: 44, alignSelf: "flex-end", justifyContent: "center", paddingHorizontal: 4 },
   outerContainer: {
     flex: 1,

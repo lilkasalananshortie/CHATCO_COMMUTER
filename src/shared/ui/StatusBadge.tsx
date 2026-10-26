@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Text, StyleSheet, ViewStyle, StyleProp } from "react-native";
-import { commuterColors } from "../../core/theme/colors";
+import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 
 export type BadgeStatus =
   | "success"
@@ -23,44 +23,45 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
   style,
   icon,
 }) => {
+  const { colors: theme } = useCommuterTheme();
   const getBadgeColors = () => {
     switch (status) {
       case "success":
         return {
-          bg: commuterColors.successBg,
-          text: commuterColors.success,
-          border: "#86EFAC",
+          bg: theme.successBg,
+          text: theme.success,
+          border: theme.successBorder,
         };
       case "warning":
         return {
-          bg: commuterColors.warningBg,
-          text: "#B45309",
-          border: "#FDE68A",
+          bg: theme.warningBg,
+          text: theme.warning,
+          border: theme.warningBorder,
         };
       case "danger":
         return {
-          bg: commuterColors.dangerBg,
-          text: commuterColors.danger,
-          border: "#FECACA",
+          bg: theme.dangerBg,
+          text: theme.danger,
+          border: theme.dangerBorder,
         };
       case "info":
         return {
-          bg: commuterColors.infoBg,
-          text: "#0284C7",
-          border: "#BAE6FD",
+          bg: theme.infoBg,
+          text: theme.info,
+          border: theme.infoBorder,
         };
       case "primary":
         return {
           bg: "#EBF3FE",
-          text: commuterColors.primary,
-          border: commuterColors.border,
+          text: theme.primary,
+          border: theme.border,
         };
       case "neutral":
       default:
         return {
           bg: "#F1F5F9",
-          text: commuterColors.textSecondary,
-          border: "#E2E8F0",
+          text: theme.textSecondary,
+          border: theme.border,
         };
     }
   };

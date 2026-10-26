@@ -14,6 +14,7 @@ jest.mock("react-native", () => ({ View: "View", Modal: "Modal", ActivityIndicat
   Animated: { View: "AnimatedView", Value: class { setValue() {} interpolate() {} }, timing: () => ({ start() {} }) }, Easing: { out: (v: any) => v, cubic: 1 } }));
 jest.mock("react-native-safe-area-context", () => ({ SafeAreaProvider: "SafeArea", useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock("expo-status-bar", () => ({ StatusBar: "StatusBar" }));
+jest.mock("../../../shared/ui/BrandFonts", () => ({ BrandFonts: "BrandFonts" }));
 jest.mock("@react-native-async-storage/async-storage", () => ({ getItem: jest.fn().mockResolvedValue("done") }));
 jest.mock("../../../core/theme/ThemeProvider", () => ({ ThemeProvider: "Theme" }));
 jest.mock("../../../core/api/api-client", () => ({ setSessionEndedHandler: jest.fn(() => jest.fn()) }));

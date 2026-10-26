@@ -1,6 +1,6 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
-import { commuterColors as colors } from "../../core/theme/colors";
+import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import { Mascot, type MascotPose } from "./Mascot";
 
 interface Props {
@@ -13,6 +13,8 @@ interface Props {
 }
 
 export function MascotMessage({ pose, title, message, compact = false, onRetry, retrying = false }: Props) {
+  const { colors } = useCommuterTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const { width, fontScale } = useWindowDimensions();
   const horizontal = compact && width >= 360 && fontScale < 1.4;
   return (
@@ -38,7 +40,8 @@ export function MascotMessage({ pose, title, message, compact = false, onRetry, 
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(colors: ReturnType<typeof useCommuterTheme>["colors"]) {
+  return StyleSheet.create({
   card: { padding: 16, borderRadius: 18, backgroundColor: colors.surface, alignItems: "center", gap: 10, width: "100%" },
   compact: { flexDirection: "row", alignItems: "center", padding: 12 },
   copy: { alignItems: "center", gap: 6, width: "100%" },
@@ -47,4 +50,5 @@ const styles = StyleSheet.create({
   message: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, flexShrink: 1 },
   retry: { minHeight: 44, minWidth: 80, alignSelf: "flex-start", justifyContent: "center", paddingHorizontal: 8 },
   retryText: { color: colors.primaryLight, fontWeight: "700", fontSize: 14 },
-});
+  });
+}

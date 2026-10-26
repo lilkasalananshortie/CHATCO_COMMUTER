@@ -15,6 +15,7 @@ interface OnboardingScreenProps {
 }
 
 export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onFinish }) => {
+  const styles = baseStyles;
   const insets = useSafeAreaInsets();
   const { width, height, fontScale } = useWindowDimensions();
   const [index, setIndex] = useState(0);
@@ -137,7 +138,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onFinish }) 
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   screen: { flex: 1 },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 24, paddingVertical: 10 },
   brand: { fontSize: 17, letterSpacing: 2, fontWeight: "900", color: "#FFFFFF" },

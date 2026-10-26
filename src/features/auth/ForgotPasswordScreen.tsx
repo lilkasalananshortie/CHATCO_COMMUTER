@@ -9,6 +9,7 @@ import { getMascotErrorState, shouldIllustrateError } from "../../shared/ui/masc
 import { validateRecovery, type RecoveryStep } from "./recovery-validation";
 
 export function ForgotPasswordScreen({ onBack }: { onBack: () => void }) {
+  const styles = baseStyles;
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState<RecoveryStep>("email");
   const [email, setEmail] = useState("");
@@ -97,7 +98,7 @@ export function ForgotPasswordScreen({ onBack }: { onBack: () => void }) {
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { flexGrow: 1, paddingHorizontal: 24, justifyContent: "center" },
   card: { width: "100%", maxWidth: 420, alignSelf: "center", gap: 16 },

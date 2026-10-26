@@ -1,10 +1,11 @@
 import { useRef, useState } from "react";
 import { ActivityIndicator, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { authService } from "../../core/api/auth-service";
-import { commuterColors as colors } from "../../core/theme/colors";
+import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import { validateNewPassword } from "./recovery-validation";
 
 export function SetNewPasswordScreen({ onDone }: { onDone: () => void }) {
+  const { colors } = useCommuterTheme();
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [busy, setBusy] = useState(false);

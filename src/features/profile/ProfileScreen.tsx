@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { Text } from "../../shared/ui/BrandText";
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
@@ -18,11 +18,13 @@ import { maskedEmail } from "./profile-privacy";
 import { commuterService } from "../../core/api/commuter-service";
 import { authService } from "../../core/api/auth-service";
 import type { User, CommuterProfile } from "../../core/domain/types";
-import { DiscountApplicationEntry } from "../discount-application/DiscountApplicationEntry";
-import type { ApplicationState } from "../discount-application/application-types";
+import { APPLICATION_LABELS, type ApplicationState } from "../discount-application/application-types";
 import { pickProfilePhoto, profilePhotoForm } from "./profile-photo";
 import { ChangeEmailModal } from "./ChangeEmailModal";
 import { LegalSupportCard } from "../../shared/legal/LegalSupportCard";
+import { ProfileIcon } from "./ProfileIcon";
+import { ProfileIdentityBackground } from "./ProfileIcon";
+import { profileLayout } from "./profile-layout";
 
 interface ProfileScreenProps {
   onLogout: () => void;
@@ -37,7 +39,8 @@ interface ProfileScreenProps {
 }
 
 export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailChanged, onProfileSaved, onOpenTour, serverProfile, discountApplicationState = null, discountApplicationLoading = false, discountApplicationError = "", onOpenDiscountApplication }) => {
-  const { appearance, setAppearance } = useCommuterTheme();
+  const { appearance, setAppearance, isLight = appearance === "light", colors = commuterColors } = useCommuterTheme();
+  const styles = createProfileStyles(colors, isLight);
   const mounted = useRef(true);
   const mutation = useRef(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -66,10 +69,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailC
   const [resendSecondsLeft, setResendSecondsLeft] = useState(0);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [visiblePasswordField, setVisiblePasswordField] = useState<string | null>(null);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [failedPhotoUrl, setFailedPhotoUrl] = useState<string | null>(null);
   const [showEmailModal, setShowEmailModal] = useState(false);
+  const [showSupport, setShowSupport] = useState(false);
 
   const handlePhoto = async () => {
     if (mutation.current) return;
@@ -247,6 +252,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailC
     setNewPassword("");
     setConfirmNewPassword("");
     setVerificationCode("");
+    setVisiblePasswordField(null);
   };
 
   const signOut = async () => {
@@ -290,8 +296,6 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailC
 
   const firstName = profile.first_name || user?.name?.split(" ")[0] || "Commuter";
   const surname = profile.surname || user?.name?.split(" ")[1] || "";
-  const initialFirst = firstName[0] || "C";
-  const initialLast = surname[0] || "";
   const commuterType = (discountApplicationState?.commuter_type ?? profile.commuter_type ?? "REGULAR").toUpperCase();
   const accountStatus = (profile.account_status || "ACTIVE").toUpperCase();
   const effectiveFareType = discountApplicationState?.effective_fare_type ?? profile.effective_fare_type ?? commuterType;
@@ -301,309 +305,126 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailC
     if (accountStatus === "ACTIVE" || accountStatus === "APPROVED") {
       return {
         text: "Verified",
-        color: "#34D399",
-        bg: "rgba(16, 185, 129, 0.1)",
-        border: "rgba(16, 185, 129, 0.3)",
+        bg: "#047857",
+        border: "#059669",
       };
     }
     if (accountStatus.includes("PENDING")) {
       return {
         text: "Pending Verification",
-        color: "#FBBF24",
-        bg: "rgba(245, 158, 11, 0.1)",
-        border: "rgba(245, 158, 11, 0.3)",
+        bg: "#B45309",
+        border: "#D97706",
       };
     }
     if (accountStatus.includes("REJECTED")) {
       return {
         text: "Rejected",
-        color: "#F87171",
-        bg: "rgba(239, 68, 68, 0.1)",
-        border: "rgba(239, 68, 68, 0.3)",
+        bg: "#B91C1C",
+        border: "#DC2626",
       };
     }
     return {
       text: accountStatus,
-      color: "#CBD5E1",
-      bg: "rgba(148, 163, 184, 0.1)",
-      border: "rgba(148, 163, 184, 0.3)",
+      bg: "#475569",
+      border: "#64748B",
     };
   };
 
   const statusBadge = getStatusBadge();
+  const commuterTypeLabel = commuterType === "SENIOR" || commuterType === "SENIOR_CITIZEN" ? "Senior Citizen" : commuterType === "PWD" ? "PWD" : commuterType === "STUDENT" ? "Student" : "Regular";
+  const iconColor = isLight ? "#1A5FB4" : "#99C1F1";
+  const mutedIcon = isLight ? "#9CA3AF" : "rgba(255,255,255,0.4)";
+  const application = discountApplicationState?.application;
+  const appStatus = discountApplicationState?.status ?? "NOT_APPLIED";
+  const openApplication = application && !["CANCELLED", "EXPIRED"].includes(appStatus) ? application : null;
+  const applicationStatus = openApplication ? appStatus : "NOT_APPLIED";
+  const applicationCategory = openApplication?.requested_type === "STUDENT" ? "Student"
+    : openApplication?.requested_type === "PWD" ? "PWD" : "Senior Citizen";
+  const applicationCopy = openApplication?.request_type === "RENEWAL"
+    ? { text: `Student renewal: ${applicationStatus === "NOT_RENEWED" ? "Not applied" : (APPLICATION_LABELS[applicationStatus] ?? applicationStatus)}`, link: "View Student renewal" }
+    : applicationStatus === "PENDING"
+      ? { text: "Your discount application is currently under review. Check here for updates on your application status.", link: "View application status" }
+      : applicationStatus === "NEEDS_CORRECTION"
+        ? { text: `An admin asked for a correction to your ${applicationCategory} discount application. Send corrected documents to continue the review.`, link: "Update your application" }
+        : applicationStatus === "REJECTED"
+          ? { text: `Your ${applicationCategory} discount application was not approved.`, link: "Apply again" }
+          : { text: discountApplicationState ? "Eligible for a Student, PWD, or Senior Citizen discount? Submit your supporting document for verification." : discountApplicationLoading ? "Loading discount application status…" : "Unable to load your discount application status.", link: discountApplicationState ? "Apply for a discount" : "View application status" };
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Header & Avatar Row */}
-        <View style={styles.profileHeader}>
-          <View style={{ alignItems: "center", width: 90 }}>
-            <View style={styles.avatarCircle}>
-              {profile.profile_image_url && failedPhotoUrl !== profile.profile_image_url ? (
-                <Image source={{ uri: profile.profile_image_url }} accessibilityLabel="Your profile photo" style={{ width: "100%", height: "100%", borderRadius: 40 }} onError={() => setFailedPhotoUrl(profile.profile_image_url ?? null)} />
-              ) : <Text style={styles.avatarInitials}>{initialFirst}{initialLast}</Text>}
-            </View>
-            <TouchableOpacity accessibilityRole="button" disabled={photoUploading} onPress={() => void handlePhoto()} style={{ minHeight: 44, justifyContent: "center" }}>
-              <Text style={{ color: "#99C1F1", fontSize: 12 }}>{photoUploading ? "Uploading…" : "Change photo"}</Text>
-            </TouchableOpacity>
-            {photoError && <Text accessibilityRole="alert" style={{ color: "#FCA5A5", fontSize: 12, textAlign: "center" }}>{photoError}</Text>}
-          </View>
-          <View style={styles.profileMeta}>
-            <Text style={styles.fullName}>
-              {firstName} {surname}
-            </Text>
-            <Text style={styles.username}>@{profile.username || "commuter"}</Text>
-            <View style={styles.pillsRow}>
-              <View
-                style={[
-                  styles.statusPill,
-                  {
-                    backgroundColor: statusBadge.bg,
-                    borderColor: statusBadge.border,
-                  },
-                ]}
-              >
-                <Text style={[styles.statusPillText, { color: statusBadge.color }]}>
-                  {statusBadge.text}
-                </Text>
-              </View>
-
-              <View style={styles.discountPill}>
-                <Text style={styles.discountPillText}>
-                  {commuterType}
-                  {discountPercentage > 0 && ` (${discountPercentage}% Off)`}
-                </Text>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        {/* Transient success banner */}
-        {successMessage && (
-          <View style={styles.successBanner}>
-            <Ionicons name="checkmark-circle" size={16} color="#34D399" />
-            <Text style={styles.successBannerText}>{successMessage}</Text>
-          </View>
-        )}
-
-        {/* Verification Alert Banner */}
-        {accountStatus.includes("PENDING") && (
-          <View style={styles.warningBanner}>
-            <Ionicons name="alert-circle" size={18} color="#FBBF24" />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.warningBannerTitle}>Verification Pending</Text>
-              <Text style={styles.warningBannerDesc}>
-                Your discount is on hold until an admin verifies your uploaded ID.
-              </Text>
-            </View>
-          </View>
-        )}
-
-        {/* Discount Rejected Banner */}
-        {accountStatus.includes("REJECTED") && (
-          <View style={styles.dangerBanner}>
-            <Ionicons name="close-circle" size={18} color="#F87171" />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.dangerBannerTitle}>
-                Discount Application Rejected
-              </Text>
-              <Text style={styles.dangerBannerDesc}>
-                The ID you uploaded was not approved. You are currently classified
-                as a Regular commuter.
-              </Text>
-            </View>
-          </View>
-        )}
-
-        {onOpenDiscountApplication && <DiscountApplicationEntry state={discountApplicationState} loading={discountApplicationLoading}
-          error={discountApplicationError} commuterType={commuterType} onOpen={onOpenDiscountApplication} />}
-
-        {/* Action Buttons Row */}
-        <View style={styles.actionButtonsRow}>
-          <TouchableOpacity
-            onPress={() => {
-              if (isEditing) {
-                setIsEditing(false);
-                setContactNumber(profile.contact_number || "");
-                setSaveError(null);
-              } else {
-                setIsEditing(true);
-              }
-            }}
-            style={[
-              styles.actionButton,
-              isEditing ? styles.actionButtonNeutral : styles.actionButtonPrimary,
-            ]}
-            activeOpacity={0.8}
-          >
-            <Text
-              style={[
-                styles.actionButtonText,
-                isEditing
-                  ? styles.actionButtonTextNeutral
-                  : styles.actionButtonTextPrimary,
-              ]}
-            >
-              {isEditing ? "Cancel Editing" : "Edit Profile"}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={() => setShowPasswordModal(true)}
-            style={[styles.actionButton, styles.actionButtonNeutral]}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.actionButtonTextNeutral}>Change Password</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Personal Information Form Card */}
-        <View style={styles.infoCard}>
-          <Text style={styles.infoCardHeader}>Personal Information</Text>
-
-          <View style={styles.formGrid}>
-            <View style={styles.formField}>
-              <Text style={styles.fieldLabel}>First Name</Text>
-              <TextInput
-                style={[styles.input, styles.inputDisabled]}
-                value={firstName}
-                editable={false}
-              />
-            </View>
-
-            <View style={styles.formField}>
-              <Text style={styles.fieldLabel}>Surname</Text>
-              <TextInput
-                style={[styles.input, styles.inputDisabled]}
-                value={surname}
-                editable={false}
-              />
-            </View>
-
-            <View style={styles.formField}>
-              <Text style={styles.fieldLabel}>Birthdate</Text>
-              <TextInput
-                style={[styles.input, styles.inputDisabled]}
-                value={
-                  profile.birthdate
-                    ? new Date(profile.birthdate).toLocaleDateString("en-US", {
-                        year: "numeric",
-                        month: "long",
-                        day: "numeric",
-                      })
-                    : "—"
-                }
-                editable={false}
-              />
-            </View>
-
-            <View style={styles.formField}>
-              <Text style={styles.fieldLabel}>Commuter Type</Text>
-              <TextInput
-                style={[styles.input, styles.inputDisabled]}
-                value={commuterType}
-                editable={false}
-              />
-            </View>
-
-            <View style={styles.formField}>
-              <Text style={styles.fieldLabel}>Email Address</Text>
-              <TouchableOpacity onPress={() => setShowEmailModal(true)} accessibilityRole="button">
-                <Text style={{ color: "#99C1F1", paddingVertical: 10 }}>Change email securely</Text>
-              </TouchableOpacity>
-              <TextInput
-                style={[styles.input, styles.inputDisabled]}
-                value={maskedEmail(user?.email)}
-                editable={false}
-              />
-              {isEditing && (
-                <Text style={styles.fieldHint}>
-                  Email changes are not saved — only contact number is editable.
-                </Text>
-              )}
-            </View>
-
-            <View style={styles.formField}>
-              <Text style={styles.fieldLabel}>Contact Number</Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  isEditing ? styles.inputEnabled : styles.inputDisabled,
-                ]}
-                value={contactNumber}
-                onChangeText={setContactNumber}
-                editable={isEditing}
-                maxLength={11}
-                placeholder="09171234567"
-                placeholderTextColor="rgba(255,255,255,0.25)"
-                keyboardType="phone-pad"
-              />
-            </View>
-          </View>
-
-          {saveError && (
-            <View style={styles.errorBox}>
-              <Text style={styles.errorBoxText}>{saveError}</Text>
-            </View>
-          )}
-
-          {isEditing && (
-            <TouchableOpacity
-              onPress={handleSaveProfile}
-              disabled={isSaving}
-              style={styles.saveChangesButton}
-              activeOpacity={0.8}
-            >
-              {isSaving ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <Text style={styles.saveChangesButtonText}>Save Changes</Text>
-              )}
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <View style={[styles.tourCard, { flexDirection: "column", alignItems: "flex-start" }]}>
-          <Text style={styles.tourTitle}>Map and payment history appearance</Text>
-          <View style={{ flexDirection: "row", gap: 14, marginTop: 10 }}>
-            {(["dark", "light", "system"] as const).map(mode => <TouchableOpacity key={mode} accessibilityRole="button" accessibilityState={{ selected: appearance === mode }} onPress={() => { void setAppearance(mode).catch(() => setSaveError("Could not save appearance. Please retry.")); }} style={{ minHeight: 44, justifyContent: "center" }}><Text style={{ color: appearance === mode ? "#99C1F1" : "#CBD5E1", fontWeight: appearance === mode ? "800" : "400" }}>{mode === "system" ? "Device" : mode === "dark" ? "Dark" : "Light"}</Text></TouchableOpacity>)}
-          </View>
-        </View>
-
-        {/* App Walkthrough Tour Card */}
-        {onOpenTour && (
-          <TouchableOpacity
-            onPress={onOpenTour}
-            style={styles.tourCard}
-            activeOpacity={0.8}
-            accessibilityRole="button"
-            accessibilityLabel="Replay App Guide and Walkthrough"
-          >
-            <View style={styles.tourCardLeft}>
-              <View style={styles.tourIconCircle}>
-                <Ionicons name="compass-outline" size={22} color="#62A0EA" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.tourTitle}>App Features & Guide</Text>
-                <Text style={styles.tourSubtitle}>
-                  Replay the first-installation walkthrough tour
-                </Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color="rgba(255, 255, 255, 0.4)" />
-          </TouchableOpacity>
-        )}
-
-        <LegalSupportCard />
-
-        {/* Log Out Button */}
-        <TouchableOpacity
-          onPress={() => setShowLogoutConfirm(true)}
-          style={styles.logoutButton}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.logoutButtonText}>Log Out</Text>
+      <View style={styles.pageHeading}>
+        <View style={{ flex: 1 }}><Text style={styles.pageTitle}>My profile</Text><Text style={styles.pageSubtitle}>Your details and account settings.</Text></View>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Toggle dark and light mode" accessibilityState={{ selected: isLight }} style={styles.themeToggle} onPress={() => { void setAppearance(isLight ? "dark" : "light").catch(() => setSaveError("Could not save appearance. Please retry.")); }}>
+          <ProfileIcon name={isLight ? "sun" : "moon"} size={20} color={isLight ? "#D97706" : "#99C1F1"} />
         </TouchableOpacity>
+      </View>
+      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+        <View style={styles.profileHeader}>
+          <ProfileIdentityBackground isLight={isLight} />
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Change profile photo" disabled={photoUploading} onPress={() => void handlePhoto()} style={styles.photoColumn}>
+            <View style={styles.avatarCircle}>
+              {profile.profile_image_url && failedPhotoUrl !== profile.profile_image_url
+                ? <Image source={{ uri: profile.profile_image_url }} accessibilityLabel="Your profile photo" style={styles.photoImage} onError={() => setFailedPhotoUrl(profile.profile_image_url ?? null)} />
+                : <ProfileIcon name="user-round" size={40} color="#FFFFFF" />}
+              <View style={styles.photoBadge}><ProfileIcon name="camera" size={15} color={isLight ? "#FFFFFF" : "#071A2E"} /></View>
+            </View>
+            <Text style={styles.photoLabel}>{photoUploading ? "Uploading…" : "Change photo"}</Text>
+          </TouchableOpacity>
+          <View style={styles.profileMeta}>
+            <Text style={styles.fullName}>{firstName} {surname}</Text><Text style={styles.username}>@{profile.username || "commuter"}</Text>
+            <View style={styles.pillsRow}>
+              <View style={[styles.statusPill, { backgroundColor: statusBadge.bg, borderColor: statusBadge.border }]}>
+                <ProfileIcon name={accountStatus.includes("PENDING") ? "clock" : accountStatus.includes("REJECTED") ? "shield-alert" : "shield-check"} size={13} color="#FFFFFF" />
+                <Text style={styles.statusPillText}>{statusBadge.text}</Text>
+              </View>
+              <View style={styles.discountPill}><Text style={styles.discountPillText}>{commuterTypeLabel}</Text>{discountPercentage > 0 && <Text style={styles.discountValue}>{discountPercentage}% off</Text>}</View>
+            </View>
+          </View>
+        </View>
+        <View>
+          <Text style={styles.photoHelp}>Profile photo: JPG, PNG, or WebP. Maximum 3 MB and 4096 × 4096 pixels. Choosing a photo uploads it to your account.</Text>
+          {photoError && <Text accessibilityRole="alert" style={[styles.photoHelp, { color: "#FCA5A5", marginTop: 8 }]}>{photoError}</Text>}
+          {onOpenDiscountApplication && ["ACTIVE", "APPROVED"].includes(accountStatus) && commuterType === "REGULAR" && (
+            <View style={styles.applicationEntry}><Text style={styles.applicationText}>{applicationCopy.text}</Text>
+              {(applicationStatus === "REJECTED" || applicationStatus === "NEEDS_CORRECTION") && !!openApplication?.reason && <Text style={[styles.applicationText, { marginTop: 4 }]}>Reason: {openApplication.reason}</Text>}
+              {!!discountApplicationError && <Text style={[styles.photoHelp, { marginTop: 4 }]}>Open your application to check its latest status.</Text>}
+              {!discountApplicationLoading && <TouchableOpacity onPress={onOpenDiscountApplication} style={styles.applicationLink}><Text style={styles.applicationLinkText}>{applicationCopy.link}</Text></TouchableOpacity>}
+            </View>
+          )}
+        </View>
+        {successMessage && <View style={styles.successBanner}><ProfileIcon name="check" size={20} color="#34D399" /><Text style={styles.successBannerText}>{successMessage}</Text></View>}
+        {accountStatus.includes("PENDING") && <View style={styles.warningBanner}><ProfileIcon name="shield-alert" size={20} color="#FBBF24" /><View style={{ flex: 1 }}><Text style={styles.warningBannerTitle}>Verification Pending</Text><Text style={styles.warningBannerDesc}>Your discount is on hold until an admin verifies your uploaded ID.</Text></View></View>}
+        {accountStatus.includes("REJECTED") && <View style={styles.dangerBanner}><ProfileIcon name="shield-alert" size={20} color="#F87171" /><View style={{ flex: 1 }}><Text style={styles.dangerBannerTitle}>Discount Application Rejected</Text><Text style={styles.dangerBannerDesc}>The ID you uploaded was not approved. You are currently classified as a Regular commuter.</Text></View></View>}
+        <View style={styles.infoCard}>
+          <View style={styles.cardHeading}><ProfileIcon name="user-round" color={iconColor} /><Text style={styles.cardTitle}>Personal details</Text></View>
+          <View style={styles.detailGrid}>
+            <View style={styles.detailCell}><Text style={styles.fieldLabel}>First name</Text><Text style={styles.fieldValue}>{firstName}</Text></View>
+            <View style={styles.detailCell}><Text style={styles.fieldLabel}>Surname</Text><Text style={styles.fieldValue}>{surname}</Text></View>
+            <View style={styles.detailCell}><Text style={styles.fieldLabel}>Birthdate</Text><Text style={styles.fieldValue}>{profile.birthdate && Number.isFinite(Date.parse(profile.birthdate)) ? new Date(profile.birthdate).toLocaleDateString("en-PH", { month: "long", day: "numeric", year: "numeric" }) : "Not provided"}</Text></View>
+            <View style={styles.detailCell}><Text style={styles.fieldLabel}>Commuter type</Text><Text style={styles.fieldValue}>{commuterTypeLabel}</Text></View>
+            <View style={styles.detailFull}><Text style={styles.fieldLabel}>Email address</Text><Text style={styles.fieldValue}>{user?.email ? maskedEmail(user.email) : "Not provided"}</Text></View>
+          </View>
+        </View>
+        <View style={styles.infoCard}>
+          <View style={styles.contactHeader}><View style={styles.cardHeading}><ProfileIcon name="phone" color={iconColor} /><Text style={styles.cardTitle}>Contact number</Text></View>
+            {!isEditing && <TouchableOpacity accessibilityRole="button" accessibilityLabel="Edit contact number" onPress={() => { setContactNumber(profile.contact_number || ""); setSaveError(null); setIsEditing(true); }} style={styles.contactEdit}><ProfileIcon name="pencil" size={14} color="#FFFFFF" /><Text style={styles.contactEditText}>Edit</Text></TouchableOpacity>}
+          </View>
+          {isEditing ? <>
+            <TextInput accessibilityLabel="Contact number" style={styles.contactInput} value={contactNumber} onChangeText={setContactNumber} editable={!isSaving} maxLength={11} placeholder="09171234567" placeholderTextColor={isLight ? "#9CA3AF" : "rgba(255,255,255,0.3)"} keyboardType="phone-pad" autoFocus />
+            {saveError && <Text accessibilityRole="alert" style={[styles.errorBoxText, { marginTop: 8 }]}>{saveError}</Text>}
+            <View style={styles.contactActions}><TouchableOpacity onPress={() => { setIsEditing(false); setContactNumber(profile.contact_number || ""); setSaveError(null); }} disabled={isSaving} style={styles.contactCancel}><Text style={styles.contactCancelText}>Cancel</Text></TouchableOpacity>
+              <TouchableOpacity accessibilityLabel="Save contact number" onPress={handleSaveProfile} disabled={isSaving || contactNumber === (profile.contact_number || "")} style={[styles.contactSave, (isSaving || contactNumber === (profile.contact_number || "")) && { opacity: 0.5 }]}>{isSaving ? <ActivityIndicator size="small" color="#FFFFFF" /> : <ProfileIcon name="save" size={16} color="#FFFFFF" />}<Text style={styles.contactSaveText}>{isSaving ? "Saving..." : "Save"}</Text></TouchableOpacity>
+            </View>
+          </> : <Text style={[styles.fieldValue, { marginTop: 8 }]}>{profile.contact_number || "Not provided"}</Text>}
+        </View>
+        <View style={styles.infoCard}>
+          <View style={[styles.cardHeading, { marginBottom: 8 }]}><ProfileIcon name="shield-check" color={iconColor} /><Text style={styles.cardTitle}>Account security</Text></View>
+          <TouchableOpacity onPress={() => setShowEmailModal(true)} style={styles.securityRow}><ProfileIcon name="mail" size={18} color={mutedIcon} /><Text style={styles.securityText}>Change email</Text><ProfileIcon name="chevron" size={16} color={mutedIcon} /></TouchableOpacity>
+          <TouchableOpacity onPress={() => setShowPasswordModal(true)} style={styles.securityRow}><ProfileIcon name="key" size={18} color={mutedIcon} /><Text style={styles.securityText}>Change password</Text><ProfileIcon name="chevron" size={16} color={mutedIcon} /></TouchableOpacity>
+        </View>
+        <View style={{ paddingTop: 4 }}><TouchableOpacity onPress={() => setShowLogoutConfirm(true)} style={styles.logoutButton}><ProfileIcon name="logout" size={17} color={isLight ? "#DC2626" : "#F87171"} /><Text style={styles.logoutButtonText}>Log out</Text></TouchableOpacity></View>
+        <TouchableOpacity accessibilityRole="button" accessibilityState={{ expanded: showSupport }} onPress={() => setShowSupport(previous => !previous)} style={styles.supportLink}><Text style={styles.supportText}>Help & support</Text><ProfileIcon name="chevron" size={14} color={mutedIcon} /></TouchableOpacity>
+        {showSupport && <View>{onOpenTour && <TouchableOpacity onPress={onOpenTour} style={styles.securityRow} accessibilityLabel="Replay App Guide and Walkthrough"><Text style={styles.securityText}>App Features & Guide</Text><ProfileIcon name="chevron" size={16} color={mutedIcon} /></TouchableOpacity>}<LegalSupportCard /></View>}
       </ScrollView>
 
       {/* --- LOG OUT CONFIRMATION MODAL --- */}
@@ -648,182 +469,59 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailC
         onEmailChanged?.(email);
         void authService.updateStoredEmail(email).catch(() => undefined);
         setSuccessMessage("Email address updated.");
-      }} />
+      }} currentEmail={user?.email ?? profile.email ?? ""} />
       {/* --- CHANGE PASSWORD MODAL --- */}
-      <Modal visible={showPasswordModal} animationType="fade" transparent>
+      <Modal visible={showPasswordModal} animationType="fade" transparent statusBarTranslucent onRequestClose={() => { if (!isChangingPassword) closePasswordModal(); }}>
         <View style={styles.modalBackdrop}>
-          <View style={styles.passwordModalCard}>
+          <View style={styles.passwordModalCard} accessibilityViewIsModal>
             <View style={styles.passwordModalHeader}>
-              <Text style={styles.passwordModalTitle}>Change Password</Text>
-              <Text style={styles.passwordModalSubtitle}>
-                {passwordStep === "form"
-                  ? "Ensure your account stays secure"
-                  : "Confirm it's you to finish changing your password"}
-              </Text>
+              <View style={styles.passwordHeaderRow}>
+                <View style={styles.passwordHeadingGroup}>
+                  <View style={styles.passwordIconTile}><ProfileIcon name="key" size={21} color={isLight ? "#1A5FB4" : "#B6D3F6"} /></View>
+                  <View style={{ flex: 1 }}><Text style={styles.passwordEyebrow}>Account security</Text><Text style={styles.passwordModalTitle}>Change password</Text></View>
+                </View>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close change password" disabled={isChangingPassword} onPress={closePasswordModal} style={styles.passwordClose}><ProfileIcon name="x" size={18} color={isLight ? "#6B7280" : "rgba(255,255,255,0.6)"} /></TouchableOpacity>
+              </View>
+              <Text style={styles.passwordModalSubtitle}>{passwordStep === "form" ? "Choose a new password, then confirm the change with a code sent to your email." : "Verify your email to finish updating your password."}</Text>
             </View>
-
-            {passwordStep === "form" ? (
-              <View style={styles.passwordModalBody}>
-                {passwordError && (
-                  <View style={styles.errorBox}>
-                    <Text style={styles.errorBoxText}>{passwordError}</Text>
+            <View style={styles.passwordSteps} accessibilityLabel="Password change progress">
+              {["New password", "Verify email"].map((label, index) => {
+                const active = passwordStep === "form" ? index === 0 : index === 1;
+                const complete = passwordStep === "code" && index === 0;
+                return <View key={label} style={styles.passwordStepItem}><View style={[styles.passwordStepCircle, active && styles.passwordStepCurrent, complete && styles.passwordStepComplete]}>{complete ? <ProfileIcon name="check" size={14} color={isLight ? "#047857" : "#6EE7B7"} /> : <Text style={[styles.passwordStepNumber, active && styles.passwordStepNumberActive]}>{index + 1}</Text>}</View><Text style={[styles.passwordStepLabel, active && styles.passwordStepLabelActive, complete && styles.passwordStepLabelComplete]}>{label}</Text></View>;
+              })}
+            </View>
+            <ScrollView style={styles.passwordScroll} contentContainerStyle={styles.passwordModalBody} keyboardShouldPersistTaps="handled">
+              {passwordError && <Text accessibilityRole="alert" style={styles.passwordError}>{passwordError}</Text>}
+              {passwordStep === "form" ? <>
+                {([
+                  { key: "current", label: "Current password", value: currentPassword, setValue: setCurrentPassword, placeholder: "Enter your current password" },
+                  { key: "new", label: "New password", value: newPassword, setValue: setNewPassword, placeholder: "Create a new password" },
+                  { key: "confirm", label: "Confirm new password", value: confirmNewPassword, setValue: setConfirmNewPassword, placeholder: "Re-enter your new password" },
+                ] as const).map(field => <View key={field.key} style={[styles.passwordField, field.key === "current" && styles.passwordFieldDivider]}>
+                  <Text style={styles.passwordFieldLabel}>{field.label}</Text>
+                  <View style={styles.passwordInputWrap}><TextInput accessibilityLabel={field.label} autoComplete={field.key === "current" ? "current-password" : "new-password"} style={styles.passwordInput} secureTextEntry={visiblePasswordField !== field.key} value={field.value} onChangeText={field.setValue} placeholder={field.placeholder} placeholderTextColor={isLight ? "#9CA3AF" : "rgba(255,255,255,0.3)"} editable={!isChangingPassword} />
+                    <TouchableOpacity accessibilityRole="button" accessibilityLabel={visiblePasswordField === field.key ? "Hide password" : "Show password"} onPress={() => setVisiblePasswordField(visiblePasswordField === field.key ? null : field.key)} style={styles.passwordEye}><Ionicons name={visiblePasswordField === field.key ? "eye-off-outline" : "eye-outline"} size={19} color={isLight ? "#6B7280" : "rgba(255,255,255,0.55)"} /></TouchableOpacity>
                   </View>
-                )}
-
-                <View style={styles.modalField}>
-                  <Text style={styles.modalFieldLabel}>Current Password</Text>
-                  <TextInput
-                    style={styles.modalInput}
-                    secureTextEntry
-                    value={currentPassword}
-                    onChangeText={setCurrentPassword}
-                    placeholder="••••••••"
-                    placeholderTextColor="rgba(255,255,255,0.25)"
-                  />
+                </View>)}
+                <View style={styles.passwordRules}><View style={styles.passwordRulesTitle}><ProfileIcon name="shield-check" size={15} color={isLight ? "#1A5FB4" : "#B6D3F6"} /><Text style={styles.passwordRulesTitleText}>Your new password needs</Text></View>
+                  <View style={styles.passwordRulesGrid}>{[
+                    { label: "8+ characters", met: newPassword.length >= 8 },
+                    { label: "An uppercase letter", met: /[A-Z]/.test(newPassword) },
+                    { label: "A number", met: /[0-9]/.test(newPassword) },
+                    { label: "A symbol", met: /[^A-Za-z0-9\s]/.test(newPassword) },
+                  ].map(rule => <View key={rule.label} style={styles.passwordRule}><View style={[styles.passwordRuleCheck, rule.met && styles.passwordRuleMet]}>{rule.met && <ProfileIcon name="check" size={10} color={isLight ? "#047857" : "#6EE7B7"} />}</View><Text style={[styles.passwordRuleText, rule.met && styles.passwordRuleTextMet]}>{rule.label}</Text></View>)}</View>
                 </View>
-
-                <View style={styles.modalField}>
-                  <Text style={styles.modalFieldLabel}>New Password</Text>
-                  <TextInput
-                    style={styles.modalInput}
-                    secureTextEntry
-                    value={newPassword}
-                    onChangeText={setNewPassword}
-                    placeholder="••••••••"
-                    placeholderTextColor="rgba(255,255,255,0.25)"
-                  />
-                  <Text style={styles.fieldHint}>
-                    Min 8 characters, with letters and numbers.
-                  </Text>
-                </View>
-
-                <View style={styles.modalField}>
-                  <Text style={styles.modalFieldLabel}>Confirm New Password</Text>
-                  <TextInput
-                    style={styles.modalInput}
-                    secureTextEntry
-                    value={confirmNewPassword}
-                    onChangeText={setConfirmNewPassword}
-                    placeholder="••••••••"
-                    placeholderTextColor="rgba(255,255,255,0.25)"
-                  />
-                </View>
-
-                <View style={styles.modalButtonsRow}>
-                  <TouchableOpacity
-                    onPress={closePasswordModal}
-                    style={[styles.neutralModalButton, { flex: 1 }]}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.neutralModalButtonText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={handleRequestPasswordCode}
-                    disabled={
-                      isChangingPassword ||
-                      !currentPassword ||
-                      !newPassword ||
-                      !confirmNewPassword
-                    }
-                    style={[
-                      styles.primaryButton,
-                      { flex: 1, marginTop: 0 },
-                      (!currentPassword || !newPassword || !confirmNewPassword) &&
-                        styles.disabledButton,
-                    ]}
-                    activeOpacity={0.8}
-                  >
-                    {isChangingPassword ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <Text style={styles.primaryButtonText}>Send Code</Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : (
-              <View style={styles.passwordModalBody}>
-                {passwordError && (
-                  <View style={styles.errorBox}>
-                    <Text style={styles.errorBoxText}>{passwordError}</Text>
-                  </View>
-                )}
-
-                <Text style={styles.codeInstructions}>
-                  We emailed a 6-digit code to your registered address. Enter it
-                  below to finish changing your password.
-                </Text>
-
-                <View style={styles.modalField}>
-                  <Text style={styles.modalFieldLabel}>Verification Code</Text>
-                  <TextInput
-                    style={[styles.modalInput, styles.codeMonoInput]}
-                    keyboardType="number-pad"
-                    maxLength={6}
-                    value={verificationCode}
-                    onChangeText={(val) =>
-                      setVerificationCode(val.replace(/\D/g, "").slice(0, 6))
-                    }
-                    placeholder="123456"
-                    placeholderTextColor="rgba(255,255,255,0.25)"
-                  />
-                </View>
-
-                <View style={styles.resendRow}>
-                  <TouchableOpacity
-                    onPress={() => setPasswordStep("form")}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.backLinkText}>← Back</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    onPress={handleRequestPasswordCode}
-                    disabled={resendSecondsLeft > 0 || isChangingPassword}
-                    activeOpacity={0.7}
-                  >
-                    <Text
-                      style={[
-                        styles.resendLinkText,
-                        resendSecondsLeft > 0 && styles.resendDisabled,
-                      ]}
-                    >
-                      {resendSecondsLeft > 0
-                        ? `Resend code in ${resendSecondsLeft}s`
-                        : "Resend code"}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.modalButtonsRow}>
-                  <TouchableOpacity
-                    onPress={closePasswordModal}
-                    style={[styles.neutralModalButton, { flex: 1 }]}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.neutralModalButtonText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={handleConfirmPassword}
-                    disabled={
-                      isChangingPassword || verificationCode.length !== 6
-                    }
-                    style={[
-                      styles.primaryButton,
-                      { flex: 1, marginTop: 0 },
-                      verificationCode.length !== 6 && styles.disabledButton,
-                    ]}
-                    activeOpacity={0.8}
-                  >
-                    {isChangingPassword ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <Text style={styles.primaryButtonText}>Update Password</Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
+              </> : <>
+                <View style={styles.inboxCard}><View style={styles.inboxIcon}><ProfileIcon name="mail" size={20} color={isLight ? "#1A5FB4" : "#99C1F1"} /></View><View style={{ flex: 1 }}><Text style={styles.inboxTitle}>Check your inbox</Text><Text style={styles.inboxSubtitle}>We sent a six-digit code to your registered email. Enter it below to confirm your new password.</Text></View></View>
+                <Text style={styles.passwordFieldLabel}>Verification code</Text><TextInput accessibilityLabel="Verification code" style={styles.verificationInput} keyboardType="number-pad" maxLength={6} value={verificationCode} onChangeText={value => setVerificationCode(value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" placeholderTextColor={isLight ? "#9CA3AF" : "rgba(255,255,255,0.3)"} editable={!isChangingPassword} />
+                <View style={styles.passwordCodeActions}><TouchableOpacity accessibilityRole="button" onPress={() => setPasswordStep("form")} disabled={isChangingPassword} style={styles.passwordTextAction}><Text style={styles.passwordBackText}>← Edit passwords</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" onPress={handleRequestPasswordCode} disabled={resendSecondsLeft > 0 || isChangingPassword} style={styles.passwordTextAction}><Text style={[styles.passwordResendText, resendSecondsLeft > 0 && styles.passwordResendDisabled]}>{resendSecondsLeft > 0 ? `Resend in ${resendSecondsLeft}s` : "Resend code"}</Text></TouchableOpacity></View>
+              </>}
+            </ScrollView>
+            <View style={styles.passwordFooter}>
+              <TouchableOpacity accessibilityRole="button" onPress={closePasswordModal} disabled={isChangingPassword} style={styles.passwordCancel}><Text style={styles.passwordCancelText}>Cancel</Text></TouchableOpacity>
+              <TouchableOpacity accessibilityRole="button" onPress={passwordStep === "form" ? handleRequestPasswordCode : handleConfirmPassword} disabled={isChangingPassword || (passwordStep === "form" ? !currentPassword || !newPassword || !confirmNewPassword : verificationCode.length !== 6)} style={[styles.passwordSubmit, (isChangingPassword || (passwordStep === "form" ? !currentPassword || !newPassword || !confirmNewPassword : verificationCode.length !== 6)) && styles.disabledButton]}>{isChangingPassword && <ActivityIndicator size="small" color="#FFFFFF" />}<Text style={styles.passwordSubmitText}>{isChangingPassword ? passwordStep === "form" ? "Sending..." : "Updating..." : passwordStep === "form" ? "Send code" : "Update password"}</Text></TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -831,7 +529,92 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailC
   );
 };
 
-const styles = StyleSheet.create({
+function createProfileStyles(colors: { [K in keyof typeof commuterColors]: string }, isLight: boolean) {
+  return {
+    ...baseStyles,
+    container: { ...baseStyles.container, backgroundColor: colors.background },
+    centeredScreen: { ...baseStyles.centeredScreen, backgroundColor: colors.background },
+    loadingText: { ...baseStyles.loadingText, color: colors.textMuted },
+    fullName: { ...baseStyles.fullName, color: colors.textPrimary },
+    username: { ...baseStyles.username, color: colors.textMuted },
+    infoCard: { ...baseStyles.infoCard, backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 14 },
+    infoCardHeader: { ...baseStyles.infoCardHeader, color: colors.textMuted },
+    fieldLabel: { ...baseStyles.fieldLabel, color: colors.textSecondary },
+    fieldHint: { ...baseStyles.fieldHint, color: colors.textMuted },
+    inputDisabled: { ...baseStyles.inputDisabled, backgroundColor: colors.surfaceSecondary, borderColor: colors.borderSubtle, color: colors.textMuted },
+    inputEnabled: { ...baseStyles.inputEnabled, backgroundColor: colors.surfaceSecondary, borderColor: colors.border, color: colors.textPrimary },
+    actionButtonNeutral: { ...baseStyles.actionButtonNeutral, backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
+    actionButtonTextNeutral: { ...baseStyles.actionButtonTextNeutral, color: colors.textPrimary },
+    confirmModalCard: { ...baseStyles.confirmModalCard, backgroundColor: colors.surface, borderColor: colors.border },
+    confirmModalTitle: { ...baseStyles.confirmModalTitle, color: colors.textPrimary },
+    confirmModalDesc: { ...baseStyles.confirmModalDesc, color: colors.textSecondary },
+    neutralModalButton: { ...baseStyles.neutralModalButton, backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
+    neutralModalButtonText: { ...baseStyles.neutralModalButtonText, color: colors.textPrimary },
+    passwordModalCard: { ...baseStyles.passwordModalCard, width: "100%", maxWidth: 512, maxHeight: "90%", backgroundColor: colors.surface, borderColor: isLight ? colors.border : "rgba(98,160,234,0.2)", borderRadius: 16 },
+    passwordModalHeader: { ...baseStyles.passwordModalHeader, padding: 20, borderBottomColor: colors.border },
+    passwordModalTitle: { ...baseStyles.passwordModalTitle, color: colors.textPrimary, fontSize: 20, lineHeight: 26, fontWeight: "700" },
+    passwordModalSubtitle: { ...baseStyles.passwordModalSubtitle, color: colors.textSecondary, fontSize: 14, lineHeight: 21, marginTop: 16 },
+    passwordHeaderRow: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 },
+    passwordHeadingGroup: { flex: 1, flexDirection: "row", alignItems: "center", gap: 12 },
+    passwordIconTile: { width: 44, height: 44, flexShrink: 0, alignItems: "center", justifyContent: "center", borderRadius: 12, borderWidth: 1, borderColor: isLight ? "rgba(26,95,180,0.2)" : "rgba(153,193,241,0.25)", backgroundColor: isLight ? "rgba(26,95,180,0.1)" : "rgba(98,160,234,0.15)" },
+    passwordEyebrow: { color: isLight ? "#1A5FB4" : "#99C1F1", fontSize: 10, fontWeight: "600", letterSpacing: 1.4, textTransform: "uppercase", marginBottom: 4 },
+    passwordClose: { width: 36, height: 36, alignItems: "center", justifyContent: "center", borderRadius: 9, borderWidth: 1, borderColor: colors.border, backgroundColor: isLight ? "#FFFFFF" : "rgba(255,255,255,0.05)" },
+    passwordSteps: { flexDirection: "row", gap: 12, paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
+    passwordStepItem: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
+    passwordStepCircle: { width: 28, height: 28, flexShrink: 0, alignItems: "center", justifyContent: "center", borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: isLight ? "#F9FAFB" : "rgba(255,255,255,0.05)" },
+    passwordStepCurrent: { borderColor: "rgba(98,160,234,0.5)", backgroundColor: "#1A5FB4" },
+    passwordStepComplete: { borderColor: "rgba(16,185,129,0.3)", backgroundColor: "rgba(16,185,129,0.1)" },
+    passwordStepNumber: { color: colors.textMuted, fontSize: 12 },
+    passwordStepNumberActive: { color: "#FFFFFF" },
+    passwordStepLabel: { color: colors.textMuted, fontSize: 12, fontWeight: "500" },
+    passwordStepLabelActive: { color: isLight ? "#1A5FB4" : "#B6D3F6" },
+    passwordStepLabelComplete: { color: isLight ? "#047857" : "#6EE7B7" },
+    passwordScroll: { flexShrink: 1 },
+    passwordModalBody: { padding: 20, gap: 16 },
+    passwordError: { color: isLight ? "#B91C1C" : "#FCA5A5", backgroundColor: isLight ? "#FEF2F2" : "rgba(239,68,68,0.1)", borderWidth: 1, borderColor: isLight ? "#FECACA" : "rgba(239,68,68,0.3)", borderRadius: 12, padding: 12, fontSize: 14, lineHeight: 20 },
+    passwordField: { gap: 8 },
+    passwordFieldDivider: { paddingBottom: 20, borderBottomWidth: 1, borderBottomColor: colors.border },
+    passwordFieldLabel: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, fontWeight: "500" },
+    passwordInputWrap: { position: "relative", justifyContent: "center" },
+    passwordInput: { minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: 12, paddingHorizontal: 16, paddingRight: 56, paddingVertical: 12, backgroundColor: colors.surfaceSecondary, color: colors.textPrimary, fontSize: 16 },
+    passwordEye: { position: "absolute", right: 4, width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+    passwordRules: { padding: 16, borderWidth: 1, borderColor: isLight ? "rgba(26,95,180,0.15)" : "rgba(98,160,234,0.15)", borderRadius: 12, backgroundColor: isLight ? "#F0F7FF" : "rgba(98,160,234,0.05)" },
+    passwordRulesTitle: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
+    passwordRulesTitleText: { color: isLight ? "#1A5FB4" : "#B6D3F6", fontSize: 12, fontWeight: "500" },
+    passwordRulesGrid: { flexDirection: "row", flexWrap: "wrap", rowGap: 10 },
+    passwordRule: { width: "50%", flexDirection: "row", alignItems: "center", gap: 6, paddingRight: 6 },
+    passwordRuleCheck: { width: 14, height: 14, flexShrink: 0, alignItems: "center", justifyContent: "center", borderRadius: 7, borderWidth: 1, borderColor: isLight ? "#D1D5DB" : "rgba(255,255,255,0.2)" },
+    passwordRuleMet: { borderColor: "rgba(16,185,129,0.4)", backgroundColor: "rgba(16,185,129,0.15)" },
+    passwordRuleText: { color: colors.textSecondary, fontSize: 11, flexShrink: 1 },
+    passwordRuleTextMet: { color: isLight ? "#047857" : "#6EE7B7" },
+    inboxCard: { flexDirection: "row", alignItems: "flex-start", gap: 12, padding: 16, borderWidth: 1, borderColor: isLight ? "rgba(26,95,180,0.15)" : "rgba(98,160,234,0.2)", borderRadius: 12, backgroundColor: isLight ? "#F0F7FF" : "#0B223A" },
+    inboxIcon: { width: 40, height: 40, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: "rgba(98,160,234,0.1)" },
+    inboxTitle: { color: colors.textPrimary, fontSize: 14, fontWeight: "600" },
+    inboxSubtitle: { color: colors.textSecondary, fontSize: 12, lineHeight: 18, marginTop: 4 },
+    verificationInput: { minHeight: 52, marginTop: 8, borderWidth: 1, borderColor: colors.border, borderRadius: 12, paddingHorizontal: 16, backgroundColor: colors.surfaceSecondary, color: colors.textPrimary, textAlign: "center", fontSize: 20, letterSpacing: 6, fontFamily: "monospace" },
+    passwordCodeActions: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+    passwordTextAction: { minHeight: 40, alignItems: "center", justifyContent: "center", paddingHorizontal: 8 },
+    passwordBackText: { color: colors.textSecondary, fontSize: 12, fontWeight: "500" },
+    passwordResendText: { color: isLight ? "#1A5FB4" : "#99C1F1", fontSize: 12, fontWeight: "500" },
+    passwordResendDisabled: { color: colors.textMuted },
+    passwordFooter: { flexDirection: "row", gap: 12, padding: 20, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: isLight ? "#F9FAFB" : "#0B223A" },
+    passwordCancel: { flex: 1, minHeight: 44, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: isLight ? colors.border : "rgba(255,255,255,0.15)", borderRadius: 12, paddingHorizontal: 12 },
+    passwordCancelText: { color: colors.textSecondary, fontSize: 14, fontWeight: "600" },
+    passwordSubmit: { flex: 1.4, minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 12, backgroundColor: "#1A5FB4", paddingHorizontal: 12 },
+    passwordSubmitText: { color: "#FFFFFF", fontSize: 14, fontWeight: "600" },
+    modalFieldLabel: { ...baseStyles.modalFieldLabel, color: colors.textSecondary },
+    modalInput: { ...baseStyles.modalInput, backgroundColor: colors.surfaceSecondary, borderColor: colors.border, color: colors.textPrimary },
+    codeInstructions: { ...baseStyles.codeInstructions, color: colors.textSecondary },
+    tourCard: { ...baseStyles.tourCard, backgroundColor: colors.surface, borderColor: colors.border },
+    tourTitle: { ...baseStyles.tourTitle, color: colors.textPrimary },
+    tourSubtitle: { ...baseStyles.tourSubtitle, color: colors.textSecondary },
+    errorTitle: { ...baseStyles.errorTitle, color: colors.textPrimary },
+    errorSubtitle: { ...baseStyles.errorSubtitle, color: colors.textMuted },
+    ...profileLayout(isLight),
+  };
+}
+
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#050F1A",

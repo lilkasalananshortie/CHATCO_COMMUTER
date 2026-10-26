@@ -1,0 +1,60 @@
+import { StyleSheet } from "react-native";
+
+/** Values from the web ProfileContent page at phone widths (<640px). */
+export function profileLayout(isLight: boolean) {
+  const text = isLight ? "#111827" : "#FFFFFF";
+  const muted = isLight ? "#6B7280" : "rgba(255,255,255,0.5)";
+  const border = isLight ? "#E5E7EB" : "rgba(255,255,255,0.1)";
+  const icon = isLight ? "#1A5FB4" : "#99C1F1";
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: isLight ? "#F8FAFC" : "#050F1A" },
+    pageHeading: { width: "100%", maxWidth: 672, alignSelf: "center", flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 16, paddingHorizontal: 16, paddingTop: 24, paddingBottom: 20 },
+    pageTitle: { fontSize: 24, lineHeight: 32, fontWeight: "700", letterSpacing: -0.6, color: text },
+    pageSubtitle: { fontSize: 14, lineHeight: 20, marginTop: 4, color: muted },
+    themeToggle: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: isLight ? "#FCD34D" : "rgba(98,160,234,0.25)", backgroundColor: isLight ? "#FFFBEB" : "rgba(98,160,234,0.1)", alignItems: "center", justifyContent: "center" },
+    scrollContent: { width: "100%", maxWidth: 672, alignSelf: "center", paddingHorizontal: 16, paddingBottom: 24, gap: 20 },
+    profileHeader: { flexDirection: "row", alignItems: "center", gap: 16, padding: 20, borderWidth: 1, borderColor: isLight ? "rgba(26,95,180,0.2)" : "rgba(98,160,234,0.2)", borderRadius: 16, overflow: "hidden" },
+    photoColumn: { alignItems: "center", flexShrink: 0, gap: 8 },
+    avatarCircle: { width: 80, height: 80, borderRadius: 16, borderWidth: 1, borderColor: "rgba(153,193,241,0.3)", backgroundColor: "#1A5FB4", alignItems: "center", justifyContent: "center", shadowColor: "#000000", shadowOpacity: 0.15, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
+    photoImage: { width: "100%", height: "100%", borderRadius: 16 },
+    photoBadge: { position: "absolute", bottom: -6, right: -6, width: 32, height: 32, borderRadius: 16, borderWidth: 2, borderColor: isLight ? "#FFFFFF" : "#071A2E", backgroundColor: isLight ? "#1A5FB4" : "#99C1F1", alignItems: "center", justifyContent: "center" },
+    photoLabel: { marginTop: 4, fontSize: 11, lineHeight: 16.5, fontWeight: "500", color: isLight ? "#1A5FB4" : "#B6D3F6" },
+    profileMeta: { flex: 1, minWidth: 0 },
+    fullName: { fontSize: 20, lineHeight: 27.5, fontWeight: "700", color: text },
+    username: { fontSize: 14, lineHeight: 20, marginTop: 4, color: muted },
+    pillsRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 12 },
+    statusPill: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6, maxWidth: "100%" },
+    statusPillText: { color: "#FFFFFF", fontSize: 11, lineHeight: 13.75, fontWeight: "500", flexShrink: 1 },
+    discountPill: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: "#337DD2", backgroundColor: "#1A5FB4" },
+    discountPillText: { fontSize: 11, lineHeight: 13.75, fontWeight: "600", color: "#FFFFFF" },
+    discountValue: { borderLeftWidth: 1, borderLeftColor: "rgba(255,255,255,0.4)", paddingLeft: 8, fontSize: 11, lineHeight: 13.75, fontWeight: "600", color: "#FFFFFF" },
+    photoHelp: { fontSize: 12, lineHeight: 16, color: isLight ? "#6B7280" : "rgba(255,255,255,0.45)" },
+    infoCard: { backgroundColor: isLight ? "#FFFFFF" : "#071A2E", borderWidth: 1, borderColor: border, borderRadius: 16, padding: 20 },
+    cardHeading: { flexDirection: "row", alignItems: "center", gap: 8 },
+    cardTitle: { color: text, fontSize: 14, lineHeight: 20, fontWeight: "600" },
+    detailGrid: { flexDirection: "row", flexWrap: "wrap", columnGap: "4%", rowGap: 20, marginTop: 16 },
+    detailCell: { width: "48%" },
+    detailFull: { width: "100%" },
+    fieldLabel: { color: muted, fontSize: 12, lineHeight: 16 },
+    fieldValue: { color: isLight ? "#111827" : "rgba(255,255,255,0.9)", fontSize: 14, lineHeight: 20, marginTop: 4 },
+    contactHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+    contactEdit: { minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: "#337DD2", backgroundColor: "#1A5FB4" },
+    contactEditText: { fontSize: 12, lineHeight: 16, fontWeight: "600", color: "#FFFFFF" },
+    contactInput: { marginTop: 12, borderWidth: 1, borderColor: border, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, fontSize: 16, lineHeight: 24, color: text, backgroundColor: isLight ? "#FFFFFF" : "#050F1A" },
+    contactActions: { flexDirection: "row", justifyContent: "center", gap: 8, marginTop: 12 },
+    contactCancel: { flex: 1, minHeight: 44, borderWidth: 1, borderColor: border, borderRadius: 8, alignItems: "center", justifyContent: "center", paddingHorizontal: 16 },
+    contactCancelText: { fontSize: 14, lineHeight: 20, fontWeight: "500", color: isLight ? "#4B5563" : "rgba(255,255,255,0.7)" },
+    contactSave: { flex: 1, minHeight: 44, borderRadius: 8, backgroundColor: "#1A5FB4", flexDirection: "row", alignItems: "center", justifyContent: "center", paddingHorizontal: 16, gap: 8 },
+    contactSaveText: { color: "#FFFFFF", fontSize: 14, lineHeight: 20, fontWeight: "600" },
+    securityRow: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, borderRadius: 8 },
+    securityText: { flex: 1, fontSize: 14, lineHeight: 20, color: isLight ? "#374151" : "rgba(255,255,255,0.8)" },
+    logoutButton: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderWidth: 1, borderColor: "rgba(239,68,68,0.2)", backgroundColor: "rgba(239,68,68,0.05)", borderRadius: 12, paddingHorizontal: 8 },
+    logoutButtonText: { fontSize: 14, lineHeight: 20, fontWeight: "500", color: isLight ? "#DC2626" : "#F87171" },
+    supportLink: { minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
+    supportText: { color: muted, fontSize: 12, lineHeight: 16 },
+    applicationEntry: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: border },
+    applicationText: { color: isLight ? "#4B5563" : "rgba(255,255,255,0.6)", fontSize: 14, lineHeight: 20 },
+    applicationLink: { minHeight: 44, justifyContent: "center", marginTop: 8 },
+    applicationLinkText: { color: icon, fontSize: 14, lineHeight: 20, fontWeight: "600" },
+  });
+}

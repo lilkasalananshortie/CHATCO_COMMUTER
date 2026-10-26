@@ -1,7 +1,7 @@
 import React from "react";
+import { Text } from "./BrandText";
 import {
   View,
-  Text,
   StyleSheet,
   TouchableOpacity,
   StatusBar,
@@ -10,6 +10,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { commuterColors } from "../../core/theme/colors";
+import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 
 interface HeaderBarProps {
   title?: string;
@@ -31,10 +32,12 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   onOpenTour,
 }) => {
   const insets = useSafeAreaInsets();
+  const { colors, isLight } = useCommuterTheme();
+  const styles = createStyles(colors, isLight);
 
   return (
     <View style={[styles.container, { paddingTop: Math.max(insets.top, 12) + 8 }]}>
-      <StatusBar barStyle="light-content" backgroundColor={commuterColors.navyDeep} />
+      <StatusBar barStyle={isLight ? "dark-content" : "light-content"} backgroundColor={colors.background} />
 
       <View style={styles.content}>
         {/* Left: Branding & Greeting */}
@@ -77,7 +80,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
               accessibilityRole="button"
               accessibilityLabel="App Guide & Walkthrough"
             >
-              <Ionicons name="help-circle-outline" size={20} color="rgba(255, 255, 255, 0.85)" />
+              <Ionicons name="help-circle-outline" size={20} color={colors.textSecondary} />
             </TouchableOpacity>
           )}
 
@@ -89,7 +92,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             accessibilityRole="button"
             accessibilityLabel={`Announcements, ${unreadAnnouncements} unread`}
           >
-            <Ionicons name="notifications-outline" size={20} color="#FFFFFF" />
+            <Ionicons name="notifications-outline" size={20} color={colors.textPrimary} />
             {unreadAnnouncements > 0 && (
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>
@@ -116,13 +119,14 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+function createStyles(colors: { [K in keyof typeof commuterColors]: string }, isLight: boolean) {
+return StyleSheet.create({
   container: {
-    backgroundColor: commuterColors.navyDeep,
+    backgroundColor: colors.surface,
     paddingBottom: 14,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.08)",
+    borderBottomColor: colors.border,
   },
   content: {
     flexDirection: "row",
@@ -149,13 +153,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   titleText: {
-    color: "#FFFFFF",
+    color: colors.textPrimary,
     fontSize: 16,
     fontWeight: "900",
     letterSpacing: 0.5,
   },
   rolePill: {
-    backgroundColor: "rgba(26, 95, 180, 0.4)",
+    backgroundColor: isLight ? "#EBF3FE" : "rgba(26, 95, 180, 0.4)",
     borderColor: commuterColors.primaryLight,
     borderWidth: 1,
     paddingHorizontal: 6,
@@ -164,13 +168,13 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
   rolePillText: {
-    color: "#BAE6FD",
+    color: isLight ? "#1A5FB4" : "#BAE6FD",
     fontSize: 9,
     fontWeight: "800",
     letterSpacing: 0.5,
   },
   greetingText: {
-    color: "#94A3B8",
+    color: colors.textMuted,
     fontSize: 12,
     fontWeight: "500",
     marginTop: 1,
@@ -188,7 +192,7 @@ const styles = StyleSheet.create({
     marginRight: 5,
   },
   liveText: {
-    color: "#94A3B8",
+    color: colors.textMuted,
     fontSize: 11,
     fontWeight: "500",
   },
@@ -201,7 +205,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    backgroundColor: isLight ? colors.surfaceSecondary : "rgba(255, 255, 255, 0.12)",
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
@@ -243,3 +247,4 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 });
+}

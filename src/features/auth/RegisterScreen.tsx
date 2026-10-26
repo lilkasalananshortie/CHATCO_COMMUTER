@@ -118,6 +118,8 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
   onRegisterSuccess,
   onGoToLogin,
 }) => {
+  const colors = commuterColors;
+  const styles = baseStyles;
   const { width: windowWidth } = useWindowDimensions();
   const isTablet = windowWidth >= 768;
 
@@ -642,7 +644,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                   <Ionicons
                     name="alert-circle-outline"
                     size={18}
-                    color={commuterColors.danger}
+                    color={colors.danger}
                     style={{ marginRight: 8, marginTop: 1 }}
                   />
                   <Text style={styles.errorBannerText}>{errorMessage}</Text>
@@ -1310,7 +1312,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   outerContainer: {
     flex: 1,
     backgroundColor: "#050F1A",

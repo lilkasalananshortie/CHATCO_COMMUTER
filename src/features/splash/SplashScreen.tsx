@@ -21,6 +21,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
   onFinish,
   minDurationMs = 2300,
 }) => {
+  const styles = baseStyles;
   // Entrance & exit values
   const logoScale = useRef(new Animated.Value(0.72)).current;
   const logoOpacity = useRef(new Animated.Value(0)).current;
@@ -431,7 +432,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     position: "absolute",
     top: 0,

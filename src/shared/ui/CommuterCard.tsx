@@ -1,6 +1,6 @@
 import React, { type ReactNode } from "react";
 import { View, type ViewStyle, type StyleProp } from "react-native";
-import { commuterColors } from "../../core/theme/colors";
+import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 
 interface CommuterCardProps {
   children: ReactNode;
@@ -8,14 +8,15 @@ interface CommuterCardProps {
 }
 
 export function CommuterCard({ children, style }: CommuterCardProps) {
+  const { colors } = useCommuterTheme();
   return (
     <View
       style={[
         {
-          backgroundColor: commuterColors.surface,
+          backgroundColor: colors.surface,
           borderRadius: 20,
           borderWidth: 1,
-          borderColor: commuterColors.border,
+          borderColor: colors.border,
           padding: 20,
           shadowColor: "#1A5FB4",
           shadowOffset: { width: 0, height: 4 },

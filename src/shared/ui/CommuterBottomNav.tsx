@@ -1,13 +1,14 @@
 import React from "react";
+import { Text } from "./BrandText";
 import {
   View,
-  Text,
   TouchableOpacity,
   StyleSheet,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { commuterColors } from "../../core/theme/colors";
+import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import type { CommuterTab } from "../../core/domain/types";
 
 export type { CommuterTab };
@@ -26,6 +27,8 @@ export const CommuterBottomNav: React.FC<CommuterBottomNavProps> = ({
   lostFoundBadge = 0,
 }) => {
   const insets = useSafeAreaInsets();
+  const { colors, isLight } = useCommuterTheme();
+  const styles = createStyles(colors, isLight);
 
   const navItems: {
     id: CommuterTab;
@@ -115,7 +118,7 @@ export const CommuterBottomNav: React.FC<CommuterBottomNavProps> = ({
                 <Ionicons
                   name={isActive ? item.activeIcon : item.icon}
                   size={19}
-                  color={isActive ? "#FFFFFF" : "rgba(255, 255, 255, 0.45)"}
+                  color={isActive ? "#FFFFFF" : isLight ? colors.textMuted : "rgba(255, 255, 255, 0.45)"}
                 />
                 {badgeCount > 0 && (
                   <View style={styles.badge}>
@@ -144,11 +147,12 @@ export const CommuterBottomNav: React.FC<CommuterBottomNavProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+function createStyles(colors: { [K in keyof typeof commuterColors]: string }, isLight: boolean) {
+return StyleSheet.create({
   container: {
-    backgroundColor: "#0B1E33",
+    backgroundColor: isLight ? colors.surface : "#0B1E33",
     borderTopWidth: 1,
-    borderTopColor: "rgba(255, 255, 255, 0.06)",
+    borderTopColor: colors.border,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.35,
@@ -175,7 +179,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   topDotActive: {
-    backgroundColor: "#62A0EA",
+    backgroundColor: colors.primaryLight,
   },
   topDotHidden: {
     backgroundColor: "transparent",
@@ -189,7 +193,7 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   iconChipActive: {
-    backgroundColor: "#1A5FB4",
+    backgroundColor: colors.primary,
     shadowColor: "#1A5FB4",
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.4,
@@ -211,7 +215,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 4,
     borderWidth: 1.5,
-    borderColor: "#0B1E33",
+    borderColor: colors.surface,
   },
   badgeText: {
     color: "#FFFFFF",
@@ -224,11 +228,12 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   activeTabLabel: {
-    color: "#FFFFFF",
+    color: isLight ? colors.primary : "#FFFFFF",
     fontWeight: "700",
   },
   inactiveTabLabel: {
-    color: "rgba(255, 255, 255, 0.35)",
+    color: colors.textMuted,
     fontWeight: "500",
   },
 });
+}

@@ -9,7 +9,7 @@ import {
   TextStyle,
   StyleProp,
 } from "react-native";
-import { commuterColors } from "../../core/theme/colors";
+import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 
 export type ButtonVariant = "primary" | "signal" | "secondary" | "danger" | "ghost";
 
@@ -36,22 +36,23 @@ export const CommuterButton: React.FC<CommuterButtonProps> = ({
   textStyle,
   fullWidth = false,
 }) => {
+  const { colors } = useCommuterTheme();
   const getVariantStyle = (): ViewStyle => {
     switch (variant) {
       case "signal":
         return {
-          backgroundColor: disabled ? "#FFB59E" : commuterColors.accentSignal,
+          backgroundColor: disabled ? "#FFB59E" : colors.accentSignal,
           borderColor: "transparent",
         };
       case "secondary":
         return {
-          backgroundColor: commuterColors.surface,
-          borderColor: commuterColors.border,
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
           borderWidth: 1.5,
         };
       case "danger":
         return {
-          backgroundColor: disabled ? "#FCA5A5" : commuterColors.danger,
+          backgroundColor: disabled ? "#FCA5A5" : colors.danger,
           borderColor: "transparent",
         };
       case "ghost":
@@ -62,7 +63,7 @@ export const CommuterButton: React.FC<CommuterButtonProps> = ({
       case "primary":
       default:
         return {
-          backgroundColor: disabled ? "#93C5FD" : commuterColors.primary,
+          backgroundColor: disabled ? "#93C5FD" : colors.primary,
           borderColor: "transparent",
         };
     }
@@ -72,11 +73,11 @@ export const CommuterButton: React.FC<CommuterButtonProps> = ({
     switch (variant) {
       case "secondary":
         return {
-          color: disabled ? commuterColors.textMuted : commuterColors.primary,
+          color: disabled ? colors.textMuted : colors.primary,
         };
       case "ghost":
         return {
-          color: disabled ? commuterColors.textMuted : commuterColors.textSecondary,
+          color: disabled ? colors.textMuted : colors.textSecondary,
         };
       case "signal":
       case "danger":
@@ -103,7 +104,7 @@ export const CommuterButton: React.FC<CommuterButtonProps> = ({
       {loading ? (
         <ActivityIndicator
           size="small"
-          color={variant === "secondary" ? commuterColors.primary : "#FFFFFF"}
+          color={variant === "secondary" ? colors.primary : "#FFFFFF"}
         />
       ) : (
         <>
