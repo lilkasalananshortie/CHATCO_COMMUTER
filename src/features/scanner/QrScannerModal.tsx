@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { Text } from "../../shared/ui/BrandText";
 import {
   View,
-  Text,
   StyleSheet,
   Modal,
   TextInput,
@@ -15,12 +15,15 @@ import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import { commuterColors } from "../../core/theme/colors";
+import { useCommuterTheme } from "../../core/theme/ThemeProvider";
+import { themedStyles } from "../../core/theme/themed-styles";
 import {
   commuterService,
   type ClaimGcashResult,
 } from "../../core/api/commuter-service";
 import { notifyRewardsChanged } from "../../core/domain/rewards-events";
 import { voucherLabel } from "../../core/domain/rewards";
+import { GroupVoucherPicker } from "./GroupVoucherPicker";
 
 interface QrScannerModalProps {
   visible: boolean;
@@ -43,12 +46,14 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
   onClose,
   onPaymentSuccess,
 }) => {
+  const { colors: selectedColors, isLight = false } = useCommuterTheme();
+  const colors = { ...commuterColors, ...(selectedColors ?? {}) };
+  const styles = useMemo(() => themedStyles(baseStyles, colors, isLight), [colors, isLight]);
   const [step, setStep] = useState<Step>("scanning");
   const [claimResult, setClaimResult] = useState<ClaimGcashResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [manualToken, setManualToken] = useState("");
   const [showManualEntry, setShowManualEntry] = useState(false);
-  const [torch, setTorch] = useState(false);
   const [scanned, setScanned] = useState(false);
   const pending = useRef(false);
   const generation = useRef(0);
@@ -59,7 +64,6 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
   useEffect(() => {
     if (visible && step === "scanning") {
       setScanned(false);
-      setTorch(false);
       if (permission && !permission.granted && permission.canAskAgain) {
         requestPermission().catch(() => {});
       }
@@ -72,7 +76,6 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
     setError(null);
     setManualToken("");
     setShowManualEntry(false);
-    setTorch(false);
     setScanned(false);
   };
 
@@ -190,13 +193,13 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
     [scanned, step, handleScanSuccess]
   );
 
-  const handleUseVoucher = async () => {
+  const handleUseVoucher = async (voucherIds?: string[]) => {
     if (!claimResult || pending.current) return;
     pending.current = true;
     const attempt = generation.current;
     setStep("verifying");
     try {
-      const redeemed = await commuterService.redeemVoucherForGcash(claimResult.transactionId, claimResult.availableVoucher?.id);
+      const redeemed = await commuterService.redeemVoucherForGcash(claimResult.transactionId, voucherIds ?? claimResult.availableVoucher?.id);
       if (generation.current !== attempt) return;
       setClaimResult(redeemed);
       await proceedToPayment(redeemed);
@@ -283,32 +286,15 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
                 </Text>
               </View>
             </View>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              {step === "scanning" && !showManualEntry && permission?.granted ? (
-                <TouchableOpacity
-                  onPress={() => setTorch((t) => !t)}
-                  style={[styles.headerTorchBtn, torch && styles.headerTorchBtnActive]}
-                  activeOpacity={0.7}
-                  accessibilityLabel={torch ? "Turn off flashlight" : "Turn on flashlight"}
-                >
-                  <Ionicons
-                    name={torch ? "flashlight" : "flashlight-outline"}
-                    size={16}
-                    color={torch ? "#FBBF24" : "#FFFFFF"}
-                  />
-                  <Text style={[styles.headerTorchText, torch && styles.headerTorchTextActive]}>
-                    {torch ? "Torch: ON" : "Torch"}
-                  </Text>
-                </TouchableOpacity>
-              ) : null}
-              <TouchableOpacity
-                onPress={handleClose}
-                style={styles.closeBtn}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="close" size={18} color="rgba(255,255,255,0.6)" />
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              onPress={handleClose}
+              style={styles.closeBtn}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Close scanner"
+            >
+              <Ionicons name="close" size={18} color="rgba(255,255,255,0.6)" />
+            </TouchableOpacity>
           </View>
 
           {/* Body based on state */}
@@ -341,9 +327,8 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
                     ) : (
                       <View style={styles.scannerViewport}>
                         <CameraView
-                          style={StyleSheet.absoluteFill}
+                          style={[StyleSheet.absoluteFill, { pointerEvents: "none" }]}
                           facing="back"
-                          enableTorch={torch}
                           barcodeScannerSettings={{
                             barcodeTypes: ["qr"],
                           }}
@@ -351,7 +336,7 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
                         />
 
                         {/* Scanner Reticle Overlay */}
-                        <View style={styles.reticleOverlay} pointerEvents="none">
+                        <View style={[styles.reticleOverlay, { pointerEvents: "none" }]}>
                           <View style={styles.reticle}>
                             <View style={[styles.corner, styles.topLeft]} />
                             <View style={[styles.corner, styles.topRight]} />
@@ -361,42 +346,8 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
                           </View>
                         </View>
 
-                        {/* Torch toggle button */}
-                        <TouchableOpacity
-                          activeOpacity={0.8}
-                          onPress={() => setTorch((t) => !t)}
-                          style={[styles.torchBtn, torch && styles.torchBtnActive]}
-                          accessibilityLabel={torch ? "Turn off flashlight" : "Turn on flashlight"}
-                        >
-                          <Ionicons
-                            name={torch ? "flashlight" : "flashlight-outline"}
-                            size={16}
-                            color={torch ? "#FBBF24" : "#FFFFFF"}
-                          />
-                          <Text style={[styles.torchBtnText, torch && styles.torchBtnTextActive]}>
-                            {torch ? "Torch: ON" : "Torch"}
-                          </Text>
-                        </TouchableOpacity>
                       </View>
                     )}
-
-                    {/* Dedicated prominent Torch / Flashlight toggle bar */}
-                    {permission?.granted ? (
-                      <TouchableOpacity
-                        activeOpacity={0.8}
-                        onPress={() => setTorch((t) => !t)}
-                        style={[styles.torchBarBtn, torch && styles.torchBarBtnActive]}
-                      >
-                        <Ionicons
-                          name={torch ? "flashlight" : "flashlight-outline"}
-                          size={18}
-                          color={torch ? "#FBBF24" : "#62A0EA"}
-                        />
-                        <Text style={[styles.torchBarText, torch && styles.torchBarTextActive]}>
-                          {torch ? "Flashlight is ON (Tap to turn OFF)" : "Turn ON Flashlight / Torch"}
-                        </Text>
-                      </TouchableOpacity>
-                    ) : null}
 
                     <Text style={styles.reticleHint}>
                       Align the QR code shown by the conductor within the frame
@@ -408,7 +359,7 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
                       activeOpacity={0.7}
                     >
                       <Text style={styles.manualEntryLinkText}>
-                        Enter token manually instead
+                        Enter token manually
                       </Text>
                     </TouchableOpacity>
                   </>
@@ -461,7 +412,10 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
               </View>
             )}
 
-            {step === "voucher_offer" && claimResult && (
+            {step === "voucher_offer" && claimResult?.isGroup && Boolean(claimResult.seats?.length) && Boolean(claimResult.availableVouchers?.length) ? (
+              <GroupVoucherPicker seats={claimResult.seats!} vouchers={claimResult.availableVouchers!}
+                onUse={ids => void handleUseVoucher(ids)} onPayInstead={handleDeclineVoucher} />
+            ) : step === "voucher_offer" && claimResult && (
               <View style={styles.centeredState}>
                 <View style={styles.successIconCircle}>
                   <Ionicons name="gift-outline" size={32} color="#10B981" />
@@ -494,7 +448,7 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
 
                 <View style={{ width: "100%", gap: 10, marginTop: 18 }}>
                   <TouchableOpacity
-                    onPress={handleUseVoucher}
+                    onPress={() => void handleUseVoucher()}
                     style={styles.emeraldButton}
                     activeOpacity={0.8}
                   >
@@ -709,7 +663,7 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.8)",
@@ -775,55 +729,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  headerTorchBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 10,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.15)",
-  },
-  headerTorchBtnActive: {
-    backgroundColor: "rgba(251, 191, 36, 0.2)",
-    borderColor: "#FBBF24",
-  },
-  headerTorchText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#FFFFFF",
-  },
-  headerTorchTextActive: {
-    color: "#FBBF24",
-  },
-  torchBarBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    width: "100%",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    marginTop: 12,
-    backgroundColor: "rgba(98, 160, 234, 0.12)",
-    borderWidth: 1.5,
-    borderColor: "rgba(98, 160, 234, 0.3)",
-  },
-  torchBarBtnActive: {
-    backgroundColor: "rgba(251, 191, 36, 0.2)",
-    borderColor: "#FBBF24",
-  },
-  torchBarText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#62A0EA",
-  },
-  torchBarTextActive: {
-    color: "#FBBF24",
-  },
   body: {
     padding: 20,
   },
@@ -859,36 +764,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.8,
     shadowRadius: 4,
-  },
-  torchBtn: {
-    position: "absolute",
-    top: 12,
-    right: 12,
-    minWidth: 76,
-    height: 34,
-    paddingHorizontal: 10,
-    borderRadius: 17,
-    backgroundColor: "rgba(5, 15, 26, 0.85)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.25)",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    zIndex: 9999,
-    elevation: 25,
-  },
-  torchBtnActive: {
-    backgroundColor: "rgba(251, 191, 36, 0.25)",
-    borderColor: "#FBBF24",
-  },
-  torchBtnText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#FFFFFF",
-  },
-  torchBtnTextActive: {
-    color: "#FBBF24",
   },
   permissionBox: {
     width: "100%",

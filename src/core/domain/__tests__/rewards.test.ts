@@ -19,6 +19,10 @@ test("expired and used vouchers do not inflate badges", () => {
   expect(result.availableVoucherCount).toBe(1);
   expect(result.vouchers![0]!.status).toBe("EXPIRED");
 });
+test("authoritative available voucher count is preserved for the rewards badge", () => {
+  const result = normalizeRewards({ availableVoucherCount: 3, vouchers: [{ id: "v", status: "AVAILABLE" }] });
+  expect(result.availableVoucherCount).toBe(3);
+});
 test("invalid expiry is not treated as usable", () => {
   expect(isVoucherAvailable({ id: "x", code: "x", status: "AVAILABLE", expires_at: "invalid" })).toBe(false);
 });

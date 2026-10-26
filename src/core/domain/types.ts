@@ -151,6 +151,8 @@ export interface Voucher {
   expiresAt?: string | null;
   rideOrigin?: string;
   is_used?: boolean;
+  usedAt?: string | null;
+  usedRoute?: string | null;
 }
 
 export interface Feedback {
@@ -183,6 +185,8 @@ export interface LostItem {
   conductorName?: string | null;
   estimatedTimeLost?: string | null;
   datePosted?: string | null;
+  claimableUntil?: string | null;
+  photos?: { id: string; url: string }[];
   is_watched?: boolean;
 }
 
@@ -198,6 +202,10 @@ export interface ClaimData {
   rejectedAt?: string | null;
   releasedAt?: string | null;
   rejectionReason?: string | null;
+  pickupLocation?: string | null;
+  pickupAt?: string | null;
+  pickupReminder?: string | null;
+  noShowAt?: string | null;
   item: LostItem | null;
 }
 

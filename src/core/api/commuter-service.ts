@@ -3,6 +3,7 @@ import { normalizeRewards } from "../domain/rewards";
 import { mapAnnouncementType } from "../domain/announcement-category";
 import { mapTrip } from "../domain/trips";
 import { notifyRewardsChanged } from "../domain/rewards-events";
+import type { GroupSeat, VoucherOption } from "../domain/group-voucher-plan";
 import type {
   Announcement,
   ClaimData,
@@ -13,6 +14,7 @@ import type {
   LostItem,
   ResolvedCrew,
   RewardProgress,
+  Voucher,
   SosAlert,
   Trip,
   User,
@@ -31,6 +33,8 @@ export interface ClaimGcashResult {
   voucherAvailable?: boolean;
   availableVoucher?: { id: string; type: "FREE_RIDE" | "DISCOUNT" | "REWARD"; amount: number | null } | null;
   isGroup?: boolean;
+  availableVouchers?: VoucherOption[];
+  seats?: GroupSeat[];
 }
 
 export interface ReceiptClaimResult {
@@ -233,11 +237,19 @@ export const commuterService = {
       voucherAvailable: Boolean(res.voucher_available ?? res.can_redeem_voucher),
       availableVoucher: res.available_voucher ? { ...res.available_voucher, amount: res.available_voucher.amount == null ? null : Number(res.available_voucher.amount) } : null,
       isGroup: Boolean(res.is_group ?? (res.passenger_count > 1)),
+      availableVouchers: (res.available_vouchers ?? []).map((voucher: any) => ({
+        id: String(voucher.id), type: voucher.type, amount: voucher.amount == null ? null : Number(voucher.amount),
+        expiresAt: voucher.expires_at ?? null,
+      })),
+      seats: (res.seats ?? []).map((seat: any) => ({
+        position: Number(seat.position), fare: Number(seat.fare), passengerType: seat.passenger_type ?? null, isPayer: Boolean(seat.is_payer),
+      })),
     };
   },
 
-  async redeemVoucherForGcash(transactionId: string, voucherId?: string): Promise<ClaimGcashResult> {
-    const res = await post<any>(`/mobile/commuter/payments/${encodeURIComponent(transactionId)}/redeem-voucher`, voucherId ? { voucher_id: voucherId } : {});
+  async redeemVoucherForGcash(transactionId: string, voucherId?: string | string[]): Promise<ClaimGcashResult> {
+    const body = Array.isArray(voucherId) ? { voucher_ids: voucherId } : voucherId ? { voucher_id: voucherId } : {};
+    const res = await post<any>(`/mobile/commuter/payments/${encodeURIComponent(transactionId)}/redeem-voucher`, body);
     notifyRewardsChanged();
     return {
       transactionId: res.transaction_id || transactionId,
@@ -335,6 +347,40 @@ export const commuterService = {
     return normalizeRewards(res);
   },
 
+  async getVoucherWallet(status: "available" | "used" | "expired", cursor?: string | null): Promise<{
+    items: Voucher[];
+    nextCursor: string | null;
+  }> {
+    const query = new URLSearchParams({ status, per_page: "50" });
+    if (cursor) query.set("cursor", cursor);
+    let res: any;
+    try {
+      res = await request<any>(`/mobile/commuter/vouchers?${query.toString()}`);
+    } catch (error: any) {
+      // Older deployed API instances expose the same authoritative controller
+      // at the shared commuter namespace. Only a missing route may fall back;
+      // auth, validation, rate-limit, and offline failures must remain visible.
+      if (error?.status !== 404) throw error;
+      res = await request<any>(`/commuter/vouchers?${query.toString()}`);
+    }
+    const rows = Array.isArray(res?.vouchers) ? res.vouchers : Array.isArray(res) ? res : [];
+    return {
+      items: rows.map((voucher: any) => ({
+        id: String(voucher.id),
+        code: String(voucher.code ?? ""),
+        type: voucher.type ?? "REWARD",
+        amount: voucher.amount == null ? null : Number(voucher.amount),
+        status: String(voucher.status ?? status).toUpperCase(),
+        expiresAt: voucher.expiresAt ?? voucher.expires_at ?? null,
+        expires_at: voucher.expiresAt ?? voucher.expires_at ?? null,
+        rideOrigin: voucher.rideOrigin ?? voucher.ride_origin ?? "Reward",
+        usedAt: voucher.usedAt ?? voucher.used_at ?? null,
+        usedRoute: voucher.usedRoute ?? voucher.used_route ?? null,
+      })),
+      nextCursor: res?.nextCursor ?? res?.next_cursor ?? null,
+    };
+  },
+
   // Feedback & QR Resolution
   async scanQr(token: string): Promise<ResolvedCrew> {
     // Permanent unit QR is JSON with vehicle_id; signed QR remains on /scan.
@@ -397,11 +443,19 @@ export const commuterService = {
     return request(`/mobile/commuter/sos/${encodeURIComponent(id)}`);
   },
 
+  async stopSos(id: string): Promise<SosAlert> {
+    return request(`/mobile/commuter/sos/${encodeURIComponent(id)}/stop`, { method: "PATCH" });
+  },
+
   // Lost & Found
   async getLostItems(params: {
     category?: string;
+    categories?: string[];
     search?: string;
     date?: string;
+    date_from?: string;
+    date_to?: string;
+    range?: "today" | "week" | "month" | "year";
     page?: number;
     per_page?: number;
   } = {}): Promise<{
@@ -412,8 +466,12 @@ export const commuterService = {
   }> {
     const query = new URLSearchParams();
     if (params.category && params.category !== "ALL") query.set("category", params.category);
+    for (const category of params.categories ?? []) query.append("categories[]", category);
     if (params.search?.trim()) query.set("search", params.search.trim());
     if (params.date) query.set("date", params.date);
+    if (params.date_from) query.set("date_from", params.date_from);
+    if (params.date_to) query.set("date_to", params.date_to);
+    if (params.range) query.set("range", params.range);
     if (params.page) query.set("page", String(params.page));
     if (params.per_page) query.set("per_page", String(params.per_page));
 
@@ -434,6 +492,8 @@ export const commuterService = {
         estimatedTimeLost: r.estimated_time_lost || null,
         found_at: r.found_at || r.created_at,
         datePosted: r.created_at || r.found_at,
+        claimableUntil: r.claimable_until || null,
+        photos: (r.photos || []).map((photo: any) => ({ id: String(photo.id), url: photo.url })).filter((photo: any) => photo.url),
         status: (r.status || "AVAILABLE").toUpperCase(),
         is_watched: Boolean(r.is_watched),
       })),
@@ -459,7 +519,11 @@ export const commuterService = {
     per_page?: number;
     status?: string;
     date?: string;
+    categories?: string[];
     search?: string;
+    date_from?: string;
+    date_to?: string;
+    range?: "today" | "week" | "month" | "year";
   } = {}): Promise<{
     claims: ClaimData[];
     page: number;
@@ -471,7 +535,11 @@ export const commuterService = {
     if (params.per_page) query.set("per_page", String(params.per_page));
     if (params.status && params.status !== "ALL") query.set("status", params.status);
     if (params.date) query.set("date", params.date);
+    for (const category of params.categories ?? []) query.append("categories[]", category);
     if (params.search?.trim()) query.set("search", params.search.trim());
+    if (params.date_from) query.set("date_from", params.date_from);
+    if (params.date_to) query.set("date_to", params.date_to);
+    if (params.range) query.set("range", params.range);
 
     const res = await request<any>(`/mobile/commuter/claims?${query.toString()}`);
     const rows = Array.isArray(res) ? res : res.data || [];
@@ -486,6 +554,10 @@ export const commuterService = {
         rejectedAt: r.rejected_at,
         releasedAt: r.released_at,
         rejectionReason: r.rejection_reason,
+         pickupLocation: r.pickup_location,
+         pickupAt: r.pickup_at,
+         pickupReminder: r.pickup_reminder,
+         noShowAt: r.no_show_at,
         item: r.item
           ? {
               id: r.item.id,
@@ -499,6 +571,9 @@ export const commuterService = {
               driverName: r.item.driver_name,
               conductorName: r.item.conductor_name,
               status: (r.item.status || "AVAILABLE").toUpperCase(),
+               datePosted: r.item.created_at || r.item.found_at,
+               claimableUntil: r.item.claimable_until || null,
+               photos: (r.item.photos || []).map((photo: any) => ({ id: String(photo.id), url: photo.url })).filter((photo: any) => photo.url),
             }
           : null,
       })),
@@ -512,7 +587,11 @@ export const commuterService = {
     page?: number;
     per_page?: number;
     date?: string;
+    categories?: string[];
     search?: string;
+    date_from?: string;
+    date_to?: string;
+    range?: "today" | "week" | "month" | "year";
   } = {}): Promise<{
     items: LostItem[];
     page: number;
@@ -523,7 +602,11 @@ export const commuterService = {
     if (params.page) query.set("page", String(params.page));
     if (params.per_page) query.set("per_page", String(params.per_page));
     if (params.date) query.set("date", params.date);
+    for (const category of params.categories ?? []) query.append("categories[]", category);
     if (params.search?.trim()) query.set("search", params.search.trim());
+    if (params.date_from) query.set("date_from", params.date_from);
+    if (params.date_to) query.set("date_to", params.date_to);
+    if (params.range) query.set("range", params.range);
 
     const res = await request<any>(`/mobile/commuter/watchlist?${query.toString()}`);
     const rows = Array.isArray(res) ? res : res.data || [];
@@ -545,6 +628,8 @@ export const commuterService = {
             conductorName: r.conductor_name || null,
             estimatedTimeLost: r.estimated_time_lost || null,
             datePosted: r.created_at || r.found_at,
+            claimableUntil: r.claimable_until || null,
+            photos: (r.photos || []).map((photo: any) => ({ id: String(photo.id), url: photo.url })).filter((photo: any) => photo.url),
             status: (r.status || "AVAILABLE").toUpperCase(),
             is_watched: true,
           };

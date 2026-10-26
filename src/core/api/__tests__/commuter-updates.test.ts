@@ -55,6 +55,25 @@ test("rewards read accepts backend camelCase response", async () => {
   mockRequest.mockResolvedValue({ currentCycleRides: 5, ridesNeeded: 10, totalRides: 25 });
   expect(await commuterService.getRewards()).toMatchObject({ currentCycleRides: 5, totalRides: 25 });
 });
+test("voucher wallet maps the shared paginated response for mobile tabs", async () => {
+  mockRequest.mockResolvedValue({ vouchers: [{ id: "v", code: "CHATCO-1", status: "USED", usedAt: "2026-10-20T00:00:00Z", usedRoute: "A → B" }], nextCursor: "next" });
+  const wallet = await commuterService.getVoucherWallet("used");
+  expect(wallet).toMatchObject({ nextCursor: "next", items: [{ id: "v", code: "CHATCO-1", status: "USED", usedRoute: "A → B" }] });
+  expect(mockRequest).toHaveBeenCalledWith("/mobile/commuter/vouchers?status=used&per_page=50");
+});
+test("voucher wallet falls back only when an older API has no mobile route", async () => {
+  mockRequest
+    .mockRejectedValueOnce(Object.assign(new Error("missing route"), { status: 404 }))
+    .mockResolvedValueOnce({ vouchers: [{ id: "legacy-v", code: "CHATCO-LEGACY", status: "AVAILABLE" }] });
+  await expect(commuterService.getVoucherWallet("available")).resolves.toMatchObject({ items: [{ id: "legacy-v" }] });
+  expect(mockRequest).toHaveBeenNthCalledWith(1, "/mobile/commuter/vouchers?status=available&per_page=50");
+  expect(mockRequest).toHaveBeenNthCalledWith(2, "/commuter/vouchers?status=available&per_page=50");
+});
+test("voucher wallet does not hide authentication or network failures", async () => {
+  mockRequest.mockRejectedValue(Object.assign(new Error("expired session"), { status: 401 }));
+  await expect(commuterService.getVoucherWallet("available")).rejects.toThrow("expired session");
+  expect(mockRequest).toHaveBeenCalledTimes(1);
+});
 test("private voucher and renewal notices map to supported presentation types", async () => {
   mockRequest.mockResolvedValue([{ id: "v", type: "voucher_received" }, { id: "r", type: "STUDENT_RENEWAL_DONE" }]);
   const announcements = await commuterService.getAnnouncements();

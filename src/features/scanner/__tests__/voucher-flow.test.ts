@@ -28,6 +28,7 @@ jest.mock("react-native", () => ({
   StyleSheet: { create: (styles: unknown) => styles }, Linking: { openURL: jest.fn() }, AppState: {},
 }));
 jest.mock("@expo/vector-icons", () => ({ Ionicons: "Icon" }));
+jest.mock("../../../core/theme/ThemeProvider", () => ({ useCommuterTheme: () => ({ colors: {} }) }));
 jest.mock("expo-camera", () => ({ CameraView: "Camera", useCameraPermissions: () => [{ granted: true }, jest.fn()] }));
 jest.mock("expo-haptics", () => ({ notificationAsync: () => Promise.resolve(), NotificationFeedbackType: { Success: 1 } }));
 jest.mock("../../../core/api/commuter-service", () => ({ commuterService: { claimGcash: jest.fn(), redeemVoucherForGcash: jest.fn(), simulatePayment: jest.fn(), getPaymentStatus: jest.fn() } }));

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -12,6 +12,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import { commuterColors } from "../../core/theme/colors";
+import { useCommuterTheme } from "../../core/theme/ThemeProvider";
+import { themedStyles } from "../../core/theme/themed-styles";
 import { commuterService, type ReceiptClaimResult } from "../../core/api/commuter-service";
 
 interface ReceiptScanModalProps {
@@ -27,12 +29,14 @@ export const ReceiptScanModal: React.FC<ReceiptScanModalProps> = ({
   onClose,
   onClaimed,
 }) => {
+  const { colors: selectedColors, isLight = false } = useCommuterTheme();
+  const colors = { ...commuterColors, ...(selectedColors ?? {}) };
+  const styles = useMemo(() => themedStyles(baseStyles, colors, isLight), [colors, isLight]);
   const [step, setStep] = useState<Step>("scanning");
   const [result, setResult] = useState<ReceiptClaimResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [manualToken, setManualToken] = useState("");
   const [showManualEntry, setShowManualEntry] = useState(false);
-  const [torch, setTorch] = useState(false);
   const [scanned, setScanned] = useState(false);
 
   const [permission, requestPermission] = useCameraPermissions();
@@ -40,7 +44,6 @@ export const ReceiptScanModal: React.FC<ReceiptScanModalProps> = ({
   useEffect(() => {
     if (visible && step === "scanning") {
       setScanned(false);
-      setTorch(false);
       if (permission && !permission.granted && permission.canAskAgain) {
         requestPermission().catch(() => {});
       }
@@ -53,7 +56,6 @@ export const ReceiptScanModal: React.FC<ReceiptScanModalProps> = ({
     setError(null);
     setManualToken("");
     setShowManualEntry(false);
-    setTorch(false);
     setScanned(false);
   };
 
@@ -156,32 +158,15 @@ export const ReceiptScanModal: React.FC<ReceiptScanModalProps> = ({
                 Scan the QR on your paper receipt to count that cash ride.
               </Text>
             </View>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              {step === "scanning" && !showManualEntry && permission?.granted ? (
-                <TouchableOpacity
-                  onPress={() => setTorch((t) => !t)}
-                  style={[styles.headerTorchBtn, torch && styles.headerTorchBtnActive]}
-                  activeOpacity={0.7}
-                  accessibilityLabel={torch ? "Turn off flashlight" : "Turn on flashlight"}
-                >
-                  <Ionicons
-                    name={torch ? "flashlight" : "flashlight-outline"}
-                    size={16}
-                    color={torch ? "#FBBF24" : "#FFFFFF"}
-                  />
-                  <Text style={[styles.headerTorchText, torch && styles.headerTorchTextActive]}>
-                    {torch ? "Torch: ON" : "Torch"}
-                  </Text>
-                </TouchableOpacity>
-              ) : null}
-              <TouchableOpacity
-                onPress={handleClose}
-                style={styles.closeBtn}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="close" size={18} color="rgba(255,255,255,0.6)" />
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              onPress={handleClose}
+              style={styles.closeBtn}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
+            >
+              <Ionicons name="close" size={18} color={isLight ? colors.textMuted : "rgba(255,255,255,0.6)"} />
+            </TouchableOpacity>
           </View>
 
           {/* Body content based on step */}
@@ -214,7 +199,6 @@ export const ReceiptScanModal: React.FC<ReceiptScanModalProps> = ({
                     <CameraView
                       style={StyleSheet.absoluteFill}
                       facing="back"
-                      enableTorch={torch}
                       barcodeScannerSettings={{
                         barcodeTypes: ["qr"],
                       }}
@@ -222,7 +206,7 @@ export const ReceiptScanModal: React.FC<ReceiptScanModalProps> = ({
                     />
 
                     {/* Scanner Reticle Overlay */}
-                    <View style={styles.reticleOverlay} pointerEvents="none">
+                    <View style={[styles.reticleOverlay, { pointerEvents: "none" }]}>
                       <View style={styles.reticle}>
                         <View style={[styles.corner, styles.topLeft]} />
                         <View style={[styles.corner, styles.topRight]} />
@@ -232,46 +216,8 @@ export const ReceiptScanModal: React.FC<ReceiptScanModalProps> = ({
                       </View>
                     </View>
 
-                    {/* Torch toggle button */}
-                    <TouchableOpacity
-                      activeOpacity={0.8}
-                      onPress={() => setTorch((t) => !t)}
-                      style={[styles.torchBtn, torch && styles.torchBtnActive]}
-                      accessibilityLabel={torch ? "Turn off flashlight" : "Turn on flashlight"}
-                    >
-                      <Ionicons
-                        name={torch ? "flashlight" : "flashlight-outline"}
-                        size={16}
-                        color={torch ? "#FBBF24" : "#FFFFFF"}
-                      />
-                      <Text style={[styles.torchBtnText, torch && styles.torchBtnTextActive]}>
-                        {torch ? "Torch: ON" : "Torch"}
-                      </Text>
-                    </TouchableOpacity>
                   </View>
                 )}
-
-                {/* Dedicated prominent Torch / Flashlight toggle bar */}
-                {permission?.granted ? (
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={() => setTorch((t) => !t)}
-                    style={[styles.torchBarBtn, torch && styles.torchBarBtnActive]}
-                  >
-                    <Ionicons
-                      name={torch ? "flashlight" : "flashlight-outline"}
-                      size={18}
-                      color={torch ? "#FBBF24" : "#62A0EA"}
-                    />
-                    <Text style={[styles.torchBarText, torch && styles.torchBarTextActive]}>
-                      {torch ? "Flashlight is ON (Tap to turn OFF)" : "Turn ON Flashlight / Torch"}
-                    </Text>
-                  </TouchableOpacity>
-                ) : null}
-
-                <Text style={styles.reticleHint}>
-                  Align paper receipt QR code in the frame
-                </Text>
 
                 <TouchableOpacity
                   onPress={() => setShowManualEntry(true)}
@@ -291,7 +237,7 @@ export const ReceiptScanModal: React.FC<ReceiptScanModalProps> = ({
                 <TextInput
                   style={styles.textInput}
                   placeholder="Printed under the QR code"
-                  placeholderTextColor="rgba(255, 255, 255, 0.25)"
+                  placeholderTextColor={isLight ? "#9CA3AF" : "rgba(255, 255, 255, 0.25)"}
                   value={manualToken}
                   onChangeText={setManualToken}
                   autoCapitalize="characters"
@@ -434,19 +380,19 @@ export const ReceiptScanModal: React.FC<ReceiptScanModalProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.8)",
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
+    padding: 16,
   },
   modalContent: {
     width: "100%",
-    maxWidth: 380,
+    maxWidth: 384,
     backgroundColor: "#071A2E",
-    borderRadius: 20,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
     overflow: "hidden",
@@ -486,55 +432,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginLeft: 10,
   },
-  headerTorchBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 10,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.15)",
-  },
-  headerTorchBtnActive: {
-    backgroundColor: "rgba(251, 191, 36, 0.2)",
-    borderColor: "#FBBF24",
-  },
-  headerTorchText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#FFFFFF",
-  },
-  headerTorchTextActive: {
-    color: "#FBBF24",
-  },
-  torchBarBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    width: "100%",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    marginTop: 12,
-    backgroundColor: "rgba(98, 160, 234, 0.12)",
-    borderWidth: 1.5,
-    borderColor: "rgba(98, 160, 234, 0.3)",
-  },
-  torchBarBtnActive: {
-    backgroundColor: "rgba(251, 191, 36, 0.2)",
-    borderColor: "#FBBF24",
-  },
-  torchBarText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#62A0EA",
-  },
-  torchBarTextActive: {
-    color: "#FBBF24",
-  },
   body: {
     padding: 20,
   },
@@ -545,7 +442,7 @@ const styles = StyleSheet.create({
     width: "100%",
     aspectRatio: 1,
     backgroundColor: "#050F1A",
-    borderRadius: 16,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
     alignItems: "center",
@@ -570,36 +467,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.8,
     shadowRadius: 4,
-  },
-  torchBtn: {
-    position: "absolute",
-    top: 12,
-    right: 12,
-    minWidth: 76,
-    height: 34,
-    paddingHorizontal: 10,
-    borderRadius: 17,
-    backgroundColor: "rgba(5, 15, 26, 0.85)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.25)",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    zIndex: 9999,
-    elevation: 25,
-  },
-  torchBtnActive: {
-    backgroundColor: "rgba(251, 191, 36, 0.25)",
-    borderColor: "#FBBF24",
-  },
-  torchBtnText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#FFFFFF",
-  },
-  torchBtnTextActive: {
-    color: "#FBBF24",
   },
   permissionBox: {
     width: "100%",
@@ -667,13 +534,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 3,
     borderRightWidth: 3,
     borderBottomRightRadius: 4,
-  },
-  reticleHint: {
-    color: "rgba(255, 255, 255, 0.4)",
-    fontSize: 11,
-    fontWeight: "500",
-    marginTop: 16,
-    textAlign: "center",
   },
   manualEntryLink: {
     marginTop: 16,
