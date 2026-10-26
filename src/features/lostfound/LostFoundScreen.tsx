@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -14,6 +14,8 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { commuterColors } from "../../core/theme/colors";
+import { useCommuterTheme } from "../../core/theme/ThemeProvider";
+import { themedStyles } from "../../core/theme/themed-styles";
 import { commuterService } from "../../core/api/commuter-service";
 import type { LostItem, ClaimData, ClaimStatus } from "../../core/domain/types";
 
@@ -40,7 +42,10 @@ const CLAIM_FILTERS: { label: string; value: ClaimFilter }[] = [
   { label: "Rejected", value: "REJECTED" },
 ];
 
-export const LostFoundScreen: React.FC = () => {
+export const LegacyLostFoundScreen: React.FC = () => {
+  const { colors: selectedColors, isLight = false } = useCommuterTheme();
+  const colors = selectedColors ?? commuterColors;
+  const styles = useMemo(() => themedStyles(baseStyles, colors, isLight), [colors, isLight]);
   const [activeTab, setActiveTab] = useState<ViewTab>("ALL");
   const [items, setItems] = useState<LostItem[]>([]);
   const [claims, setClaims] = useState<ClaimData[]>([]);
@@ -201,18 +206,21 @@ export const LostFoundScreen: React.FC = () => {
   };
 
   const getStatusBadgeStyle = (status: string) => {
+    const palette = isLight
+      ? { pending: "#B45309", approved: "#047857", released: "#1A5FB4", rejected: "#B91C1C" }
+      : { pending: "#FBBF24", approved: "#34D399", released: "#62A0EA", rejected: "#F87171" };
     switch (status) {
       case "PENDING":
-        return { bg: "rgba(245, 158, 11, 0.15)", text: "#FBBF24", label: "Pending" };
+        return { bg: isLight ? "#FFFBEB" : "rgba(245, 158, 11, 0.15)", text: palette.pending, label: "Pending" };
       case "VALIDATED":
       case "APPROVED":
-        return { bg: "rgba(16, 185, 129, 0.15)", text: "#34D399", label: "Approved" };
+        return { bg: isLight ? "#ECFDF5" : "rgba(16, 185, 129, 0.15)", text: palette.approved, label: "Approved" };
       case "RELEASED":
-        return { bg: "rgba(98, 160, 234, 0.15)", text: "#62A0EA", label: "Released" };
+        return { bg: isLight ? "#EFF6FF" : "rgba(98, 160, 234, 0.15)", text: palette.released, label: "Released" };
       case "REJECTED":
-        return { bg: "rgba(239, 68, 68, 0.15)", text: "#F87171", label: "Rejected" };
+        return { bg: isLight ? "#FEF2F2" : "rgba(239, 68, 68, 0.15)", text: palette.rejected, label: "Rejected" };
       default:
-        return { bg: "rgba(255, 255, 255, 0.1)", text: "rgba(255, 255, 255, 0.6)", label: status };
+        return { bg: isLight ? colors.surfaceSecondary : "rgba(255, 255, 255, 0.1)", text: isLight ? colors.textSecondary : "rgba(255, 255, 255, 0.6)", label: status };
     }
   };
 
@@ -222,7 +230,7 @@ export const LostFoundScreen: React.FC = () => {
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <View style={styles.passengerBadge}>
-            <Ionicons name="briefcase-outline" size={12} color="#62A0EA" style={{ marginRight: 4 }} />
+            <Ionicons name="briefcase-outline" size={12} color={colors.primaryLight} style={{ marginRight: 4 }} />
             <Text style={styles.passengerBadgeText}>PASSENGER DESK</Text>
           </View>
           <View style={styles.activeTabIndicator}>
@@ -254,7 +262,7 @@ export const LostFoundScreen: React.FC = () => {
               <Ionicons
                 name={tab.icon}
                 size={14}
-                color={activeTab === tab.key ? "#FFFFFF" : "rgba(255, 255, 255, 0.6)"}
+                color={activeTab === tab.key ? "#FFFFFF" : colors.textSecondary}
                 style={{ marginRight: 4 }}
               />
               <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>
@@ -266,7 +274,7 @@ export const LostFoundScreen: React.FC = () => {
 
         {/* Search Bar & Filter Options */}
         <View style={styles.searchRow}>
-          <Ionicons name="search-outline" size={16} color="rgba(255, 255, 255, 0.4)" style={styles.searchIcon} />
+          <Ionicons name="search-outline" size={16} color={colors.textMuted} style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
             placeholder={
@@ -274,7 +282,7 @@ export const LostFoundScreen: React.FC = () => {
                 ? "Search claims by item, plate, crew..."
                 : "Search item, plate, driver, or conductor..."
             }
-            placeholderTextColor="rgba(255, 255, 255, 0.35)"
+            placeholderTextColor={colors.textMuted}
             value={searchQuery}
             onChangeText={(t) => {
               setSearchQuery(t);
@@ -283,7 +291,7 @@ export const LostFoundScreen: React.FC = () => {
           />
           {searchQuery ? (
             <TouchableOpacity onPress={() => setSearchQuery("")} style={styles.searchClear}>
-              <Ionicons name="close-circle" size={16} color="rgba(255, 255, 255, 0.5)" />
+              <Ionicons name="close-circle" size={16} color={colors.textMuted} />
             </TouchableOpacity>
           ) : null}
         </View>
@@ -332,19 +340,19 @@ export const LostFoundScreen: React.FC = () => {
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={commuterColors.primaryLight} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primaryLight} />
         }
       >
         {loading ? (
           <View style={styles.loadingBox}>
-            <ActivityIndicator size="large" color={commuterColors.primaryLight} />
+            <ActivityIndicator size="large" color={colors.primaryLight} />
             <Text style={styles.loadingText}>Loading lost and found items...</Text>
           </View>
         ) : activeTab === "MY_CLAIMS" ? (
           /* --- CLAIMS LIST --- */
           claims.length === 0 ? (
             <View style={styles.emptyCard}>
-              <Ionicons name="clipboard-outline" size={44} color="rgba(255, 255, 255, 0.2)" />
+              <Ionicons name="clipboard-outline" size={44} color={colors.textMuted} />
               <Text style={styles.emptyTitle}>No claims found</Text>
               <Text style={styles.emptySub}>
                 When you submit a claim on a found item, its approval status and handover instructions will appear here.
@@ -363,7 +371,7 @@ export const LostFoundScreen: React.FC = () => {
                       {c.item?.imageUrl || c.item?.image_url ? (
                         <Image source={{ uri: (c.item.imageUrl || c.item.image_url) || undefined }} style={styles.claimImage} />
                       ) : (
-                        <Ionicons name="cube-outline" size={24} color="rgba(255, 255, 255, 0.3)" />
+                        <Ionicons name="cube-outline" size={24} color={colors.textMuted} />
                       )}
                     </View>
                     <View style={styles.claimMeta}>
@@ -425,7 +433,7 @@ export const LostFoundScreen: React.FC = () => {
                     <Ionicons
                       name={isExpanded ? "chevron-up" : "chevron-down"}
                       size={14}
-                      color="rgba(255, 255, 255, 0.6)"
+                      color={colors.textSecondary}
                     />
                   </TouchableOpacity>
 
@@ -507,7 +515,7 @@ export const LostFoundScreen: React.FC = () => {
           /* --- ALL ITEMS / WATCHLIST ITEMS --- */
           items.length === 0 ? (
             <View style={styles.emptyCard}>
-              <Ionicons name="search-outline" size={44} color="rgba(255, 255, 255, 0.2)" />
+              <Ionicons name="search-outline" size={44} color={colors.textMuted} />
               <Text style={styles.emptyTitle}>No matching items found</Text>
               <Text style={styles.emptySub}>
                 {activeTab === "WATCHLIST"
@@ -530,7 +538,7 @@ export const LostFoundScreen: React.FC = () => {
                       <Image source={{ uri: (item.imageUrl || item.image_url) || undefined }} style={styles.cardImage} />
                     ) : (
                       <View style={styles.noPhotoPlaceholder}>
-                        <Ionicons name="cube-outline" size={32} color="rgba(255, 255, 255, 0.25)" />
+                        <Ionicons name="cube-outline" size={32} color={colors.textMuted} />
                         <Text style={styles.noPhotoText}>No photo yet</Text>
                       </View>
                     )}
@@ -551,13 +559,13 @@ export const LostFoundScreen: React.FC = () => {
                     {/* Metadata Grid */}
                     <View style={styles.cardMetaGrid}>
                       <View style={styles.cardMetaItem}>
-                        <Ionicons name="bus-outline" size={12} color="#62A0EA" style={{ marginRight: 4 }} />
+                        <Ionicons name="bus-outline" size={12} color={colors.primaryLight} style={{ marginRight: 4 }} />
                         <Text style={styles.cardMetaText} numberOfLines={1}>
                           {item.plateNumber || "Plate unavailable"}
                         </Text>
                       </View>
                       <View style={styles.cardMetaItem}>
-                        <Ionicons name="time-outline" size={12} color="#62A0EA" style={{ marginRight: 4 }} />
+                        <Ionicons name="time-outline" size={12} color={colors.primaryLight} style={{ marginRight: 4 }} />
                         <Text style={styles.cardMetaText} numberOfLines={1}>
                           {item.estimatedTimeLost || "Time unavailable"}
                         </Text>
@@ -567,7 +575,7 @@ export const LostFoundScreen: React.FC = () => {
                     {/* Crew Info */}
                     {(item.driverName || item.conductorName) && (
                       <View style={styles.cardCrewRow}>
-                        <Ionicons name="person-outline" size={12} color="rgba(255, 255, 255, 0.4)" style={{ marginRight: 4 }} />
+                        <Ionicons name="person-outline" size={12} color={colors.textMuted} style={{ marginRight: 4 }} />
                         <Text style={styles.cardCrewText} numberOfLines={1}>
                           {item.driverName ? `Driver: ${item.driverName}` : ""}
                           {item.driverName && item.conductorName ? " · " : ""}
@@ -592,7 +600,7 @@ export const LostFoundScreen: React.FC = () => {
                         style={styles.iconActionBtn}
                         accessibilityLabel="View Details"
                       >
-                        <Ionicons name="eye-outline" size={18} color="rgba(255, 255, 255, 0.7)" />
+                        <Ionicons name="eye-outline" size={18} color={colors.textSecondary} />
                       </TouchableOpacity>
 
                       <TouchableOpacity
@@ -604,7 +612,7 @@ export const LostFoundScreen: React.FC = () => {
                         <Ionicons
                           name={isWatched ? "bookmark" : "bookmark-outline"}
                           size={18}
-                          color={isWatched ? "#62A0EA" : "rgba(255, 255, 255, 0.7)"}
+                          color={isWatched ? colors.primaryLight : colors.textSecondary}
                         />
                       </TouchableOpacity>
                     </View>
@@ -626,7 +634,7 @@ export const LostFoundScreen: React.FC = () => {
                   <Text style={styles.categoryTagText}>{detailItem.category}</Text>
                 </View>
                 <TouchableOpacity onPress={() => setDetailItem(null)} style={styles.closeCircle}>
-                  <Ionicons name="close" size={18} color="#FFFFFF" />
+                  <Ionicons name="close" size={18} color={colors.textSecondary} />
                 </TouchableOpacity>
               </View>
 
@@ -635,7 +643,7 @@ export const LostFoundScreen: React.FC = () => {
                   <Image source={{ uri: (detailItem.imageUrl || detailItem.image_url) || undefined }} style={styles.modalDetailImage} />
                 ) : (
                   <View style={styles.modalDetailNoImage}>
-                    <Ionicons name="cube-outline" size={48} color="rgba(255, 255, 255, 0.2)" />
+                    <Ionicons name="cube-outline" size={48} color={colors.textMuted} />
                     <Text style={styles.noPhotoText}>No photo available</Text>
                   </View>
                 )}
@@ -664,7 +672,7 @@ export const LostFoundScreen: React.FC = () => {
                   </View>
 
                   <View style={styles.reminderBanner}>
-                    <Ionicons name="alert-circle" size={18} color="#FBBF24" style={{ marginRight: 8 }} />
+                    <Ionicons name="alert-circle" size={18} color={isLight ? "#B45309" : "#FBBF24"} style={{ marginRight: 8 }} />
                     <View style={{ flex: 1 }}>
                       <Text style={styles.reminderTitle}>Claim Reminder</Text>
                       <Text style={styles.reminderDesc}>
@@ -707,7 +715,7 @@ export const LostFoundScreen: React.FC = () => {
                   <Text style={styles.modalSubTitle}>{claimTargetItem.itemName || claimTargetItem.title}</Text>
                 </View>
                 <TouchableOpacity onPress={() => setClaimTargetItem(null)} style={styles.closeCircle}>
-                  <Ionicons name="close" size={18} color="#FFFFFF" />
+                  <Ionicons name="close" size={18} color={colors.textSecondary} />
                 </TouchableOpacity>
               </View>
 
@@ -719,7 +727,7 @@ export const LostFoundScreen: React.FC = () => {
                     multiline
                     numberOfLines={5}
                     placeholder="Describe specific details, where you were seated, unique scratches/stickers, or internal contents that only the owner would know."
-                    placeholderTextColor="rgba(255, 255, 255, 0.35)"
+                    placeholderTextColor={colors.textMuted}
                     value={proofText}
                     onChangeText={setProofText}
                   />
@@ -728,14 +736,14 @@ export const LostFoundScreen: React.FC = () => {
                   <TextInput
                     style={styles.contactInput}
                     placeholder="09171234567"
-                    placeholderTextColor="rgba(255, 255, 255, 0.35)"
+                    placeholderTextColor={colors.textMuted}
                     keyboardType="phone-pad"
                     value={contactNumber}
                     onChangeText={setContactNumber}
                   />
 
                   <View style={styles.reminderBanner}>
-                    <Ionicons name="information-circle" size={18} color="#62A0EA" style={{ marginRight: 8 }} />
+                    <Ionicons name="information-circle" size={18} color={colors.primaryLight} style={{ marginRight: 8 }} />
                     <Text style={styles.reminderDesc}>
                       Your submitted proof is securely reviewed by terminal dispatchers before approval.
                     </Text>
@@ -777,7 +785,7 @@ export const LostFoundScreen: React.FC = () => {
             <View style={[styles.modalCard, { maxHeight: 300 }]}>
               <View style={styles.modalBody}>
                 <View style={styles.warningCircle}>
-                  <Ionicons name="alert" size={28} color="#F87171" />
+                  <Ionicons name="alert" size={28} color={isLight ? "#B91C1C" : "#F87171"} />
                 </View>
                 <Text style={styles.confirmTitle}>Cancel this claim?</Text>
                 <Text style={styles.confirmDesc}>
@@ -816,7 +824,7 @@ export const LostFoundScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: commuterColors.background,
@@ -1491,3 +1499,5 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 });
+
+export { LostFoundParityScreen as LostFoundScreen } from "./LostFoundParityScreen";

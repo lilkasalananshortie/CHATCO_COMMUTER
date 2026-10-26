@@ -1,11 +1,12 @@
 import React from "react";
 import { Text, View } from "react-native";
-import { FeatureButton, featureStyles as s } from "../../shared/ui/FeatureControls";
+import { FeatureButton, useFeatureStyles } from "../../shared/ui/FeatureControls";
 import { APPLICATION_LABELS, type ApplicationState } from "./application-types";
 
 export function DiscountApplicationEntry({ state, loading, error, commuterType, onOpen }: {
   state: ApplicationState | null; loading: boolean; error: string; commuterType: string; onOpen: () => void;
 }) {
+  const s = useFeatureStyles();
   if ((state?.commuter_type ?? commuterType).toUpperCase() !== "REGULAR") return null;
   const renewal = state?.application?.request_type === "RENEWAL";
   return <View style={[s.card, { marginBottom: 20 }]}>

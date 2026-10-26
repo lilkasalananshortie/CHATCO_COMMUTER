@@ -1,12 +1,13 @@
 import React from "react";
 import { View } from "react-native";
-import { FeatureButton, FeatureInput, featureStyles as s } from "../../shared/ui/FeatureControls";
+import { FeatureButton, FeatureInput, useFeatureStyles } from "../../shared/ui/FeatureControls";
 import type { RenewalFields } from "./renewal-types";
 
 export const EMPTY_SCHOOL_FIELDS: RenewalFields = { school_name: "", education_level: "HIGH_SCHOOL", grade_level: "7", school_year: "", enrollment_term: "" };
 export function SchoolProofFields({ fields, onChange, disabled }: {
   fields: RenewalFields; onChange: (fields: RenewalFields) => void; disabled: boolean;
 }) {
+  const s = useFeatureStyles();
   const set = (key: keyof RenewalFields, value: string) => onChange({ ...fields, [key]: value });
   return <>
     <FeatureInput label="School name" value={fields.school_name} maxLength={150} editable={!disabled} onChangeText={(value) => set("school_name", value)} />

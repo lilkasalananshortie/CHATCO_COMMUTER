@@ -12,6 +12,8 @@ jest.mock("react", () => ({
 }));
 jest.mock("react-native", () => ({ View: "View", Text: "Text", ScrollView: "ScrollView", TouchableOpacity: "Button", TextInput: "Input", ActivityIndicator: "Spinner", StyleSheet: { create: (styles: unknown) => styles } }));
 jest.mock("@expo/vector-icons", () => ({ Ionicons: "Icon" }));
+jest.mock("react-native-svg", () => ({ __esModule: true, default: "Svg", Circle: "Circle", Path: "Path", Line: "Line", Polyline: "Polyline", Rect: "Rect" }));
+jest.mock("../../../core/theme/ThemeProvider", () => ({ useCommuterTheme: () => ({ isLight: false }) }));
 jest.mock("expo-camera", () => ({ CameraView: "Camera", useCameraPermissions: () => [{ granted: true }, jest.fn()] }));
 jest.mock("expo-haptics", () => ({ notificationAsync: () => Promise.resolve(), NotificationFeedbackType: { Success: 1 } }));
 jest.mock("../../../shared/ui/Mascot", () => ({ Mascot: "Mascot" }));
@@ -46,6 +48,17 @@ test("ineligible history cannot submit even when handler is invoked directly", a
 });
 test("scanner no longer provides an invented recent ride shortcut", () => {
   expect(render(null).some(e => typeof e.props.children === "string" && e.props.children.includes("Rate Recent Ride"))).toBe(false);
+});
+
+test("scanner copies the web modal header padding and 192px scan frame", () => {
+  const tree = render(null);
+  const camera = tree.find(e => e.type === "Camera")!;
+  expect(camera).toBeDefined();
+  const styles = tree.map(e => Object.assign({}, ...[e.props.style].flat().filter(Boolean)));
+  expect(styles.some(s => s.padding === 20 && s.borderBottomWidth === 1)).toBe(true);
+  expect(styles.some(s => s.width === 192 && s.height === 192)).toBe(true);
+  expect(styles.some(s => s.width === 24 && s.borderTopWidth === 2)).toBe(true);
+  expect(tree.some(e => e.props.accessibilityLabel === "Turn on flashlight")).toBe(false);
 });
 
 test("no-crew lookup offers check again for the same scanned unit without manual input", async () => {

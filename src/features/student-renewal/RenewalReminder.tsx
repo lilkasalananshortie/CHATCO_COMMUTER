@@ -1,12 +1,13 @@
 import React, { useRef, useState } from "react";
 import { Modal, ScrollView, Text, View } from "react-native";
 import { studentRenewalService } from "../../core/api/student-renewal-service";
-import { FeatureButton, featureStyles as s } from "../../shared/ui/FeatureControls";
+import { FeatureButton, useFeatureStyles } from "../../shared/ui/FeatureControls";
 import type { RenewalState } from "./renewal-types";
 
 export function RenewalReminder({ state, enabled, onOpen, onRefresh }: {
   state: RenewalState | null; enabled: boolean; onOpen: () => void; onRefresh: () => Promise<void>;
 }) {
+  const s = useFeatureStyles();
   const [viewed, setViewed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");

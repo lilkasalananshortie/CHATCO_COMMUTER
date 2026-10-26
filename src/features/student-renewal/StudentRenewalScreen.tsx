@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Modal, ScrollView, Text, View } from "react-native";
 import { studentRenewalService } from "../../core/api/student-renewal-service";
-import { FeatureButton, featureStyles as s } from "../../shared/ui/FeatureControls";
+import { FeatureButton, useFeatureStyles } from "../../shared/ui/FeatureControls";
 import { EMPTY_SCHOOL_FIELDS, SchoolProofFields } from "./SchoolProofFields";
 import { pickRenewalDocument } from "./pick-renewal-document";
 import { RENEWAL_LABELS, renewalPayload, type RenewalDocument, type RenewalFields, type RenewalState } from "./renewal-types";
@@ -10,6 +10,7 @@ const date = (iso: string) => new Date(iso).toLocaleString("en-PH", { timeZone: 
 export function StudentRenewalScreen({ state, loading, loadError, onRefresh, onClose }: {
   state: RenewalState | null; loading: boolean; loadError: string; onRefresh: () => Promise<void>; onClose: () => void;
 }) {
+  const s = useFeatureStyles();
   const [fields, setFields] = useState<RenewalFields>(EMPTY_SCHOOL_FIELDS);
   const [document, setDocument] = useState<RenewalDocument | null>(null);
   const [busy, setBusy] = useState(false);

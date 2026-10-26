@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
@@ -14,13 +13,18 @@ import * as Haptics from "expo-haptics";
 import { commuterColors } from "../../core/theme/colors";
 import { commuterService } from "../../core/api/commuter-service";
 import type { Trip, ResolvedCrew } from "../../core/domain/types";
-import { Mascot } from "../../shared/ui/Mascot";
 import { getMascotErrorState } from "../../shared/ui/mascot-error";
 import { feedbackPayload } from "./feedback-payload";
+import { Text } from "../../shared/ui/BrandText";
+import { WebIcon } from "../../shared/ui/WebIcon";
+import Svg, { Path, Circle } from "react-native-svg";
+import { useCommuterTheme } from "../../core/theme/ThemeProvider";
+import { themedStyles } from "../../core/theme/themed-styles";
 
 interface FeedbackScreenProps {
   initialTrip?: Trip | null;
   onFeedbackComplete?: () => void;
+  onFormVisibilityChange?: (visible: boolean) => void;
 }
 
 type ScanStatus = "scanning" | "resolving" | "resolved" | "error";
@@ -69,6 +73,7 @@ const NEGATIVE_TAGS_CONDUCTOR = [
 export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
   initialTrip,
   onFeedbackComplete,
+  onFormVisibilityChange,
 }) => {
   const pending = useRef(false);
   const lastScan = useRef<string | null>(null);
@@ -108,6 +113,11 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
         }
       : null
   );
+
+  const { colors: selectedColors, isLight = false } = useCommuterTheme();
+  const colors = selectedColors ?? commuterColors;
+  const styles = useMemo(() => themedStyles(baseStyles, colors, isLight), [colors, isLight]);
+  useEffect(() => { onFormVisibilityChange?.(scanStatus === "resolved"); }, [scanStatus, onFormVisibilityChange]);
 
   // Driver rating state
   const [driverRating, setDriverRating] = useState(0);
@@ -281,38 +291,60 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
   // 1. SCANNING STATE
   if (scanStatus === "scanning") {
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Rate your ride</Text>
-          <Text style={styles.headerSubtitle}>
-            Scan the feedback QR posted inside the modern jeepney
-          </Text>
+      <View style={[styles.scanContainer, isLight && { backgroundColor: "#FFFFFF" }]}>
+        <View style={[styles.scanHeader, isLight && { borderBottomColor: "#E5E7EB" }]}>
+          <View style={styles.scanHeaderRow}>
+            <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke={isLight ? "#1A5FB4" : "#62A0EA"} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+              <Path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
+              <Circle cx={12} cy={13} r={3} />
+            </Svg>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[styles.scanTitle, isLight && { color: "#111827" }]}>Scan Feedback QR</Text>
+              <Text numberOfLines={1} style={[styles.scanSubtitle, isLight && { color: "#6B7280" }]}>
+                Point your camera at the QR inside the jeepney
+              </Text>
+            </View>
+            {onFeedbackComplete && (
+              <TouchableOpacity
+                onPress={onFeedbackComplete}
+                style={{ flexShrink: 0 }}
+                activeOpacity={0.7}
+                accessibilityLabel="Close feedback scanner"
+              >
+                <WebIcon name="x" size={20} color={isLight ? "#9CA3AF" : "rgba(255,255,255,0.4)"} />
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <ScrollView style={{ flexGrow: 0, flexShrink: 1 }} contentContainerStyle={styles.scanBody}>
           {!permission ? (
             <View style={styles.permissionBox}>
               <ActivityIndicator size="large" color="#62A0EA" />
               <Text style={styles.permissionText}>Checking camera access…</Text>
             </View>
           ) : !permission.granted ? (
-            <View style={styles.permissionBox}>
-              <Ionicons name="camera-outline" size={44} color="#62A0EA" />
-              <Text style={styles.permissionTitle}>Camera Access Required</Text>
-              <Text style={styles.permissionText}>
-                ChatCo needs camera access to scan the vehicle feedback QR code.
+            <View style={[styles.permissionBox, isLight && { backgroundColor: "#F9FAFB", borderColor: "#E5E7EB" }]}>
+              <View style={[styles.permissionIcon, isLight && { backgroundColor: "rgba(26,95,180,0.05)", borderColor: "rgba(26,95,180,0.15)" }]}>
+                <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke={isLight ? "#1A5FB4" : "#99C1F1"} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+                  <Path d="m2 2 20 20M9.5 4h5L17 7h3a2 2 0 0 1 2 2v9a2 2 0 0 1-.59 1.41M6.5 6.5 6 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h14M10 10a3 3 0 0 0 4 4" />
+                </Svg>
+              </View>
+              <Text style={[styles.permissionTitle, isLight && { color: "#111827" }]}>Camera access blocked</Text>
+              <Text style={[styles.permissionText, isLight && { color: "#6B7280" }]}>
+                Allow camera access in your device settings, then try again.
               </Text>
               <TouchableOpacity
-                style={styles.primaryButton}
+                style={styles.permissionRetry}
                 activeOpacity={0.8}
                 onPress={requestPermission}
               >
-                <Ionicons name="shield-checkmark-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-                <Text style={styles.primaryButtonText}>Enable Camera</Text>
+                <Ionicons name="refresh-outline" size={16} color="#FFFFFF" />
+                <Text style={styles.primaryButtonText}>Try again</Text>
               </TouchableOpacity>
             </View>
           ) : (
-            <View style={styles.scannerViewport}>
+            <View style={[styles.scannerViewport, isLight && { backgroundColor: "#F3F4F6", borderColor: "#E5E7EB" }]}>
               <CameraView
                 style={StyleSheet.absoluteFill}
                 facing="back"
@@ -331,31 +363,15 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
                   <View style={[styles.corner, styles.topRight]} />
                   <View style={[styles.corner, styles.bottomLeft]} />
                   <View style={[styles.corner, styles.bottomRight]} />
-                  <View style={styles.scanLaser} />
                 </View>
               </View>
 
-              {/* Torch toggle button */}
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={() => setTorch((t) => !t)}
-                style={styles.torchBtn}
-                accessibilityLabel={torch ? "Turn off flashlight" : "Turn on flashlight"}
-              >
-                <Ionicons
-                  name={torch ? "flash" : "flash-outline"}
-                  size={18}
-                  color={torch ? "#FBBF24" : "#FFFFFF"}
-                />
-              </TouchableOpacity>
             </View>
           )}
 
-          <Text style={styles.reticleHint}>
-            Align the feedback QR code posted inside the vehicle
-          </Text>
-
-          <Text style={styles.reticleHint}>To rate a previous ride, select it from Payment History on Home.</Text>
+           <Text style={[styles.scanHint, isLight && { color: "#6B7280" }]}>
+             The QR is printed inside the jeepney unit, near the conductor.
+           </Text>
         </ScrollView>
       </View>
     );
@@ -366,10 +382,12 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
     return (
       <ScrollView contentContainerStyle={styles.centeredScreen}>
         <View style={styles.statusBox}>
-          <ActivityIndicator size="large" color="#62A0EA" />
+          <View style={styles.loadingCircle}>
+            <ActivityIndicator size="large" color="#62A0EA" />
+          </View>
           <Text style={styles.statusTitle}>Resolving today&apos;s crew…</Text>
           <Text style={styles.statusSubtitle}>
-            Looking up the driver and conductor on duty for this unit.
+            Looking up the driver and conductor on duty.
           </Text>
         </View>
       </ScrollView>
@@ -389,8 +407,10 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
     </View></ScrollView>;
     return (
       <ScrollView contentContainerStyle={styles.centeredScreen}>
-        <View style={styles.statusBox}>
-          <Mascot pose={scanErrorPose} size={128} />
+        <View style={[styles.statusBox, styles.errorStatusBox]}>
+          <View style={styles.errorCircle}>
+            <Ionicons name="warning-outline" size={28} color="#F87171" />
+          </View>
           <Text style={styles.statusTitle}>{scanErrorPose === "offline" ? "Connection interrupted" : "Crew Not Found"}</Text>
           <Text style={styles.statusSubtitle}>{scanError}</Text>
           <TouchableOpacity
@@ -409,8 +429,10 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
   if (isSubmitted) {
     return (
       <ScrollView contentContainerStyle={styles.centeredScreen}>
-        <View style={styles.statusBox}>
-          <Mascot pose="thanks" size={128} />
+        <View style={[styles.statusBox, styles.successStatusBox]}>
+          <View style={styles.successCircle}>
+            <Ionicons name="checkmark" size={34} color="#34D399" />
+          </View>
           <Text style={styles.statusTitle}>Thank You!</Text>
           <Text style={styles.statusSubtitle}>
             Your feedback has been recorded and will help us improve our service.
@@ -603,7 +625,7 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
                 activeOpacity={0.7}
               >
                 <Ionicons
-                  name={star <= driverRating ? "star" : "star-outline"}
+                  name="star"
                   size={36}
                   color={
                     star <= driverRating ? "#FBBF24" : "rgba(255,255,255,0.15)"
@@ -626,9 +648,11 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
             {driverRating > 0 ? RATING_WORDS[driverRating - 1] : " "}
           </Text>
 
-          {/* Tags */}
-          {driverRating > 0 && (
-            <View style={styles.tagsContainer}>
+        </View>
+
+        {/* Tags */}
+        {driverRating > 0 && (
+          <View style={styles.tagsContainer}>
               <Text style={styles.tagsHeader}>
                 {driverRating >= 4 ? "What went well?" : "What could be improved?"}{" "}
                 <Text style={{ fontWeight: "400", color: "rgba(255,255,255,0.3)" }}>
@@ -669,12 +693,12 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
                   );
                 })}
               </View>
-            </View>
-          )}
+          </View>
+        )}
 
-          {/* Driver Comment Box */}
-          {driverRating > 0 && driverTags.length > 0 && (
-            <View style={styles.commentContainer}>
+        {/* Driver Comment Box */}
+        {driverRating > 0 && driverTags.length > 0 && (
+          <View style={styles.commentContainer}>
               <View style={styles.commentHeaderRow}>
                 <Text style={styles.commentLabel}>
                   Additional comments{" "}
@@ -698,19 +722,19 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
                 numberOfLines={3}
                 maxLength={2000}
               />
-            </View>
-          )}
-        </View>
+          </View>
+        )}
 
         {/* ── CONDUCTOR SECTION (unlocked when driver complete) ── */}
         {driverComplete && (
-          <View style={[styles.ratingSection, styles.conductorSectionTopBorder]}>
+          <View style={styles.conductorForm}>
             <Text style={styles.conductorIntroTitle}>Now the conductor</Text>
             <Text style={styles.conductorIntroSub}>
               One more, then you&apos;re done.
             </Text>
 
-            <Text style={[styles.ratingSectionPrompt, { marginTop: 16 }]}>
+            <View style={[styles.ratingSection, styles.conductorRatingCard]}>
+            <Text style={styles.ratingSectionPrompt}>
               How was your conductor?
             </Text>
             {crew?.conductorName && (
@@ -730,7 +754,7 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
                   activeOpacity={0.7}
                 >
                   <Ionicons
-                    name={star <= conductorRating ? "star" : "star-outline"}
+                    name="star"
                     size={36}
                     color={
                       star <= conductorRating
@@ -754,6 +778,8 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
             >
               {conductorRating > 0 ? RATING_WORDS[conductorRating - 1] : " "}
             </Text>
+
+            </View>
 
             {/* Conductor Tags */}
             {conductorRating > 0 && (
@@ -880,7 +906,43 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
+  scanContainer: {
+    flexShrink: 1,
+    backgroundColor: "#050F1A",
+  },
+  scanHeader: {
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.1)",
+    flexShrink: 0,
+  },
+  scanHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  scanTitle: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "700",
+    lineHeight: 22.5,
+  },
+  scanSubtitle: {
+    color: "rgba(255,255,255,0.4)",
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 2,
+  },
+  scanBody: {
+    padding: 20,
+  },
+  scanHint: {
+    color: "rgba(255,255,255,0.3)",
+    fontSize: 11,
+    lineHeight: 16.5,
+    textAlign: "center",
+  },
   container: {
     flex: 1,
     backgroundColor: "#050F1A",
@@ -974,14 +1036,13 @@ const styles = StyleSheet.create({
   scannerViewport: {
     width: "100%",
     aspectRatio: 1,
-    maxHeight: 260,
     backgroundColor: "#071A2E",
     borderRadius: 16,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 16,
+    marginBottom: 12,
     overflow: "hidden",
   },
   reticleOverlay: {
@@ -1019,71 +1080,96 @@ const styles = StyleSheet.create({
   permissionBox: {
     width: "100%",
     aspectRatio: 1,
-    maxHeight: 260,
-    backgroundColor: "rgba(255, 255, 255, 0.02)",
+    backgroundColor: "#071A2E",
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "rgba(255, 255, 255, 0.1)",
     alignItems: "center",
     justifyContent: "center",
-    padding: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 24,
+    marginBottom: 12,
+  },
+  permissionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(98,160,234,0.2)",
+    backgroundColor: "rgba(98,160,234,0.1)",
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 16,
   },
+  permissionRetry: {
+    width: "100%",
+    maxWidth: 256,
+    minHeight: 44,
+    marginTop: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: "#1A5FB4",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
   permissionTitle: {
-    fontSize: 15,
-    fontWeight: "700",
+    fontSize: 18,
+    fontWeight: "600",
     color: "#FFFFFF",
-    marginTop: 12,
-    marginBottom: 6,
+    lineHeight: 24.75,
     textAlign: "center",
   },
   permissionText: {
-    fontSize: 12,
-    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 14,
+    color: "rgba(255, 255, 255, 0.55)",
     textAlign: "center",
-    lineHeight: 18,
-    marginBottom: 16,
+    lineHeight: 22.75,
+    marginTop: 8,
+    maxWidth: 256,
   },
   reticle: {
-    width: 140,
-    height: 140,
+    width: 192,
+    height: 192,
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
   },
   corner: {
     position: "absolute",
-    width: 20,
-    height: 20,
+    width: 24,
+    height: 24,
     borderColor: "#62A0EA",
   },
   topLeft: {
     top: 0,
     left: 0,
-    borderTopWidth: 3,
-    borderLeftWidth: 3,
-    borderTopLeftRadius: 4,
+    borderTopWidth: 2,
+    borderLeftWidth: 2,
+    borderTopLeftRadius: 8,
   },
   topRight: {
     top: 0,
     right: 0,
-    borderTopWidth: 3,
-    borderRightWidth: 3,
-    borderTopRightRadius: 4,
+    borderTopWidth: 2,
+    borderRightWidth: 2,
+    borderTopRightRadius: 8,
   },
   bottomLeft: {
     bottom: 0,
     left: 0,
-    borderBottomWidth: 3,
-    borderLeftWidth: 3,
-    borderBottomLeftRadius: 4,
+    borderBottomWidth: 2,
+    borderLeftWidth: 2,
+    borderBottomLeftRadius: 8,
   },
   bottomRight: {
     bottom: 0,
     right: 0,
-    borderBottomWidth: 3,
-    borderRightWidth: 3,
-    borderBottomRightRadius: 4,
+    borderBottomWidth: 2,
+    borderRightWidth: 2,
+    borderBottomRightRadius: 8,
   },
   reticleHint: {
     color: "rgba(255, 255, 255, 0.4)",
@@ -1137,6 +1223,22 @@ const styles = StyleSheet.create({
     padding: 24,
     alignItems: "center",
     textAlign: "center",
+  },
+  loadingCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 4,
+    borderColor: "rgba(98, 160, 234, 0.25)",
+    borderTopColor: "#62A0EA",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  errorStatusBox: {
+    borderColor: "rgba(248, 113, 113, 0.2)",
+  },
+  successStatusBox: {
+    borderColor: "rgba(16, 185, 129, 0.3)",
   },
   statusTitle: {
     fontSize: 17,
@@ -1290,9 +1392,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
     borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
+    padding: 24,
+    marginBottom: 24,
     alignItems: "center",
+  },
+  conductorForm: {
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.05)",
+    paddingTop: 24,
+    marginTop: 8,
+  },
+  conductorRatingCard: {
+    marginTop: 24,
   },
   conductorSectionTopBorder: {
     borderColor: "rgba(98, 160, 234, 0.2)",
@@ -1315,13 +1426,13 @@ const styles = StyleSheet.create({
     color: "rgba(255, 255, 255, 0.8)",
   },
   ratingSectionSub: {
-    fontSize: 11,
+    fontSize: 12,
     color: "rgba(255, 255, 255, 0.4)",
     marginTop: 2,
   },
   starsRow: {
     flexDirection: "row",
-    gap: 10,
+    gap: 8,
     marginTop: 14,
   },
   starTouch: {
@@ -1335,10 +1446,10 @@ const styles = StyleSheet.create({
   },
   tagsContainer: {
     width: "100%",
-    marginTop: 14,
+    marginTop: 0,
   },
   tagsHeader: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: "700",
     color: "rgba(255, 255, 255, 0.7)",
     marginBottom: 8,
@@ -1349,8 +1460,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   tagPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderRadius: 20,
     backgroundColor: "rgba(255, 255, 255, 0.05)",
     borderWidth: 1,
@@ -1365,7 +1476,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(248, 113, 113, 0.4)",
   },
   tagPillText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "600",
     color: "rgba(255, 255, 255, 0.6)",
   },
@@ -1379,7 +1490,7 @@ const styles = StyleSheet.create({
   },
   commentContainer: {
     width: "100%",
-    marginTop: 16,
+    marginTop: 24,
   },
   commentHeaderRow: {
     flexDirection: "row",
@@ -1388,7 +1499,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   commentLabel: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: "700",
     color: "rgba(255, 255, 255, 0.7)",
   },
@@ -1397,7 +1508,7 @@ const styles = StyleSheet.create({
     color: "rgba(255, 255, 255, 0.4)",
   },
   commentInput: {
-    backgroundColor: "#050F1A",
+    backgroundColor: "#071A2E",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
     borderRadius: 12,
