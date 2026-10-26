@@ -38,4 +38,18 @@ Original commits and their existing dates remain intact.
   are not published. Expo prebuild regenerates native projects from app configuration.
 - Mascot source references and generated variants are retained without deleting local work.
 
+## 2026-10-26 — Android testing release 1.0.10 (build 10)
+
+Publish accumulated work in separate API/session, user-flow/UI, and release
+commits with the actual publication date. Includes initial-password setup,
+verified email-change UI, receipt/payment-history summaries, feedback and hail
+recovery, published-route/live-map refresh, profile photos/appearance, and shared
+readable legal policies/support. Existing commuter mascot/walkthrough is retained.
+
+Validation before publication: 335 Jest tests, TypeScript and Android bundle
+export passed. Native APK build/physical-device results are reported separately;
+these checks do not certify every production flow. Use the existing EAS preview
+profile against https://api.chatco.online with compatible backend mobile routes.
+No live payments or production backend changes are included.
+
 Use `git log --date=iso --format="%h %ad %s"` for the exact retained commit chronology.
