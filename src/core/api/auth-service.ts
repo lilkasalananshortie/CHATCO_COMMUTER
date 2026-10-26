@@ -14,6 +14,10 @@ export interface LoginResult {
 const USER_KEY = "chatco_commuter_user";
 
 export const authService = {
+  async updateStoredEmail(email: string): Promise<void> {
+    const user = await authService.getStoredUser();
+    if (user) await appStorage.setItem(USER_KEY, JSON.stringify({ ...user, email }));
+  },
   async getStoredToken(): Promise<string | null> {
     return appStorage.getItem(TOKEN_KEY);
   },
@@ -38,6 +42,15 @@ export const authService = {
     const cachedUser = await authService.getStoredUser();
     if (!token) return null;
     try {
+      const session = await request<{ user: User }>("/mobile/auth/session");
+      if (session.user?.role !== "COMMUTER") {
+        await authService.clearLocalSession();
+        return null;
+      }
+      if (session.user.must_change_password) {
+        await appStorage.setItem(USER_KEY, JSON.stringify(session.user));
+        return { user: session.user, token };
+      }
       const data = await request<{ user: User; profile?: CommuterProfile }>("/mobile/user");
       if (!data?.user?.id || data.user.role !== "COMMUTER") {
         await authService.clearLocalSession();
@@ -91,6 +104,7 @@ export const authService = {
       email: rawUser.email ?? "",
       name: rawUser.name ?? rawUser.email ?? "Commuter",
       role: rawUser.role,
+      must_change_password: Boolean(data.must_change_password ?? rawUser.must_change_password),
     };
 
     if (!token) throw new Error("The server did not return a login token. Please try again.");
@@ -103,6 +117,11 @@ export const authService = {
       profile: data?.profile,
       token: token ?? "",
     };
+  },
+
+  async setNewPassword(password: string, confirmation: string): Promise<void> {
+    await post("/mobile/auth/set-new-password", { password, password_confirmation: confirmation });
+    await authService.clearLocalSession();
   },
 
   async register(

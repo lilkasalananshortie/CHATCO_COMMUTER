@@ -3,6 +3,7 @@ export interface User {
   email: string;
   name: string;
   role: "COMMUTER" | "CONDUCTOR" | "ADMIN";
+  must_change_password?: boolean;
 }
 
 export interface CommuterProfile {
@@ -81,7 +82,8 @@ export interface HailRequest {
   id: string;
   pickup_name: string;
   passenger_count: number;
-  status: "PENDING" | "ACCEPTED" | "REJECTED" | "CANCELLED" | "COMPLETED";
+  status: "PENDING" | "ACCEPTED" | "REJECTED" | "CANCELLED" | "COMPLETED" | "EXPIRED";
+  expires_at?: string | null;
   created_at: string;
   accepted_by?: {
     unit_number: string;
@@ -199,7 +201,7 @@ export interface ClaimData {
   item: LostItem | null;
 }
 
-export type AnnouncementType = "PROMO" | "SAFETY" | "SYSTEM" | "MAINTENANCE" | "CLAIM_UPDATE" | "CUSTOM" | "VOUCHER";
+export type AnnouncementType = "PROMO" | "SAFETY" | "SYSTEM" | "MAINTENANCE" | "CLAIM_UPDATE" | "CUSTOM" | "VOUCHER" | "SAVED_ITEM";
 
 export interface Announcement {
   id: string;

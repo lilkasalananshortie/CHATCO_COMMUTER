@@ -17,6 +17,7 @@ test("restart validates existing bearer session before restoring current user", 
   (request as jest.Mock).mockResolvedValue({ user, profile: { commuter_type: "STUDENT" } });
   expect(await authService.restoreSession()).toMatchObject({ user, token: "token", profile: { commuter_type: "STUDENT" } });
   expect(request).toHaveBeenCalledWith("/mobile/user");
+  expect(request).toHaveBeenCalledWith("/mobile/auth/session");
 });
 test("offline startup keeps only genuine cached user, never invents a profile", async () => {
   (request as jest.Mock).mockRejectedValue(new NetworkError("offline"));
@@ -49,4 +50,26 @@ test("successful and already-revoked logout both finish locally", async () => {
   expect(await authService.logout()).toEqual({ serverRevoked: true });
   (post as jest.Mock).mockRejectedValue(Object.assign(new Error("expired"), { status: 401 }));
   expect(await authService.logout()).toEqual({ serverRevoked: true });
+});
+
+test("flagged session restores setup state without requesting protected profile", async () => {
+  (request as jest.Mock).mockResolvedValue({ user: { ...user, must_change_password: true } });
+  expect(await authService.restoreSession()).toMatchObject({ user: { must_change_password: true }, token: "token" });
+  expect(request).toHaveBeenCalledTimes(1);
+  expect(request).toHaveBeenCalledWith("/mobile/auth/session");
+});
+
+test("onsite login keeps the server first-password flag", async () => {
+  (request as jest.Mock).mockResolvedValue({ ...user, token: "new-token", must_change_password: true });
+  expect(await authService.login(user.email, "Temporary123!")).toMatchObject({ user: { must_change_password: true } });
+});
+
+test("setup uses mobile contract and clears credentials only after success", async () => {
+  (post as jest.Mock).mockRejectedValueOnce(new Error("Password too weak"));
+  await expect(authService.setNewPassword("weak", "weak")).rejects.toThrow("weak");
+  expect(appStorage.removeItem).not.toHaveBeenCalled();
+  (post as jest.Mock).mockResolvedValueOnce(null);
+  await authService.setNewPassword("NewPassword123!", "NewPassword123!");
+  expect(post).toHaveBeenLastCalledWith("/mobile/auth/set-new-password", { password: "NewPassword123!", password_confirmation: "NewPassword123!" });
+  expect(appStorage.removeItem).toHaveBeenCalledWith(TOKEN_KEY);
 });

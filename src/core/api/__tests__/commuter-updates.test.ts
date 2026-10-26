@@ -7,6 +7,25 @@ const mockPost = post as jest.Mock;
 const mockRequest = request as jest.Mock;
 beforeEach(() => { jest.resetAllMocks(); mockPost.mockResolvedValue({}); mockRequest.mockResolvedValue({}); });
 
+test("live share update targets the original token instead of general commuter presence", async () => {
+  await commuterService.updateShareRideLocation({ lat: 14.8, lng: 120.9, token: "trk_original" });
+  expect(mockPost).toHaveBeenCalledWith("/mobile/commuter/share-ride", { lat: 14.8, lng: 120.9, token: "trk_original", rotate: false });
+});
+test("hail reads preserve authoritative expiry and active recovery state", async () => {
+  mockRequest.mockResolvedValue({ id: "hail", status: "PENDING", expires_at: "2026-10-17T01:00:00Z" });
+  expect(await commuterService.getActiveHail()).toMatchObject({ id: "hail", expires_at: "2026-10-17T01:00:00Z" });
+  expect(await commuterService.getHailStatus("hail")).toMatchObject({ expires_at: "2026-10-17T01:00:00Z" });
+});
+test("network error is not the same as no active hail", async () => {
+  mockRequest.mockRejectedValue(new Error("offline"));
+  await expect(commuterService.getActiveHail()).rejects.toThrow("offline");
+  await expect(commuterService.getHailStatus("hail")).rejects.toThrow("offline");
+});
+test("payment history retains server-wide summary independently of loaded rows", async () => {
+  mockRequest.mockResolvedValue({ data: [], summary: { total_spent: 500, ride_count: 20, average_fare: 25 }, total: 21, last_page: 2 });
+  expect(await commuterService.getPaymentHistory()).toMatchObject({ summary: { total_spent: 500, ride_count: 20, average_fare: 25 } });
+});
+
 test("GCash claim preserves offered voucher type and peso amount", async () => {
   mockPost.mockResolvedValue({ transaction_id: "ride", amount: "30.00", voucher_available: true,
     available_voucher: { id: "v", type: "DISCOUNT", amount: "5.00" }, is_group: true });

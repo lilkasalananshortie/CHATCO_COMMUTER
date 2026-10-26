@@ -1,5 +1,6 @@
 import { del, post, put, request } from "./api-client";
 import { normalizeRewards } from "../domain/rewards";
+import { mapAnnouncementType } from "../domain/announcement-category";
 import { mapTrip } from "../domain/trips";
 import { notifyRewardsChanged } from "../domain/rewards-events";
 import type {
@@ -153,6 +154,7 @@ export const commuterService = {
       passenger_count: data.passenger_count || 1,
       status: res.status || "PENDING",
       created_at: res.created_at || new Date().toISOString(),
+      expires_at: res.expires_at ?? null,
       accepted_by: res.vehicle
         ? {
             unit_number: res.vehicle.unit_number || "JEEP",
@@ -177,6 +179,7 @@ export const commuterService = {
         passenger_count: Number(data.passenger_count ?? 1),
         status: data.status || "PENDING",
         created_at: data.created_at || new Date().toISOString(),
+        expires_at: data.expires_at ?? null,
         accepted_by: data.vehicle
           ? {
               unit_number: data.vehicle.unit_number || "JEEP",
@@ -184,8 +187,9 @@ export const commuterService = {
             }
           : null,
       };
-    } catch {
-      return null;
+    } catch (error) {
+      if ((error as { status?: number }).status === 404) return null;
+      throw error;
     }
   },
 
@@ -200,6 +204,7 @@ export const commuterService = {
         passenger_count: Number(data.passenger_count ?? 1),
         status: data.status || "PENDING",
         created_at: data.created_at || new Date().toISOString(),
+        expires_at: data.expires_at ?? null,
         accepted_by: data.vehicle
           ? {
               unit_number: data.vehicle.unit_number || "JEEP",
@@ -207,8 +212,9 @@ export const commuterService = {
             }
           : null,
       };
-    } catch {
-      return null;
+    } catch (error) {
+      if ((error as { status?: number }).status === 404) return null;
+      throw error;
     }
   },
 
@@ -281,6 +287,7 @@ export const commuterService = {
     page: number;
     lastPage: number;
     total: number;
+    summary?: { total_spent: number; ride_count: number; average_fare: number };
   }> {
     const query = new URLSearchParams();
     query.set("page", String(page));
@@ -294,6 +301,7 @@ export const commuterService = {
       page: res.current_page ?? page,
       lastPage: res.last_page ?? 1,
       total: res.total ?? rows.length,
+      summary: res.summary,
     };
   },
 
@@ -313,8 +321,8 @@ export const commuterService = {
     return post("/mobile/commuter/share-ride", data);
   },
 
-  async updateShareRideLocation(data: { lat: number; lng: number }): Promise<void> {
-    return post("/mobile/commuter/location", data);
+  async updateShareRideLocation(data: { lat: number; lng: number; token: string }): Promise<void> {
+    return post("/mobile/commuter/share-ride", { ...data, rotate: false });
   },
 
   async stopShareRide(): Promise<void> {
@@ -564,7 +572,7 @@ export const commuterService = {
       title: a.title,
       content: a.message || a.content || "",
       message: a.message || a.content || "",
-      type: String(a.type).toLowerCase() === "voucher_received" ? "VOUCHER" : /^(student_renewal|discount_application)/i.test(String(a.type)) ? "SYSTEM" : (a.type || "SYSTEM").toUpperCase(),
+      type: mapAnnouncementType(a.type),
       rawType: a.raw_type || a.rawType || a.type || null,
       is_read: Boolean(a.is_read ?? a.isRead),
       isRead: Boolean(a.is_read ?? a.isRead),
