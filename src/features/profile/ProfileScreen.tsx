@@ -8,21 +8,25 @@ import {
   TextInput,
   Modal,
   ActivityIndicator,
-  Linking,
   Alert,
   Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { commuterColors } from "../../core/theme/colors";
+import { useCommuterTheme } from "../../core/theme/ThemeProvider";
+import { maskedEmail } from "./profile-privacy";
 import { commuterService } from "../../core/api/commuter-service";
 import { authService } from "../../core/api/auth-service";
 import type { User, CommuterProfile } from "../../core/domain/types";
 import { DiscountApplicationEntry } from "../discount-application/DiscountApplicationEntry";
 import type { ApplicationState } from "../discount-application/application-types";
 import { pickProfilePhoto, profilePhotoForm } from "./profile-photo";
+import { ChangeEmailModal } from "./ChangeEmailModal";
+import { LegalSupportCard } from "../../shared/legal/LegalSupportCard";
 
 interface ProfileScreenProps {
   onLogout: () => void;
+  onEmailChanged?: (email: string) => void;
   onProfileSaved?: (profile: CommuterProfile) => void;
   onOpenTour?: () => void;
   serverProfile?: CommuterProfile | null;
@@ -32,7 +36,8 @@ interface ProfileScreenProps {
   onOpenDiscountApplication?: () => void;
 }
 
-export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onProfileSaved, onOpenTour, serverProfile, discountApplicationState = null, discountApplicationLoading = false, discountApplicationError = "", onOpenDiscountApplication }) => {
+export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailChanged, onProfileSaved, onOpenTour, serverProfile, discountApplicationState = null, discountApplicationLoading = false, discountApplicationError = "", onOpenDiscountApplication }) => {
+  const { appearance, setAppearance } = useCommuterTheme();
   const mounted = useRef(true);
   const mutation = useRef(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -64,6 +69,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onProfil
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [failedPhotoUrl, setFailedPhotoUrl] = useState<string | null>(null);
+  const [showEmailModal, setShowEmailModal] = useState(false);
 
   const handlePhoto = async () => {
     if (mutation.current) return;
@@ -502,9 +508,12 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onProfil
 
             <View style={styles.formField}>
               <Text style={styles.fieldLabel}>Email Address</Text>
+              <TouchableOpacity onPress={() => setShowEmailModal(true)} accessibilityRole="button">
+                <Text style={{ color: "#99C1F1", paddingVertical: 10 }}>Change email securely</Text>
+              </TouchableOpacity>
               <TextInput
                 style={[styles.input, styles.inputDisabled]}
-                value={user?.email || "—"}
+                value={maskedEmail(user?.email)}
                 editable={false}
               />
               {isEditing && (
@@ -554,6 +563,13 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onProfil
           )}
         </View>
 
+        <View style={[styles.tourCard, { flexDirection: "column", alignItems: "flex-start" }]}>
+          <Text style={styles.tourTitle}>Map and payment history appearance</Text>
+          <View style={{ flexDirection: "row", gap: 14, marginTop: 10 }}>
+            {(["dark", "light", "system"] as const).map(mode => <TouchableOpacity key={mode} accessibilityRole="button" accessibilityState={{ selected: appearance === mode }} onPress={() => { void setAppearance(mode).catch(() => setSaveError("Could not save appearance. Please retry.")); }} style={{ minHeight: 44, justifyContent: "center" }}><Text style={{ color: appearance === mode ? "#99C1F1" : "#CBD5E1", fontWeight: appearance === mode ? "800" : "400" }}>{mode === "system" ? "Device" : mode === "dark" ? "Dark" : "Light"}</Text></TouchableOpacity>)}
+          </View>
+        </View>
+
         {/* App Walkthrough Tour Card */}
         {onOpenTour && (
           <TouchableOpacity
@@ -578,27 +594,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onProfil
           </TouchableOpacity>
         )}
 
-        {/* Privacy Policy & Data Rights Card */}
-        <TouchableOpacity
-          onPress={() => Linking.openURL("https://chatco.online/privacy")}
-          style={styles.tourCard}
-          activeOpacity={0.8}
-          accessibilityRole="button"
-          accessibilityLabel="Privacy Policy and Commuter Data Rights"
-        >
-          <View style={styles.tourCardLeft}>
-            <View style={[styles.tourIconCircle, { backgroundColor: "rgba(16, 185, 129, 0.15)" }]}>
-              <Ionicons name="shield-checkmark-outline" size={22} color="#34D399" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.tourTitle}>Privacy Policy & Data Rights</Text>
-              <Text style={styles.tourSubtitle}>
-                Read our Philippine RA 10173 compliance notice
-              </Text>
-            </View>
-          </View>
-          <Ionicons name="open-outline" size={18} color="rgba(255, 255, 255, 0.4)" />
-        </TouchableOpacity>
+        <LegalSupportCard />
 
         {/* Log Out Button */}
         <TouchableOpacity
@@ -646,6 +642,13 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onProfil
         </View>
       </Modal>
 
+      <ChangeEmailModal visible={showEmailModal} onClose={() => setShowEmailModal(false)} onChanged={email => {
+        setUser(previous => previous ? { ...previous, email } : previous);
+        setProfile(previous => previous ? { ...previous, email } : previous);
+        onEmailChanged?.(email);
+        void authService.updateStoredEmail(email).catch(() => undefined);
+        setSuccessMessage("Email address updated.");
+      }} />
       {/* --- CHANGE PASSWORD MODAL --- */}
       <Modal visible={showPasswordModal} animationType="fade" transparent>
         <View style={styles.modalBackdrop}>

@@ -8,7 +8,9 @@ import {
   Vibration,
   ActivityIndicator,
   Platform,
+  AppState,
   useWindowDimensions,
+  Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -21,6 +23,8 @@ import type { HailRequest, VehicleLocation, Trip, CommuterProfile, User } from "
 import { distanceMeters, PICKUP_RADIUS_METERS } from "./route-data";
 import { MascotMessage } from "../../shared/ui/MascotMessage";
 import { getMascotErrorState } from "../../shared/ui/mascot-error";
+import { hailIsTerminal, hailSecondsRemaining } from "./hail-state";
+import { useHoldToConfirm } from "./useHoldToConfirm";
 
 interface DashboardScreenProps {
   onOpenScan: () => void;
@@ -43,6 +47,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   user,
   profile,
 }) => {
+  const [failedAvatar, setFailedAvatar] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const isTablet = windowWidth >= 768;
@@ -53,8 +58,10 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [gpsStatus, setGpsStatus] = useState<"loading" | "available" | "denied" | "unavailable">("loading");
   const [activeHail, setActiveHail] = useState<HailRequest | null>(null);
+  const hailMutation = useRef(0);
+  const hailBusy = useRef(false);
   const [hailPending, setHailPending] = useState(false);
-  const [hailTimerSeconds, setHailTimerSeconds] = useState(180);
+  const [hailTimerSeconds, setHailTimerSeconds] = useState(0);
   const [showSheet, setShowSheet] = useState(true);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [sosTapHint, setSosTapHint] = useState(false);
@@ -262,10 +269,9 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     !isUnitFull &&
     !isUnitOnBreak;
 
-  // Auto-cancel hail if vehicle capacity becomes FULL
+  // Capacity alone does not cancel a server-owned hail.
   useEffect(() => {
     if (activeHail && isUnitFull) {
-      setActiveHail(null);
       setHailNotification("Unit is currently at maximum capacity. Please hail the next approaching unit.");
     }
   }, [activeHail, isUnitFull]);
@@ -292,7 +298,10 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
   // Handle Hail Toggle with Web-Matching Countdown & Audio/Vibration Loop
   const handleToggleHail = async () => {
+    if (hailBusy.current) return;
+    hailMutation.current++;
     if (activeHail) {
+      hailBusy.current = true;
       setHailPending(true);
       try {
         await commuterService.cancelHail(activeHail.id);
@@ -300,8 +309,9 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
         setHailError(null);
         if (Platform.OS !== "web") Vibration.vibrate(100);
       } catch {
-        setActiveHail(null);
+        setHailError("Unable to cancel your hail. It remains active until the server confirms cancellation. Please retry.");
       } finally {
+        hailBusy.current = false;
         setHailPending(false);
       }
       return;
@@ -331,6 +341,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
       return;
     }
 
+    hailBusy.current = true;
     setHailPending(true);
     setHailError(null);
     setHailNotification(null);
@@ -346,7 +357,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
         passenger_count: 1,
       });
       setActiveHail(hail);
-      setHailTimerSeconds(180);
+      setHailTimerSeconds(hailSecondsRemaining(hail));
     } catch (err: any) {
       const msg = String(err?.response?.data?.message || err?.message || "");
       if (msg.toLowerCase().includes("break")) {
@@ -357,23 +368,41 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
         setHailError(msg || "Unable to send hail. Move within 1km of an active unit.");
       }
     } finally {
+      hailBusy.current = false;
       setHailPending(false);
     }
   };
 
-  // Hail countdown timer (3-min TTL)
+  useEffect(() => {
+    let active = true;
+    let running = false;
+    setActiveHail(null);
+    const restore = async () => {
+      if (running || hailBusy.current) return;
+      const generation = hailMutation.current;
+      running = true;
+      try {
+        const current = await commuterService.getActiveHail();
+        if (active && !hailBusy.current && generation === hailMutation.current) {
+          setActiveHail(current && !hailIsTerminal(current) ? current : null);
+        }
+      } catch { /* Do not discard a known hail on a network error. */ }
+      finally { running = false; }
+    };
+    void restore();
+    const timer = setInterval(() => void restore(), 15000);
+    const listener = AppState.addEventListener("change", state => { if (state === "active") void restore(); });
+    return () => { active = false; clearInterval(timer); listener.remove(); };
+  }, [user?.id]);
+
+  const hailHold = useHoldToConfirm(() => { void handleToggleHail(); }, canHail && !activeHail && !hailPending);
+
+  // Server expiry drives display; only server status ends the hail.
   useEffect(() => {
     if (!activeHail) return;
-    const timer = setInterval(() => {
-      setHailTimerSeconds((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          setActiveHail(null);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    const update = () => setHailTimerSeconds(hailSecondsRemaining(activeHail));
+    update();
+    const timer = setInterval(update, 1000);
 
     return () => clearInterval(timer);
   }, [activeHail]);
@@ -385,15 +414,21 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
     const checkHailStatus = async () => {
       try {
+        const generation = hailMutation.current;
         const current = await commuterService.getHailStatus(activeHail.id);
-        if (cancelled || !current) return;
+        if (cancelled || hailBusy.current || generation !== hailMutation.current) return;
+        if (!current) { setActiveHail(null); return; }
 
         const st = String(current.status).toUpperCase();
         if (st === "REJECTED" || st === "DECLINED") {
           setActiveHail(null);
           setHailNotification("Unit is currently at maximum capacity. Please hail the next approaching unit.");
           if (Platform.OS !== "web") Vibration.vibrate([100, 100, 100]);
-        } else if (st === "ACCEPTED") {
+        } else if (hailIsTerminal(current)) {
+          setActiveHail(null);
+          setHailNotification(st === "EXPIRED" ? "Your hail expired. You can hail again." : "Your hail has ended.");
+        } else if (st === "ACCEPTED" && activeHail.status !== "ACCEPTED") {
+          setActiveHail(current);
           const unit = current.accepted_by?.unit_number || nearestVehicleInfo?.vehicle?.unit_number || "jeepney";
           setHailNotification(`Conductor Accepted! Unit ${unit} is approaching your stop.`);
           if (Platform.OS !== "web") Vibration.vibrate(200);
@@ -410,7 +445,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
       cancelled = true;
       clearInterval(poll);
     };
-  }, [activeHail?.id, nearestVehicleInfo?.vehicle?.unit_number]);
+  }, [activeHail?.id, activeHail?.status, nearestVehicleInfo?.vehicle?.unit_number]);
 
   return (
     <View style={styles.container}>
@@ -459,9 +494,9 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             accessibilityRole="button"
             accessibilityLabel="View Profile"
           >
-            <Text style={styles.avatarLetter}>
+            {profile?.profile_image_url && failedAvatar !== profile.profile_image_url ? <Image source={{ uri: profile.profile_image_url }} onError={() => setFailedAvatar(profile.profile_image_url ?? null)} accessibilityLabel="Your profile photo" style={{ width: "100%", height: "100%", borderRadius: 999 }} /> : <Text style={styles.avatarLetter}>
               {displayName.charAt(0).toUpperCase()}
-            </Text>
+            </Text>}
           </TouchableOpacity>
         </View>
       </View>
@@ -484,7 +519,11 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           <TouchableOpacity
             activeOpacity={0.85}
             disabled={hailPending || (!activeHail && !canHail)}
-            onPress={handleToggleHail}
+            onPressIn={hailHold.start}
+            onPressOut={hailHold.cancel}
+            onPress={() => { const justConfirmed = hailHold.consumeCompleted(); if (activeHail && !justConfirmed) void handleToggleHail(); }}
+            accessibilityActions={[{ name: "activate", label: activeHail ? "Cancel hail" : "Confirm hail" }]}
+            onAccessibilityAction={event => { if (event.nativeEvent.actionName === "activate" && !hailPending) void handleToggleHail(); }}
             style={[
               styles.hailCircleBtn,
               activeHail
@@ -527,7 +566,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
               : isUnitOnBreak
               ? "On Break"
               : canHail
-              ? "Hail Me"
+              ? hailHold.holding ? "Keep holding…" : "Hold to hail"
               : gpsStatus === "loading"
               ? "Locating..."
               : gpsStatus === "denied"

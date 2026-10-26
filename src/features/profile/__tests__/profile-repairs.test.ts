@@ -4,6 +4,9 @@ import { ProfileScreen } from "../ProfileScreen";
 import { commuterService } from "../../../core/api/commuter-service";
 import { authService } from "../../../core/api/auth-service";
 import { pickProfilePhoto, profilePhotoForm } from "../profile-photo";
+jest.mock("../ChangeEmailModal", () => ({ ChangeEmailModal: "ChangeEmail" }));
+jest.mock("../../../shared/legal/LegalSupportCard", () => ({ LegalSupportCard: "LegalSupport" }));
+jest.mock("../../../core/theme/ThemeProvider", () => ({ useCommuterTheme: () => ({ appearance: "dark", setAppearance: jest.fn() }) }));
 let mockStates: any[] = [], mockRefs: any[] = [], mockEffects: Array<() => any> = [];
 let mockStateIndex = 0, mockRefIndex = 0;
 jest.mock("react", () => ({ ...jest.requireActual("react"), useCallback: (fn: unknown) => fn,

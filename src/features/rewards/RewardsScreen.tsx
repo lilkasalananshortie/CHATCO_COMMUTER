@@ -23,6 +23,7 @@ import { loadRewardsAndUpdates } from "./load-rewards";
 import { isVoucherAvailable, voucherLabel } from "../../core/domain/rewards";
 import { subscribeRewardsChanged } from "../../core/domain/rewards-events";
 import { FeatureButton } from "../../shared/ui/FeatureControls";
+import { announcementLabel } from "../../core/domain/announcement-category";
 import type { RenewalState } from "../student-renewal/renewal-types";
 import type {
   RewardProgress,
@@ -41,6 +42,7 @@ const announcementConfig: Record<
   AnnouncementType,
   { color: string; bg: string; border: string; label: string; emoji: string }
 > = {
+  SAVED_ITEM: { color: "#99C1F1", bg: "rgba(98,160,234,0.1)", border: "rgba(98,160,234,0.2)", label: "Saved item", emoji: "🔖" },
   VOUCHER: { color: "#34D399", bg: "rgba(16,185,129,0.1)", border: "rgba(16,185,129,0.2)", label: "Voucher", emoji: "🎟️" },
   PROMO: {
     color: "#FBBF24",
@@ -301,8 +303,7 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
             {announcements.map((item) => {
               const type = (item.type || "SYSTEM") as AnnouncementType;
               const config = announcementConfig[type] || announcementConfig.SYSTEM;
-              const badgeLabel =
-                type === "CUSTOM" && item.rawType ? item.rawType : config.label;
+              const badgeLabel = announcementLabel(item, config.label);
 
               return (
                 <TouchableOpacity
@@ -688,10 +689,7 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
       {selectedAnnouncement && (() => {
         const type = (selectedAnnouncement.type || "SYSTEM") as AnnouncementType;
         const config = announcementConfig[type] || announcementConfig.SYSTEM;
-        const badgeLabel =
-          type === "CUSTOM" && selectedAnnouncement.rawType
-            ? selectedAnnouncement.rawType
-            : config.label;
+        const badgeLabel = announcementLabel(selectedAnnouncement, config.label);
 
         return (
           <Modal visible={true} animationType="fade" transparent>

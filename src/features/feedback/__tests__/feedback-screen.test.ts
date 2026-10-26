@@ -21,7 +21,7 @@ function walk(node: any): Element[] { if (Array.isArray(node)) return node.flatM
 const trip: Trip = { id: "ride", transaction_id: "ride", shift_id: "shift", payment_method: "CASH", can_leave_feedback: true };
 function render(initialTrip: Trip | null = trip) { mockStateIndex = 0; mockRefIndex = 0; return walk(FeedbackScreen({ initialTrip })); }
 function submit() { return render().find(e => e.type === "Button" && walk(e).some(child => typeof child.props.children === "string" && child.props.children.trim() === "Submit Feedback"))!; }
-function ratings() { render(); mockStates[7] = 5; mockStates[8] = ["Safe Driving"]; mockStates[9] = "Driver note"; mockStates[10] = 2; mockStates[11] = ["Wrong Change"]; mockStates[12] = "Conductor note"; }
+function ratings() { render(); mockStates[6] = 5; mockStates[7] = ["Safe Driving"]; mockStates[8] = "Driver note"; mockStates[9] = 2; mockStates[10] = ["Wrong Change"]; mockStates[11] = "Conductor note"; }
 beforeEach(() => { mockStates = []; mockRefs = []; jest.resetAllMocks(); });
 test("history feedback sends the shift, not transaction id, and retains unequal scores", async () => {
   ratings(); await submit().props.onPress();
@@ -46,4 +46,20 @@ test("ineligible history cannot submit even when handler is invoked directly", a
 });
 test("scanner no longer provides an invented recent ride shortcut", () => {
   expect(render(null).some(e => typeof e.props.children === "string" && e.props.children.includes("Rate Recent Ride"))).toBe(false);
+});
+
+test("no-crew lookup offers check again for the same scanned unit without manual input", async () => {
+  const raw = JSON.stringify({ vehicle_id: "vehicle", unit_number: "Unit 1" });
+  (commuterService.scanQr as jest.Mock).mockRejectedValueOnce(Object.assign(new Error("No crew today"), { status: 404 }));
+  const camera = render(null).find(e => e.type === "Camera")!;
+  camera.props.onBarcodeScanned({ data: raw });
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  const tree = render(null);
+  expect(tree.some(e => e.props.children === "No crew on duty")).toBe(true);
+  expect(tree.some(e => e.type === "Input")).toBe(false);
+  (commuterService.scanQr as jest.Mock).mockResolvedValueOnce({ shiftId: "shift", unitNumber: "Unit 1" });
+  tree.find(e => e.type === "Button" && walk(e).some(c => c.props.children === "Check again"))!.props.onPress();
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  expect(commuterService.scanQr).toHaveBeenNthCalledWith(2, raw);
+  expect(render(null).some(e => e.props.children === "No crew on duty")).toBe(false);
 });

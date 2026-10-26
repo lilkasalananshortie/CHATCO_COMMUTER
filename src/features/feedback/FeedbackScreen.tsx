@@ -71,6 +71,8 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
   onFeedbackComplete,
 }) => {
   const pending = useRef(false);
+  const lastScan = useRef<string | null>(null);
+  const noCrew = useRef(false);
   const generation = useRef(0);
   useEffect(() => () => { generation.current++; }, []);
   const [scanStatus, setScanStatus] = useState<ScanStatus>(
@@ -78,9 +80,6 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
   );
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanErrorPose, setScanErrorPose] = useState<"offline" | "not-found">("not-found");
-  const [manualToken, setManualToken] = useState(
-    initialTrip?.transaction_id || ""
-  );
   const [torch, setTorch] = useState(false);
   const [scanned, setScanned] = useState(false);
 
@@ -171,6 +170,8 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
     const cleanToken = rawToken.trim().startsWith("{") ? rawToken.trim() : extractFeedbackToken(rawToken);
     if (!cleanToken.trim()) return;
     pending.current = true;
+    lastScan.current = rawToken;
+    noCrew.current = false;
     const attempt = generation.current;
     setScanStatus("resolving");
     setScanError(null);
@@ -189,6 +190,7 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
       setScanStatus("resolved");
     } catch (err: any) {
       if (generation.current !== attempt) return;
+      noCrew.current = (err?.status ?? err?.response?.status) === 404 && rawToken.trim().startsWith("{");
       const msg =
         err?.response?.data?.message ||
         err?.message ||
@@ -215,7 +217,6 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
     setScanned(false);
     setScanStatus("scanning");
     setScanError(null);
-    setManualToken("");
     setIsSubmitted(false);
     setCountdown(3);
   };
@@ -320,6 +321,7 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
                   barcodeTypes: ["qr"],
                 }}
                 onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
+                onMountError={() => { noCrew.current = false; setScanError("The camera could not start. Check camera permission, close other camera apps, then try again."); setScanStatus("error"); }}
               />
 
               {/* Scanner Reticle Overlay */}
@@ -353,31 +355,7 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
             Align the feedback QR code posted inside the vehicle
           </Text>
 
-          <View style={styles.manualEntryCard}>
-            <Text style={styles.manualLabel}>Or Enter Unit Code / Token</Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="Paste the feedback QR token"
-              placeholderTextColor="rgba(255, 255, 255, 0.25)"
-              value={manualToken}
-              onChangeText={setManualToken}
-              autoCapitalize="characters"
-            />
-
-            <TouchableOpacity
-              onPress={() => handleResolveToken(manualToken)}
-              disabled={!manualToken.trim()}
-              style={[
-                styles.primaryButton,
-                !manualToken.trim() && styles.disabledButton,
-              ]}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.primaryButtonText}>Verify Unit & Crew</Text>
-            </TouchableOpacity>
-
-            <Text style={styles.reticleHint}>To rate a previous ride, select it from Payment History on Home.</Text>
-          </View>
+          <Text style={styles.reticleHint}>To rate a previous ride, select it from Payment History on Home.</Text>
         </ScrollView>
       </View>
     );
@@ -400,6 +378,15 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
 
   // 3. ERROR STATE
   if (scanStatus === "error") {
+    let unitLabel = "This unit";
+    try { const unit = JSON.parse(lastScan.current ?? "{}"); unitLabel = unit.unit_number ?? unit.unitNumber ?? unit.plate_number ?? unitLabel; } catch { /* Signed QR has no public unit label. */ }
+    if (noCrew.current) return <ScrollView contentContainerStyle={styles.centeredScreen}><View style={styles.statusBox}>
+      <Ionicons name="bus-outline" size={44} color="#62A0EA" />
+      <Text style={styles.statusTitle}>No crew on duty</Text>
+      <Text style={styles.statusSubtitle}>{unitLabel} has no crew recorded today. Check again after the conductor starts a shift.</Text>
+      <TouchableOpacity accessibilityRole="button" style={styles.primaryButton} onPress={() => { if (lastScan.current) void handleResolveToken(lastScan.current); }}><Text style={styles.primaryButtonText}>Check again</Text></TouchableOpacity>
+      <TouchableOpacity accessibilityRole="button" style={styles.neutralButton} onPress={handleRescan}><Text style={styles.neutralButtonText}>Scan another unit</Text></TouchableOpacity>
+    </View></ScrollView>;
     return (
       <ScrollView contentContainerStyle={styles.centeredScreen}>
         <View style={styles.statusBox}>
@@ -1105,19 +1092,6 @@ const styles = StyleSheet.create({
     marginTop: 16,
     textAlign: "center",
     maxWidth: 240,
-  },
-  manualEntryCard: {
-    backgroundColor: "#071A2E",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-    borderRadius: 16,
-    padding: 16,
-  },
-  manualLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "rgba(255, 255, 255, 0.7)",
-    marginBottom: 8,
   },
   textInput: {
     width: "100%",

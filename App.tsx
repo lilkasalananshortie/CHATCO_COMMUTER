@@ -19,6 +19,7 @@ import { SplashScreen } from "./src/features/splash/SplashScreen";
 import { OnboardingScreen, ONBOARDING_STORAGE_KEY } from "./src/features/onboarding/OnboardingScreen";
 import { LoginScreen } from "./src/features/auth/LoginScreen";
 import { RegisterScreen } from "./src/features/auth/RegisterScreen";
+import { SetNewPasswordScreen } from "./src/features/auth/SetNewPasswordScreen";
 import { DashboardScreen } from "./src/features/dashboard/DashboardScreen";
 import { LostFoundScreen } from "./src/features/lostfound/LostFoundScreen";
 import { RewardsScreen } from "./src/features/rewards/RewardsScreen";
@@ -77,8 +78,9 @@ function MainApp() {
   const [showShareModal, setShowShareModal] = useState(false);
   const [showRenewal, setShowRenewal] = useState(false);
   const [showDiscountApplication, setShowDiscountApplication] = useState(false);
-  const discountApplication = useDiscountApplication(user?.id);
-  const renewal = useStudentRenewal(user?.id);
+  const operationalUserId = user?.must_change_password ? undefined : user?.id;
+  const discountApplication = useDiscountApplication(operationalUserId);
+  const renewal = useStudentRenewal(operationalUserId);
   useEffect(() => {
     if (!user || !discountApplication.state || profile?.commuter_type === discountApplication.state.commuter_type) return;
     let cancelled = false;
@@ -127,6 +129,7 @@ function MainApp() {
         if (!cancelled && epoch === sessionEpoch.current && session) {
           currentUserId.current = session.user.id;
           setUser(session.user);
+          if (session.user.must_change_password) return;
           if (session.profile) setProfile(session.profile);
           try {
             const profileData = await commuterService.getProfile();
@@ -151,7 +154,7 @@ function MainApp() {
 
   // Poll unread announcements count & available vouchers if logged in (matching web layout)
   const fetchUnreadCount = useCallback(async () => {
-    if (!user) return;
+    if (!user || user.must_change_password) return;
     try {
       const [announcementRes, rewardsRes, claimsRes] = await Promise.allSettled([
         commuterService.getUnreadAnnouncementCount(),
@@ -192,6 +195,7 @@ function MainApp() {
     // Reset to 0 and trigger smooth entrance transition into dashboard
     dashboardEntranceAnim.setValue(0);
     setUser(loggedInUser);
+    if (loggedInUser.must_change_password) return;
 
     Animated.timing(dashboardEntranceAnim, {
       toValue: 1,
@@ -246,6 +250,8 @@ function MainApp() {
       />
     );
   }
+
+  if (user?.must_change_password) return <SetNewPasswordScreen onDone={handleLogout} />;
 
   return (
     <View style={styles.appContainer}>
@@ -332,6 +338,10 @@ function MainApp() {
               <ProfileScreen
                 onLogout={handleLogout}
                 onProfileSaved={setProfile}
+                onEmailChanged={email => {
+                  setUser(previous => previous ? { ...previous, email } : previous);
+                  setProfile(previous => previous ? { ...previous, email } : previous);
+                }}
                 onOpenTour={() => setShowOnboarding(true)}
                 serverProfile={profile}
                 discountApplicationState={discountApplication.state}

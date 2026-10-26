@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Share,
+  AppState,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
@@ -41,6 +42,8 @@ export const ShareRideModal: React.FC<ShareRideModalProps> = ({
   const [isStopped, setIsStopped] = useState(false);
 
   const tokenRef = useRef<string | null>(null);
+  const stopping = useRef(false);
+  const updates = useRef<Promise<unknown>>(Promise.resolve());
 
   // Initialize and create share link on open
   useEffect(() => {
@@ -52,28 +55,17 @@ export const ShareRideModal: React.FC<ShareRideModalProps> = ({
     setIsStopped(false);
     setIsExpired(false);
     setGpsStatus("requesting");
+    stopping.current = false;
 
     (async () => {
       try {
-        let lat: number | undefined;
-        let lng: number | undefined;
-
-        try {
-          const loc = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-          });
-          lat = loc.coords.latitude;
-          lng = loc.coords.longitude;
-          if (isMounted) setGpsStatus("success");
-        } catch {
-          if (isMounted) setGpsStatus("error");
-        }
-
-        const res = await commuterService.createShareRide({ lat, lng });
+        if (!isMounted) return;
+        // Create immediately. Disabled GPS must not leave link creation hanging.
+        const res = await commuterService.createShareRide({ rotate: false });
         if (!isMounted) return;
 
         tokenRef.current = res.token;
-        setShareUrl(`https://chatco.app/share/${res.token}`);
+        setShareUrl(res.share_url);
         setExpiresAt(res.expires_at);
       } catch (err: any) {
         if (!isMounted) return;
@@ -87,6 +79,46 @@ export const ShareRideModal: React.FC<ShareRideModalProps> = ({
       isMounted = false;
     };
   }, [visible]);
+
+  // Sharing survives closing the sheet, but stops on expiry, stop or app unmount.
+  useEffect(() => {
+    if (!expiresAt || isExpired || isStopped) return;
+    let alive = true;
+    let watcher: Location.LocationSubscription | undefined;
+    let latest: { latitude: number; longitude: number } | null = null;
+    let lastPush = 0;
+    let inFlight = false;
+    const push = async () => {
+      if (!alive || stopping.current || inFlight || !latest || !tokenRef.current
+        || Date.parse(expiresAt) <= Date.now() || Date.now() - lastPush < 15000) return;
+      inFlight = true;
+      lastPush = Date.now();
+      const position = latest;
+      const task = commuterService.updateShareRideLocation({ lat: position.latitude, lng: position.longitude, token: tokenRef.current });
+      updates.current = task;
+      try { await task; lastPush = Date.now(); if (alive) setGpsStatus("success"); }
+      catch (reason) {
+        if (alive) {
+          if ((reason as { status?: number }).status === 409) setIsStopped(true);
+          else setGpsStatus("error");
+        }
+      } finally { inFlight = false; }
+    };
+    void Location.requestForegroundPermissionsAsync().then(async permission => {
+      if (!alive) return;
+      if (permission.status !== "granted") { setGpsStatus("error"); return; }
+      const subscription = await Location.watchPositionAsync({ accuracy: Location.Accuracy.Balanced, timeInterval: 5000, distanceInterval: 10 }, location => {
+        latest = location.coords; void push();
+      });
+      if (!alive) subscription.remove(); else watcher = subscription;
+    }).catch(() => { if (alive) setGpsStatus("error"); });
+    const timer = setInterval(() => void push(), 15000);
+    const listener = AppState.addEventListener("change", state => {
+      if (state === "active") void Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
+        .then(location => { if (alive) { latest = location.coords; lastPush = 0; void push(); } }).catch(() => undefined);
+    });
+    return () => { alive = false; watcher?.remove(); clearInterval(timer); listener.remove(); };
+  }, [expiresAt, isExpired, isStopped]);
 
   // Countdown timer (30-min countdown)
   useEffect(() => {
@@ -142,13 +174,16 @@ export const ShareRideModal: React.FC<ShareRideModalProps> = ({
   };
 
   const handleStopSharing = async () => {
-    if (isStopping) return;
+    if (isStopping || stopping.current) return;
+    stopping.current = true;
     setIsStopping(true);
     try {
+      await updates.current.catch(() => undefined);
       await commuterService.stopShareRide();
       setIsStopped(true);
       setTimeout(onClose, 1200);
     } catch {
+      stopping.current = false;
       setError("Unable to stop location sharing.");
     } finally {
       setIsStopping(false);

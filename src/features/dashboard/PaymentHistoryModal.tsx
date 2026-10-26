@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -10,7 +10,7 @@ import {
   RefreshControl,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { commuterColors } from "../../core/theme/colors";
+import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import { commuterService } from "../../core/api/commuter-service";
 import type { Trip } from "../../core/domain/types";
 
@@ -57,12 +57,15 @@ export const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
   onClose,
   onSelectFeedback,
 }) => {
+  const { colors, isLight } = useCommuterTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [history, setHistory] = useState<Trip[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
+  const [summary, setSummary] = useState<{ total_spent: number; ride_count: number; average_fare: number } | null>(null);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -74,6 +77,7 @@ export const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
       if (target === 1) {
         setIsLoading(true);
         setHistory([]);
+        setSummary(null);
       } else {
         setIsLoadingMore(true);
       }
@@ -85,6 +89,7 @@ export const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
         setHistory((prev) => (target === 1 ? result.items : [...prev, ...result.items]));
         setPage(result.page);
         setLastPage(result.lastPage);
+        setSummary(result.summary ?? null);
       } catch (err: any) {
         if (requestId !== requestIdRef.current) return;
         setError(err?.message || "Unable to load payment history.");
@@ -105,9 +110,9 @@ export const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
   }, [visible, timeFilter, loadPage]);
 
   const paid = history.filter((tx) => (tx.status || "").toUpperCase() === "PAID");
-  const totalSpent = paid.reduce((sum, tx) => sum + (tx.final_amount ?? tx.fare_amount ?? tx.gross_amount ?? 0), 0);
-  const rideCount = paid.length;
-  const avgFare = rideCount > 0 ? totalSpent / rideCount : 0;
+  const totalSpent = summary ? Number(summary.total_spent) : paid.reduce((sum, tx) => sum + (tx.final_amount ?? tx.fare_amount ?? tx.gross_amount ?? 0), 0);
+  const rideCount = summary ? Number(summary.ride_count) : paid.length;
+  const avgFare = summary ? Number(summary.average_fare) : rideCount > 0 ? totalSpent / rideCount : 0;
   const hasMore = page < lastPage;
 
   return (
@@ -126,7 +131,7 @@ export const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
               <Text style={styles.headerSubtitle}>Your ride payments</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn} activeOpacity={0.7}>
-              <Ionicons name="close" size={18} color="rgba(255,255,255,0.6)" />
+              <Ionicons name="close" size={18} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
@@ -196,7 +201,7 @@ export const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
               </View>
             ) : history.length === 0 ? (
               <View style={styles.centeredState}>
-                <Ionicons name="receipt-outline" size={48} color="rgba(255,255,255,0.2)" />
+                <Ionicons name="receipt-outline" size={48} color={colors.textMuted} />
                 <Text style={styles.emptyTitle}>
                   {timeFilter === "all" ? "No transactions found" : "No rides in this period"}
                 </Text>
@@ -216,6 +221,7 @@ export const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                 {history.map((tx) => {
                   const { date, time } = formatDateTime(tx.created_at || tx.paid_at || tx.completed_at);
                   const badge = getStatusBadge(tx.status || "PAID");
+                  if (isLight) badge.text = ({ Paid: "#047857", Pending: "#92400E", Processing: "#1A5FB4", Failed: "#B91C1C", Refunded: "#6D28D9" } as Record<string, string>)[badge.label] ?? colors.textSecondary;
                   const isExpanded = expandedId === tx.id;
                   const fare = tx.final_amount ?? tx.fare_amount ?? tx.gross_amount ?? 0;
 
@@ -360,18 +366,18 @@ export const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ReturnType<typeof useCommuterTheme>["colors"]) => StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.75)",
     justifyContent: "flex-end",
   },
   modalContent: {
-    backgroundColor: "#071A2E",
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderColor: colors.border,
     height: "85%",
     overflow: "hidden",
   },
@@ -383,23 +389,23 @@ const styles = StyleSheet.create({
     paddingTop: 18,
     paddingBottom: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.08)",
+    borderBottomColor: colors.border,
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: "800",
-    color: "#FFFFFF",
+    color: colors.textPrimary,
   },
   headerSubtitle: {
     fontSize: 12,
-    color: "rgba(255, 255, 255, 0.4)",
+    color: colors.textMuted,
     marginTop: 2,
   },
   closeBtn: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    backgroundColor: colors.surfaceSecondary,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -412,9 +418,9 @@ const styles = StyleSheet.create({
   },
   statBox: {
     flex: 1,
-    backgroundColor: "#050F1A",
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: colors.border,
     borderRadius: 12,
     padding: 10,
     alignItems: "center",
@@ -422,13 +428,13 @@ const styles = StyleSheet.create({
   statBoxLabel: {
     fontSize: 9,
     fontWeight: "700",
-    color: "rgba(255, 255, 255, 0.4)",
+    color: colors.textMuted,
     textTransform: "uppercase",
   },
   statBoxValue: {
     fontSize: 15,
     fontWeight: "800",
-    color: "#FFFFFF",
+    color: colors.textPrimary,
     marginTop: 2,
   },
   filterRow: {
@@ -441,9 +447,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 6,
     borderRadius: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    backgroundColor: colors.surfaceSecondary,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: colors.border,
   },
   filterTabActive: {
     backgroundColor: "#1A5FB4",
@@ -452,7 +458,7 @@ const styles = StyleSheet.create({
   filterTabText: {
     fontSize: 11,
     fontWeight: "700",
-    color: "rgba(255, 255, 255, 0.5)",
+    color: colors.textMuted,
   },
   filterTabTextActive: {
     color: "#FFFFFF",
@@ -481,7 +487,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: 13,
-    color: "rgba(255, 255, 255, 0.4)",
+    color: colors.textMuted,
     marginTop: 10,
   },
   historyList: {
@@ -490,9 +496,9 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   transactionCard: {
-    backgroundColor: "#071A2E",
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: colors.border,
     borderRadius: 14,
     marginBottom: 10,
     overflow: "hidden",
@@ -520,7 +526,7 @@ const styles = StyleSheet.create({
   routeText: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#FFFFFF",
+    color: colors.textPrimary,
   },
   dateTimeRow: {
     flexDirection: "row",
@@ -529,13 +535,13 @@ const styles = StyleSheet.create({
   },
   dateSubText: {
     fontSize: 10,
-    color: "rgba(255, 255, 255, 0.4)",
+    color: colors.textMuted,
   },
   dotSeparator: {
     width: 3,
     height: 3,
     borderRadius: 1.5,
-    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    backgroundColor: colors.border,
     marginHorizontal: 5,
   },
   amountBadgeColumn: {
@@ -545,7 +551,7 @@ const styles = StyleSheet.create({
   amountNumber: {
     fontSize: 13,
     fontWeight: "800",
-    color: "#FFFFFF",
+    color: colors.textPrimary,
   },
   statusBadgePill: {
     paddingHorizontal: 6,
@@ -560,9 +566,9 @@ const styles = StyleSheet.create({
   },
   expandedContent: {
     borderTopWidth: 1,
-    borderTopColor: "rgba(255, 255, 255, 0.06)",
+    borderTopColor: colors.border,
     padding: 12,
-    backgroundColor: "#050F1A",
+    backgroundColor: colors.background,
     gap: 6,
   },
   detailRow: {
@@ -572,24 +578,24 @@ const styles = StyleSheet.create({
   },
   detailLabel: {
     fontSize: 11,
-    color: "rgba(255, 255, 255, 0.4)",
+    color: colors.textMuted,
   },
   detailValue: {
     fontSize: 11,
     fontWeight: "600",
-    color: "#FFFFFF",
+    color: colors.textPrimary,
     maxWidth: "70%",
   },
   detailValueMono: {
     fontSize: 10,
-    color: "rgba(255, 255, 255, 0.5)",
+    color: colors.textMuted,
     fontFamily: "monospace",
     maxWidth: "70%",
   },
   detailValueHighlight: {
     fontSize: 13,
     fontWeight: "800",
-    color: "#FFFFFF",
+    color: colors.textPrimary,
   },
   feedbackBtn: {
     flexDirection: "row",
@@ -612,7 +618,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    backgroundColor: colors.surfaceSecondary,
     borderRadius: 12,
     marginTop: 4,
     marginBottom: 20,
@@ -620,6 +626,6 @@ const styles = StyleSheet.create({
   loadMoreText: {
     fontSize: 12,
     fontWeight: "700",
-    color: "rgba(255, 255, 255, 0.6)",
+    color: colors.textMuted,
   },
 });

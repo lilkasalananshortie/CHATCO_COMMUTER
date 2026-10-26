@@ -1,10 +1,12 @@
-import React, { useMemo, useRef } from "react";
-import { View, StyleSheet, StyleProp, ViewStyle } from "react-native";
+import React, { useEffect, useMemo, useRef } from "react";
+import { Text, View, StyleSheet, StyleProp, ViewStyle } from "react-native";
 import { WebView } from "react-native-webview";
 import Constants from "expo-constants";
 import { commuterColors } from "../../core/theme/colors";
 import type { VehicleLocation } from "../../core/domain/types";
-import { ROUTE_POINTS, ROUTE_COORDINATES } from "./route-data";
+import { usePublishedRoute } from "./usePublishedRoute";
+import { useCommuterTheme } from "../../core/theme/ThemeProvider";
+import { MAP_RUNTIME, mapUpdateScript } from "./map-runtime";
 
 const CARTO_API_KEY =
   process.env.EXPO_PUBLIC_CARTO_API_KEY ||
@@ -26,42 +28,31 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
   style,
 }) => {
   const webViewRef = useRef<WebView>(null);
+  const route = usePublishedRoute();
+  const { isLight } = useCommuterTheme();
 
   const routeCenter = useMemo(() => {
-    const latitudes = ROUTE_COORDINATES.map((p) => p.latitude);
-    const longitudes = ROUTE_COORDINATES.map((p) => p.longitude);
+    const latitudes = route.coordinates.map(p => p[0]);
+    const longitudes = route.coordinates.map(p => p[1]);
     return {
       latitude: (Math.min(...latitudes) + Math.max(...latitudes)) / 2,
       longitude: (Math.min(...longitudes) + Math.max(...longitudes)) / 2,
     };
-  }, []);
+  }, [route.coordinates]);
 
   const routePointsJs = useMemo(
-    () => JSON.stringify(ROUTE_POINTS),
-    []
+    () => JSON.stringify(route.coordinates),
+    [route.coordinates]
   );
 
-  const vehiclesJs = useMemo(
-    () =>
-      JSON.stringify(
-        vehicles.map((v) => ({
-          id: v.vehicle_id || v.id || v.unit_number || "JEEP",
-          unitNumber: v.unit_number || "JEEP",
-          plateNumber: v.plate_number,
-          lat: Number(v.latitude ?? (v as any).lat ?? 0),
-          lng: Number(v.longitude ?? (v as any).lng ?? 0),
-          availableSeats: v.available_seats ?? null,
-        }))
-      ),
-    [vehicles]
-  );
+  const mapState = useMemo(() => ({ vehicles: vehicles.map(v => ({
+    id: v.vehicle_id || v.id || v.unit_number, unitNumber: v.unit_number,
+    plateNumber: v.plate_number, lat: Number(v.latitude), lng: Number(v.longitude),
+    availableSeats: v.available_seats, driverName: v.driver_name, conductorName: v.conductor_name,
+  })), userLocation, isHailing }), [vehicles, userLocation, isHailing]);
+  useEffect(() => { webViewRef.current?.injectJavaScript(mapUpdateScript(mapState)); }, [mapState, isLight]);
 
-  const userLocJs = useMemo(
-    () => (userLocation ? JSON.stringify([userLocation.latitude, userLocation.longitude]) : "null"),
-    [userLocation]
-  );
-
-  const htmlContent = `
+  const htmlContent = useMemo(() => `
 <!DOCTYPE html>
 <html>
 <head>
@@ -75,7 +66,7 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
       height: 100%;
       margin: 0;
       padding: 0;
-      background: #050F1A;
+      background: ${isLight ? '#F3F7FC' : '#050F1A'};
       overflow: hidden;
     }
     .leaflet-control-attribution, .leaflet-control-zoom { display: none !important; }
@@ -134,8 +125,8 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
 
     var cartoKey = "${CARTO_API_KEY}";
     var tileUrl = cartoKey
-      ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=' + encodeURIComponent(cartoKey)
-      : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+      ? 'https://{s}.basemaps.cartocdn.com/${isLight ? 'light_all' : 'dark_all'}/{z}/{x}/{y}{r}.png?key=' + encodeURIComponent(cartoKey)
+      : 'https://{s}.basemaps.cartocdn.com/${isLight ? 'light_all' : 'dark_all'}/{z}/{x}/{y}{r}.png';
 
     var tileLayer = L.tileLayer(tileUrl, {
       maxZoom: 19,
@@ -160,54 +151,23 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
       lineJoin: 'round'
     }).addTo(map);
 
-    var vehicles = ${vehiclesJs};
-    var vehicleMarkers = [];
-
-    vehicles.forEach(function(v) {
-      var icon = L.divIcon({
-        className: '',
-        html: '<div class="vehicle-marker">' + (v.unitNumber || 'J') + '</div>',
-        iconSize: [32, 32],
-        iconAnchor: [16, 16]
-      });
-      var m = L.marker([v.lat, v.lng], { icon: icon }).addTo(map);
-      vehicleMarkers.push(m);
-    });
-
-    var userLoc = ${userLocJs};
-    var isHailing = ${isHailing ? "true" : "false"};
-
-    if (userLoc) {
-      var userIcon = L.divIcon({
-        className: '',
-        html: isHailing ? '<div class="hail-marker"></div>' : '<div class="user-marker"></div>',
-        iconSize: isHailing ? [24, 24] : [20, 20],
-        iconAnchor: isHailing ? [12, 12] : [10, 10]
-      });
-      L.marker(userLoc, { icon: userIcon }).addTo(map);
-      
-      if (isHailing) {
-        L.circle(userLoc, {
-          radius: 1000,
-          color: '#FF6D3A',
-          fillColor: '#FF6D3A',
-          fillOpacity: 0.1,
-          weight: 1.5,
-          dashArray: '4, 4'
-        }).addTo(map);
-      }
-    }
+    ${MAP_RUNTIME}
   </script>
 </body>
 </html>
-  `;
+  `, [routePointsJs, routeCenter.latitude, routeCenter.longitude, isLight]);
+  const source = useMemo(() => ({ html: htmlContent }), [htmlContent]);
 
   return (
     <View style={[styles.container, style]}>
+      {route.source !== "backend" && <Text style={{ position: "absolute", top: 8, left: 8, zIndex: 5, color: "white", backgroundColor: "#071A2E", padding: 8, borderRadius: 8 }}>
+        {route.source === "cached" ? "Saved route — reconnect to refresh" : "Fallback route — awaiting published route"}
+      </Text>}
       <WebView
         ref={webViewRef}
         originWhitelist={["*"]}
-        source={{ html: htmlContent }}
+        source={source}
+        onLoadEnd={() => webViewRef.current?.injectJavaScript(mapUpdateScript(mapState))}
         style={styles.webView}
         scrollEnabled={false}
       />
