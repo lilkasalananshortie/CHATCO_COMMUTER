@@ -6,6 +6,7 @@ import type { VehicleLocation } from "../../core/domain/types";
 import { usePublishedRoute } from "./usePublishedRoute";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import { MAP_RUNTIME } from "./map-runtime";
+import { commuterLocationCss } from "./commuter-map-pin";
 
 const CARTO_API_KEY =
   process.env.EXPO_PUBLIC_CARTO_API_KEY ||
@@ -27,7 +28,7 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
   style,
 }) => {
   const route = usePublishedRoute();
-  const { isLight } = useCommuterTheme();
+  const { isLight, colors } = useCommuterTheme();
   const frameRef = useRef<HTMLIFrameElement>(null);
   const routeCenter = useMemo(() => {
     const latitudes = route.coordinates.map(p => p[0]);
@@ -69,6 +70,7 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
     }
     .leaflet-control-attribution, .leaflet-control-zoom { display: none !important; }
     
+    ${commuterLocationCss(isLight)}
     .vehicle-marker {
       width: 32px;
       height: 32px;
@@ -85,24 +87,7 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
       font-size: 10px;
     }
 
-    .user-marker {
-      width: 20px;
-      height: 20px;
-      background: #0284C7;
-      border: 3px solid #FFFFFF;
-      border-radius: 50%;
-      box-shadow: 0 0 10px rgba(2, 132, 199, 0.8);
-    }
 
-    .hail-marker {
-      width: 24px;
-      height: 24px;
-      background: #FF6D3A;
-      border: 3px solid #FFFFFF;
-      border-radius: 50%;
-      box-shadow: 0 0 14px rgba(255, 109, 58, 0.9);
-      animation: pulse 1.5s infinite;
-    }
 
     @keyframes pulse {
       0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(255, 109, 58, 0.7); }
@@ -117,14 +102,16 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
     var map = L.map('map', {
       center: [${routeCenter.latitude}, ${routeCenter.longitude}],
       zoom: 12,
+      minZoom: 11,
+      maxZoom: 18,
       zoomControl: false,
       attributionControl: false
     });
 
     var cartoKey = "${CARTO_API_KEY}";
     var tileUrl = cartoKey
-      ? 'https://{s}.basemaps.cartocdn.com/${isLight ? 'light_all' : 'dark_all'}/{z}/{x}/{y}{r}.png?key=' + encodeURIComponent(cartoKey)
-      : 'https://{s}.basemaps.cartocdn.com/${isLight ? 'light_all' : 'dark_all'}/{z}/{x}/{y}{r}.png';
+      ? 'https://{s}.basemaps.cartocdn.com/${isLight ? 'rastertiles/voyager' : 'dark_all'}/{z}/{x}/{y}{r}.png?key=' + encodeURIComponent(cartoKey)
+      : 'https://{s}.basemaps.cartocdn.com/${isLight ? 'rastertiles/voyager' : 'dark_all'}/{z}/{x}/{y}{r}.png';
 
     var tileLayer = L.tileLayer(tileUrl, {
       maxZoom: 19,
@@ -156,7 +143,7 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
   `, [routePointsJs, routeCenter.latitude, routeCenter.longitude, isLight]);
 
   return (
-    <View style={[styles.container, style]}>
+    <View style={[styles.container, { backgroundColor: colors.surfaceSecondary }, style]}>
       {route.source !== "backend" && <Text style={{ position: "absolute", top: 8, left: 8, zIndex: 5, color: "white", backgroundColor: "#071A2E", padding: 8, borderRadius: 8 }}>
         {route.source === "cached" ? "Saved route — reconnect to refresh" : "Fallback route — awaiting published route"}
       </Text>}

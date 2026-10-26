@@ -1,19 +1,17 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { Text } from "../../shared/ui/BrandText";
 import {
   View,
-  Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
   Vibration,
-  ActivityIndicator,
   Platform,
   AppState,
   useWindowDimensions,
   Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { commuterColors } from "../../core/theme/colors";
 import { CommuterLiveMap } from "./CommuterLiveMap";
@@ -25,6 +23,13 @@ import { MascotMessage } from "../../shared/ui/MascotMessage";
 import { getMascotErrorState } from "../../shared/ui/mascot-error";
 import { hailIsTerminal, hailSecondsRemaining } from "./hail-state";
 import { useHoldToConfirm } from "./useHoldToConfirm";
+import { useCommuterTheme } from "../../core/theme/ThemeProvider";
+import { themedStyles } from "../../core/theme/themed-styles";
+import { HailRangeHint } from "./HailRangeHint";
+import { hailDockBottom, isSosDoubleTap, SOS_DOUBLE_TAP_MS } from "./dashboard-ui";
+import { WebIcon } from "../../shared/ui/WebIcon";
+import { WebSpinner } from "../../shared/ui/WebSpinner";
+import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 
 interface DashboardScreenProps {
   onOpenScan: () => void;
@@ -47,6 +52,9 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   user,
   profile,
 }) => {
+  const { colors: selectedColors, isLight = false } = useCommuterTheme();
+  const colors = selectedColors ?? commuterColors;
+  const styles = useMemo(() => themedStyles(dashboardStyles(colors), colors, isLight), [colors, isLight]);
   const [failedAvatar, setFailedAvatar] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
@@ -67,18 +75,21 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   const [sosTapHint, setSosTapHint] = useState(false);
   const [hailError, setHailError] = useState<string | null>(null);
   const [hailNotification, setHailNotification] = useState<string | null>(null);
-  const lastSosTapRef = useRef<number>(0);
+  const [sheetHeight, setSheetHeight] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(windowHeight);
+  const hailBottom = hailDockBottom(viewportHeight, sheetHeight, insets.top, showSheet);
+  const lastSosTapRef = useRef<number | null>(null);
   const sosHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Derive display values matching web layout
   const displayName = profile?.first_name || user?.name || user?.email?.split("@")[0] || "Commuter";
-  const commuterType = profile?.commuter_type || "REGULAR";
+  const commuterType = String(profile?.commuter_type || "REGULAR");
   const commuterTypeLabel =
     commuterType === "REGULAR" || commuterType === "Regular"
       ? "Regular"
       : commuterType === "STUDENT" || commuterType === "Student"
       ? "Student"
-      : commuterType === "SENIOR" || commuterType === "Senior"
+      : commuterType === "SENIOR" || commuterType === "SENIOR_CITIZEN" || commuterType === "Senior"
       ? "Senior Citizen"
       : commuterType === "PWD"
       ? "PWD"
@@ -279,9 +290,9 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   // Handle Double Tap SOS (matches web safety convention)
   const handleSosPress = () => {
     const now = Date.now();
-    if (now - lastSosTapRef.current <= 1500) {
+    if (isSosDoubleTap(lastSosTapRef.current, now)) {
       if (sosHintTimerRef.current) clearTimeout(sosHintTimerRef.current);
-      lastSosTapRef.current = 0;
+      lastSosTapRef.current = null;
       setSosTapHint(false);
       onOpenSos();
       return;
@@ -291,10 +302,11 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     setSosTapHint(true);
     if (sosHintTimerRef.current) clearTimeout(sosHintTimerRef.current);
     sosHintTimerRef.current = setTimeout(() => {
-      lastSosTapRef.current = 0;
+      lastSosTapRef.current = null;
       setSosTapHint(false);
-    }, 1500);
+    }, SOS_DOUBLE_TAP_MS);
   };
+  useEffect(() => () => { if (sosHintTimerRef.current) clearTimeout(sosHintTimerRef.current); }, []);
 
   // Handle Hail Toggle with Web-Matching Countdown & Audio/Vibration Loop
   const handleToggleHail = async () => {
@@ -448,14 +460,14 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   }, [activeHail?.id, activeHail?.status, nearestVehicleInfo?.vehicle?.unit_number]);
 
   return (
-    <View style={styles.container}>
+    <View testID="dashboard-hail-overlay" style={styles.container} onLayout={event => { if (event.nativeEvent.layout.height > 0) setViewportHeight(event.nativeEvent.layout.height); }}>
       {/* ======================================================== */}
       {/* --- 1. FULL-BLEED MAP (Runs underneath everything) --- */}
       {/* ======================================================== */}
       <View style={StyleSheet.absoluteFill}>
         <CommuterLiveMap
           vehicles={vehicles}
-          userLocation={userLocation}
+          userLocation={gpsStatus === "available" ? userLocation : null}
           isHailing={!!activeHail}
           style={StyleSheet.absoluteFill}
         />
@@ -465,39 +477,35 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
       {/* --- 2. TOP FLOATING BAR (1:1 Web Mobile UI) --- */}
       {/* ======================================================== */}
       <View
-        pointerEvents="box-none"
         style={[
           styles.topBarOverlay,
           {
+            pointerEvents: "box-none",
             top: Math.max(insets.top, 14) + 6,
             left: isTablet ? Math.max(16, (windowWidth - 640) / 2) : 16,
             right: isTablet ? Math.max(16, (windowWidth - 640) / 2) : 16,
           },
         ]}
       >
-        {/* Left: Greeting Frosted Card */}
+        {/* Web phone header: clickable avatar, greeting and plain divided fare type. */}
         <View style={styles.topGreetingCard}>
-          <Text style={styles.topGreetingText} numberOfLines={1} ellipsizeMode="tail">
-            {getGreeting()}, {displayName}!
-          </Text>
-          <View style={styles.commuterTypePill}>
-            <Text style={styles.commuterTypeText}>{commuterTypeLabel}</Text>
-          </View>
-        </View>
-
-        {/* Right: Actions (Avatar) */}
-        <View style={styles.topActionsRow}>
           <TouchableOpacity
             activeOpacity={0.8}
             onPress={onOpenProfile}
             style={styles.avatarBtn}
             accessibilityRole="button"
             accessibilityLabel="View Profile"
+            hitSlop={8}
           >
-            {profile?.profile_image_url && failedAvatar !== profile.profile_image_url ? <Image source={{ uri: profile.profile_image_url }} onError={() => setFailedAvatar(profile.profile_image_url ?? null)} accessibilityLabel="Your profile photo" style={{ width: "100%", height: "100%", borderRadius: 999 }} /> : <Text style={styles.avatarLetter}>
-              {displayName.charAt(0).toUpperCase()}
-            </Text>}
+            {profile?.profile_image_url && failedAvatar !== profile.profile_image_url ? <Image source={{ uri: profile.profile_image_url }} onError={() => setFailedAvatar(profile.profile_image_url ?? null)} accessibilityLabel="Your profile photo" style={{ width: "100%", height: "100%", borderRadius: 999 }} /> : <WebIcon name="user-round" size={18} color="#FFFFFF" />}
           </TouchableOpacity>
+          <Text style={styles.topGreetingText} numberOfLines={1} ellipsizeMode="tail">
+            <Text style={{ color: colors.textMuted, fontWeight: "500" }}>{getGreeting()}, </Text>
+            <Text style={{ fontWeight: "700" }}>{displayName}</Text>
+          </Text>
+          <View style={{ borderLeftWidth: 1, borderLeftColor: colors.border, paddingLeft: 12, alignSelf: "stretch", justifyContent: "center" }}>
+            <Text style={[styles.commuterTypeText, { color: colors.primaryLight, textTransform: "uppercase", letterSpacing: 0.8 }]}>{commuterTypeLabel}</Text>
+          </View>
         </View>
       </View>
 
@@ -505,6 +513,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
       {/* --- 3. BOTTOM SLIDING SHEET (1:1 Web Mobile UI) --- */}
       {/* ======================================================== */}
       <View
+        onLayout={event => setSheetHeight(event.nativeEvent.layout.height)}
         style={[
           styles.bottomSheet,
           {
@@ -514,8 +523,200 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           },
         ]}
       >
-        {/* Floating Circular Hail Button at -top-12 right-4 */}
-        <View style={styles.hailFloatingContainer}>
+
+        {/* Drag Handle to collapse / expand sheet */}
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => setShowSheet(!showSheet)}
+          style={styles.sheetHandleContainer}
+          accessibilityRole="button"
+          accessibilityLabel={showSheet ? "Collapse tools sheet" : "Expand tools sheet"}
+        >
+          <View style={[styles.sheetHandle, showSheet ? styles.sheetHandleOpen : styles.sheetHandleClosed]} />
+          {!showSheet && (
+            <View style={styles.toolsHintRow}>
+              <WebIcon name="tools-chevron" size={13} color="rgba(255, 255, 255, 0.5)" />
+              <Text style={styles.toolsHintText}>TOOLS</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        {/* Sheet Content (when expanded) */}
+        {showSheet && (
+          <ScrollView
+            style={[styles.sheetScroll, { maxHeight: windowHeight * 0.6 }]}
+            contentContainerStyle={styles.sheetScrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {Boolean(vehicleError) && (
+              <MascotMessage
+                {...getMascotErrorState(vehicleError)}
+                message="Live vehicle updates are unavailable. Displayed positions may be out of date."
+                compact onRetry={retryVehicles} retrying={retryingVehicles}
+              />
+            )}
+            {/* Live ETA / GPS Status Card */}
+            {gpsStatus === "loading" && (
+              <View style={styles.statusBox}>
+                <View style={{ marginRight: 10 }}><WebSpinner size={16} color={commuterColors.primaryLight} /></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.statusBoxText}>Locating you... Waiting for GPS signal</Text>
+                </View>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={requestGps}
+                  style={styles.retryGpsSmallBtn}
+                >
+                  <WebIcon name="refresh-cw" size={14} color="rgba(255,255,255,0.7)" />
+                </TouchableOpacity>
+              </View>
+            )}
+
+
+
+            {gpsStatus === "available" && canHail && nearestVehicleInfo && (
+              <View style={styles.etaCard}>
+                <View style={styles.etaTopRow}>
+                  <View style={styles.etaLiveIndicator}>
+                    <View style={styles.etaPulseDot} />
+                    <Text style={styles.etaLiveText}>LIVE</Text>
+                  </View>
+                  <Text style={styles.etaMinutesText}>~{nearestVehicleInfo.etaMinutes} min</Text>
+                </View>
+                <View style={styles.etaBottomRow}>
+                  <Text style={styles.etaPlateText}>
+                    {nearestVehicleInfo.vehicle.plate_number || nearestVehicleInfo.vehicle.unit_number || "JEEP"}
+                  </Text>
+                  <Text style={styles.etaDistanceText}>
+                    {(nearestVehicleInfo.distanceMeters / 1000).toFixed(1)} km away
+                  </Text>
+                </View>
+                {vehicles.length > 1 && (
+                  <Text style={styles.etaExtraUnits}>
+                    +{vehicles.length - 1} more vehicle{vehicles.length > 2 ? "s" : ""} in range
+                  </Text>
+                )}
+              </View>
+            )}
+
+            {hailNotification && (
+              <View style={[styles.statusBox, styles.statusBoxOutside, { borderColor: "#F59E0B" }]}>
+                <WebIcon name="info" size={18} color="#FBBF24" style={{ marginRight: 8 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.statusBoxOutsideTitle, { color: "#FBBF24" }]}>Hail Update</Text>
+                  <Text style={styles.statusBoxOutsideSub}>{hailNotification}</Text>
+                </View>
+                <TouchableOpacity onPress={() => setHailNotification(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <WebIcon name="x" size={16} color="#94A3B8" />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {gpsStatus === "available" && isUnitFull && (
+              <View style={[styles.statusBox, styles.statusBoxOutside, { borderColor: "#EF4444" }]}>
+                <WebIcon name="triangle-alert" size={18} color="#EF4444" style={{ marginRight: 8 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.statusBoxOutsideTitle, { color: "#EF4444" }]}>Unit at Maximum Capacity</Text>
+                  <Text style={styles.statusBoxOutsideSub}>
+                    Unit is currently at maximum capacity. Please hail the next approaching unit.
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {gpsStatus === "available" && isUnitOnBreak && (
+              <View style={[styles.statusBox, styles.statusBoxOutside, { borderColor: "#F59E0B" }]}>
+                <WebIcon name="history" size={18} color="#FBBF24" style={{ marginRight: 8 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.statusBoxOutsideTitle, { color: "#FBBF24" }]}>Vehicle on Break</Text>
+                  <Text style={styles.statusBoxOutsideSub}>
+                    Vehicle is currently on break. Nearest active unit will be hailed.
+                  </Text>
+                </View>
+              </View>
+            )}
+
+
+            {hailError && (
+              <View style={[styles.statusBox, styles.statusBoxDenied]}>
+                <WebIcon name="triangle-alert" size={16} color="#F87171" style={{ marginRight: 8 }} />
+                <Text style={[styles.statusBoxDeniedSub, { color: "#F87171" }]}>{hailError}</Text>
+              </View>
+            )}
+
+            {/* GCash Pay Card (1:1 Web Commuter Dashboard) */}
+            <View style={styles.gcashCardWrapper}>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={onOpenScan}
+              accessibilityRole="button"
+              accessibilityLabel="Pay with GCash"
+              style={styles.gcashPayCard}
+            >
+              <Svg style={[StyleSheet.absoluteFill, { pointerEvents: "none" }]} width="100%" height="100%">
+                <Defs><LinearGradient id="gcash-card" x1="0" y1="0" x2="1" y2="1"><Stop offset="0" stopColor="#1A5FB4" /><Stop offset="1" stopColor="#123B6E" /></LinearGradient></Defs>
+                <Rect width="100%" height="100%" fill="url(#gcash-card)" />
+              </Svg>
+              {/* Subtle decorative circle matching web */}
+              <View style={styles.gcashDecoCircle} />
+
+              {/* QR Icon Box */}
+              <View style={styles.gcashIconBox}>
+                <WebIcon name="qr-code" size={28} color="#FFFFFF" />
+              </View>
+
+              {/* Card Content */}
+              <View style={styles.gcashContent}>
+                <View style={styles.gcashTitleRow}>
+                  <Text style={styles.gcashTitle}>Pay with GCash</Text>
+                  <View style={styles.historyBtnPlaceholder} />
+                </View>
+                <Text style={styles.gcashSubtitle}>Tap to scan conductor's QR code</Text>
+                <View style={styles.scanPill}>
+                  <WebIcon name="scan" size={12} color="#FFFFFF" style={{ marginRight: 4 }} />
+                  <Text style={styles.scanPillText}>Scan to Pay</Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => setShowHistoryModal(true)}
+              style={[styles.historyBtn, styles.historyBtnOverlay]}
+              accessibilityRole="button"
+              accessibilityLabel="Payment History"
+            >
+              <WebIcon name="history" size={16} color="rgba(255, 255, 255, 0.7)" />
+            </TouchableOpacity>
+            </View>
+
+            {/* Quick Actions Grid (Share Ride & Emergency SOS 1:1) */}
+            <View style={styles.quickActionsGrid}>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={onOpenShareRide}
+                style={styles.quickActionBtn}
+              >
+                <WebIcon name="share-ride" size={16} color="#62A0EA" style={{ marginRight: 6 }} />
+                <Text style={styles.quickActionText}>Share Ride</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={handleSosPress}
+                style={styles.sosActionBtn}
+              >
+                <WebIcon name="sos" size={16} color="#F87171" style={{ marginRight: 6 }} />
+                <Text style={styles.sosActionText}>
+                  {sosTapHint ? "Tap SOS again" : "SOS"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        )}
+      </View>
+
+      {/* Small independent floating controls; avoid a full-screen touch layer over the sheet. */}
+      <View testID="dashboard-hail-dock" style={[styles.hailFloatingContainer, { bottom: hailBottom, right: isTablet ? Math.max(0, (windowWidth - 640) / 2) + 18 : 18 }]}>
           <TouchableOpacity
             activeOpacity={0.85}
             disabled={hailPending || (!activeHail && !canHail)}
@@ -546,11 +747,11 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             }
           >
             {hailPending ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
+              <WebSpinner size={28} color="#FFFFFF" />
             ) : activeHail ? (
-              <Ionicons name="close" size={30} color="#FFFFFF" />
+              <WebIcon name="x" size={28} strokeWidth={2.5} color="#FFFFFF" />
             ) : (
-              <Ionicons name="location" size={26} color="#FFFFFF" />
+              <WebIcon name="hail-pin" size={28} color="#FFFFFF" />
             )}
           </TouchableOpacity>
 
@@ -575,237 +776,9 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           </Text>
         </View>
 
-        {/* Drag Handle to collapse / expand sheet */}
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={() => setShowSheet(!showSheet)}
-          style={styles.sheetHandleContainer}
-          accessibilityRole="button"
-          accessibilityLabel={showSheet ? "Collapse tools sheet" : "Expand tools sheet"}
-        >
-          <View style={[styles.sheetHandle, showSheet ? styles.sheetHandleOpen : styles.sheetHandleClosed]} />
-          {!showSheet && (
-            <View style={styles.toolsHintRow}>
-              <Ionicons name="chevron-up" size={13} color="rgba(255, 255, 255, 0.5)" />
-              <Text style={styles.toolsHintText}>TOOLS</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-
-        {/* Sheet Content (when expanded) */}
-        {showSheet && (
-          <ScrollView
-            style={[styles.sheetScroll, { maxHeight: Math.min(390, windowHeight * 0.48) }]}
-            contentContainerStyle={styles.sheetScrollContent}
-            showsVerticalScrollIndicator={false}
-          >
-            {Boolean(vehicleError) && (
-              <MascotMessage
-                {...getMascotErrorState(vehicleError)}
-                message="Live vehicle updates are unavailable. Displayed positions may be out of date."
-                compact onRetry={retryVehicles} retrying={retryingVehicles}
-              />
-            )}
-            {/* Live ETA / GPS Status Card */}
-            {gpsStatus === "loading" && (
-              <View style={styles.statusBox}>
-                <ActivityIndicator size="small" color={commuterColors.primaryLight} style={{ marginRight: 10 }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.statusBoxText}>Locating you... Waiting for GPS signal</Text>
-                </View>
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={requestGps}
-                  style={styles.retryGpsSmallBtn}
-                >
-                  <Ionicons name="refresh" size={14} color="rgba(255,255,255,0.7)" />
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {gpsStatus === "denied" && (
-              <View style={[styles.statusBox, styles.statusBoxDenied]}>
-                <Ionicons name="alert-circle" size={20} color="#F87171" style={{ marginRight: 10 }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.statusBoxDeniedTitle}>Location access required</Text>
-                  <Text style={styles.statusBoxDeniedSub}>
-                    Allow location permission to see nearby jeepneys, live ETA, and hail rides.
-                  </Text>
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={requestGps}
-                    style={styles.enableGpsBtn}
-                  >
-                    <Ionicons name="location-outline" size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
-                    <Text style={styles.enableGpsBtnText}>Allow Location Access</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-
-            {gpsStatus === "unavailable" && (
-              <View style={[styles.statusBox, styles.statusBoxOutside]}>
-                <Ionicons name="warning" size={20} color="#FBBF24" style={{ marginRight: 10 }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.statusBoxOutsideTitle}>Location signal unavailable</Text>
-                  <Text style={styles.statusBoxOutsideSub}>GPS signal was not detected on this device.</Text>
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={requestGps}
-                    style={styles.retryGpsBtn}
-                  >
-                    <Ionicons name="refresh-outline" size={14} color="#FBBF24" style={{ marginRight: 6 }} />
-                    <Text style={styles.retryGpsBtnText}>Retry Location</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-
-            {gpsStatus === "available" && canHail && nearestVehicleInfo && (
-              <View style={styles.etaCard}>
-                <View style={styles.etaTopRow}>
-                  <View style={styles.etaLiveIndicator}>
-                    <View style={styles.etaPulseDot} />
-                    <Text style={styles.etaLiveText}>LIVE</Text>
-                  </View>
-                  <Text style={styles.etaMinutesText}>~{nearestVehicleInfo.etaMinutes} min</Text>
-                </View>
-                <View style={styles.etaBottomRow}>
-                  <Text style={styles.etaPlateText}>
-                    {nearestVehicleInfo.vehicle.plate_number || nearestVehicleInfo.vehicle.unit_number || "JEEP"}
-                  </Text>
-                  <Text style={styles.etaDistanceText}>
-                    {(nearestVehicleInfo.distanceMeters / 1000).toFixed(1)} km away
-                  </Text>
-                </View>
-                {vehicles.length > 1 && (
-                  <Text style={styles.etaExtraUnits}>
-                    +{vehicles.length - 1} more vehicle{vehicles.length > 2 ? "s" : ""} in range
-                  </Text>
-                )}
-              </View>
-            )}
-
-            {hailNotification && (
-              <View style={[styles.statusBox, styles.statusBoxOutside, { borderColor: "#F59E0B" }]}>
-                <Ionicons name="information-circle" size={18} color="#FBBF24" style={{ marginRight: 8 }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.statusBoxOutsideTitle, { color: "#FBBF24" }]}>Hail Update</Text>
-                  <Text style={styles.statusBoxOutsideSub}>{hailNotification}</Text>
-                </View>
-                <TouchableOpacity onPress={() => setHailNotification(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                  <Ionicons name="close" size={16} color="#94A3B8" />
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {gpsStatus === "available" && isUnitFull && (
-              <View style={[styles.statusBox, styles.statusBoxOutside, { borderColor: "#EF4444" }]}>
-                <Ionicons name="alert-circle" size={18} color="#EF4444" style={{ marginRight: 8 }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.statusBoxOutsideTitle, { color: "#EF4444" }]}>Unit at Maximum Capacity</Text>
-                  <Text style={styles.statusBoxOutsideSub}>
-                    Unit is currently at maximum capacity. Please hail the next approaching unit.
-                  </Text>
-                </View>
-              </View>
-            )}
-
-            {gpsStatus === "available" && isUnitOnBreak && (
-              <View style={[styles.statusBox, styles.statusBoxOutside, { borderColor: "#F59E0B" }]}>
-                <Ionicons name="time-outline" size={18} color="#FBBF24" style={{ marginRight: 8 }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.statusBoxOutsideTitle, { color: "#FBBF24" }]}>Vehicle on Break</Text>
-                  <Text style={styles.statusBoxOutsideSub}>
-                    Vehicle is currently on break. Nearest active unit will be hailed.
-                  </Text>
-                </View>
-              </View>
-            )}
-
-            {gpsStatus === "available" && !canHail && !isUnitFull && !isUnitOnBreak && (
-              <View style={styles.statusBoxOutside}>
-                <Ionicons name="warning" size={18} color="#FBBF24" style={{ marginRight: 8 }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.statusBoxOutsideTitle}>Outside service radius</Text>
-                  <Text style={styles.statusBoxOutsideSub}>
-                    Move within 1km of a conductor unit to hail.
-                  </Text>
-                </View>
-              </View>
-            )}
-
-            {hailError && (
-              <View style={[styles.statusBox, styles.statusBoxDenied]}>
-                <Ionicons name="alert-circle" size={16} color="#F87171" style={{ marginRight: 8 }} />
-                <Text style={[styles.statusBoxDeniedSub, { color: "#F87171" }]}>{hailError}</Text>
-              </View>
-            )}
-
-            {/* GCash Pay Card (1:1 Web Commuter Dashboard) */}
-            <TouchableOpacity
-              activeOpacity={0.9}
-              onPress={onOpenScan}
-              style={styles.gcashPayCard}
-            >
-              {/* Subtle decorative circle matching web */}
-              <View style={styles.gcashDecoCircle} />
-
-              {/* QR Icon Box */}
-              <View style={styles.gcashIconBox}>
-                <Ionicons name="qr-code-outline" size={26} color="#FFFFFF" />
-              </View>
-
-              {/* Card Content */}
-              <View style={styles.gcashContent}>
-                <View style={styles.gcashTitleRow}>
-                  <Text style={styles.gcashTitle}>Pay with GCash</Text>
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    onPress={(e) => {
-                      e.stopPropagation?.();
-                      setShowHistoryModal(true);
-                    }}
-                    style={styles.historyBtn}
-                    accessibilityRole="button"
-                    accessibilityLabel="Payment History"
-                  >
-                    <Ionicons name="time-outline" size={16} color="rgba(255, 255, 255, 0.7)" />
-                  </TouchableOpacity>
-                </View>
-                <Text style={styles.gcashSubtitle}>Tap to scan conductor's QR code</Text>
-                <View style={styles.scanPill}>
-                  <Ionicons name="scan-outline" size={12} color="#FFFFFF" style={{ marginRight: 4 }} />
-                  <Text style={styles.scanPillText}>Scan to Pay</Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-
-            {/* Quick Actions Grid (Share Ride & Emergency SOS 1:1) */}
-            <View style={styles.quickActionsGrid}>
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={onOpenShareRide}
-                style={styles.quickActionBtn}
-              >
-                <Ionicons name="share-social-outline" size={16} color="#62A0EA" style={{ marginRight: 6 }} />
-                <Text style={styles.quickActionText}>Share Ride</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={handleSosPress}
-                style={styles.sosActionBtn}
-              >
-                <Ionicons name="warning-outline" size={16} color="#F87171" style={{ marginRight: 6 }} />
-                <Text style={styles.sosActionText}>
-                  {sosTapHint ? "Tap SOS again" : "Emergency SOS"}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </ScrollView>
-        )}
-      </View>
+      {!activeHail && gpsStatus !== "loading" && !canHail && <View style={{ pointerEvents: "box-none", position: "absolute", bottom: hailBottom + 62, right: isTablet ? Math.max(0, (windowWidth - 640) / 2) : 0, width: 44, height: 44, zIndex: 70 }}><HailRangeHint
+          reason={gpsStatus === "denied" ? "denied" : gpsStatus === "unavailable" ? "unavailable" : "out-of-range"}
+          onRetry={() => void requestGps()} /></View>}
 
       {/* Payment History Modal */}
       <PaymentHistoryModal
@@ -820,7 +793,30 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+function dashboardStyles(colors: { [K in keyof typeof commuterColors]: string }) {
+  return {
+    ...baseStyles,
+    container: { ...baseStyles.container, backgroundColor: colors.background },
+    topGreetingCard: { ...baseStyles.topGreetingCard, backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 16, flex: 1, flexDirection: "row" as const, alignItems: "center" as const, gap: 12, paddingLeft: 8, paddingRight: 16, paddingVertical: 8, marginRight: 0 },
+    topGreetingText: { ...baseStyles.topGreetingText, fontSize: 14, flex: 1, minWidth: 0, color: colors.textPrimary },
+    avatarBtn: { ...baseStyles.avatarBtn, width: 36, height: 36, borderRadius: 18, shadowOpacity: 0, elevation: 0 },
+    bottomSheet: { ...baseStyles.bottomSheet, backgroundColor: colors.surface, borderTopColor: colors.border },
+    hailFloatingContainer: { ...baseStyles.hailFloatingContainer },
+    quickActionBtn: { ...baseStyles.quickActionBtn, backgroundColor: colors.surfaceSecondary, borderColor: colors.border, paddingVertical: 10 },
+    quickActionText: { ...baseStyles.quickActionText, color: colors.textSecondary, fontWeight: "600" as const },
+    sosActionBtn: { ...baseStyles.sosActionBtn, paddingVertical: 10 },
+    sosActionText: { ...baseStyles.sosActionText, color: colors.danger, fontWeight: "600" as const },
+    quickActionsGrid: { ...baseStyles.quickActionsGrid, gap: 12, marginTop: 16 },
+    gcashPayCard: { ...baseStyles.gcashPayCard, padding: 20, borderRadius: 16, marginBottom: 0 },
+    gcashTitle: { ...baseStyles.gcashTitle, fontSize: 18, fontWeight: "700" as const },
+    gcashSubtitle: { ...baseStyles.gcashSubtitle, color: "rgba(255,255,255,0.5)", marginTop: 4 },
+    gcashIconBox: { ...baseStyles.gcashIconBox, width: 56, height: 56, borderRadius: 16, marginRight: 16, backgroundColor: "rgba(255,255,255,0.1)" },
+    historyBtn: { ...baseStyles.historyBtn, backgroundColor: "transparent" },
+    scanPill: { ...baseStyles.scanPill, marginTop: 10, paddingHorizontal: 10, paddingVertical: 4, backgroundColor: "rgba(255,255,255,0.15)" },
+  };
+}
+
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#050F1A",
@@ -937,7 +933,8 @@ const styles = StyleSheet.create({
   },
   hailFloatingContainer: {
     position: "absolute",
-    top: -86,
+    width: 64,
+    height: 88,
     right: 18,
     alignItems: "center",
     zIndex: 40,
@@ -1036,7 +1033,7 @@ const styles = StyleSheet.create({
     padding: 12,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.12)",
-    marginBottom: 10,
+    marginBottom: 0,
   },
   statusBoxText: {
     fontSize: 12,
@@ -1186,7 +1183,7 @@ const styles = StyleSheet.create({
     padding: 14,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.18)",
-    marginBottom: 10,
+    marginBottom: 0,
     position: "relative",
     overflow: "hidden",
     shadowColor: "#1A5FB4",
@@ -1194,6 +1191,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 8,
     elevation: 6,
+  },
+  gcashCardWrapper: {
+    position: "relative",
+    marginBottom: 10,
   },
   gcashDecoCircle: {
     position: "absolute",
@@ -1222,6 +1223,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+  },
+  historyBtnPlaceholder: {
+    width: 28,
+    height: 28,
+  },
+  historyBtnOverlay: {
+    position: "absolute",
+    top: 14,
+    right: 14,
   },
   gcashTitle: {
     fontSize: 16,

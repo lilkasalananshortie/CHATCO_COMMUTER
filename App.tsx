@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { View, StyleSheet, ActivityIndicator, Animated, Easing, Modal } from "react-native";
+import { View, StyleSheet, ActivityIndicator, Animated, Easing, Modal, Platform } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { ThemeProvider } from "./src/core/theme/ThemeProvider";
+import { ThemeProvider, useCommuterTheme } from "./src/core/theme/ThemeProvider";
+import { BrandFonts } from "./src/shared/ui/BrandFonts";
 import { commuterColors } from "./src/core/theme/colors";
 import { authService } from "./src/core/api/auth-service";
 import { setSessionEndedHandler } from "./src/core/api/api-client";
@@ -43,17 +44,26 @@ import { useDiscountApplication } from "./src/features/discount-application/useD
 export default function App() {
   return (
     <SafeAreaProvider>
+      <BrandFonts>
       <ThemeProvider>
-        <StatusBar style="light" />
+        <ThemeStatusBar />
         <MascotErrorBoundary>
           <MainApp />
         </MascotErrorBoundary>
       </ThemeProvider>
+      </BrandFonts>
     </SafeAreaProvider>
   );
 }
 
+function ThemeStatusBar() {
+  const { isLight } = useCommuterTheme();
+  return <StatusBar style={isLight ? "dark" : "light"} />;
+}
+
 function MainApp() {
+  const { colors } = useCommuterTheme();
+  const styles = appStyles(colors);
   const [showSplash, setShowSplash] = useState(true);
   const [initializing, setInitializing] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -102,13 +112,15 @@ function MainApp() {
   const [unreadAnnouncements, setUnreadAnnouncements] = useState(0);
   const [availableVouchers, setAvailableVouchers] = useState(0);
   const [lostFoundBadge, setLostFoundBadge] = useState(0);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [feedbackFormVisible, setFeedbackFormVisible] = useState(false);
 
   const handleLogout = useCallback(() => {
     sessionEpoch.current++;
     currentUserId.current = undefined;
     setUnreadAnnouncements(0); setAvailableVouchers(0); setLostFoundBadge(0);
     setShowScanModal(false); setShowReceiptScanModal(false); setShowSosModal(false); setShowShareModal(false);
-    setShowRenewal(false); setShowDiscountApplication(false); setFeedbackTargetTrip(null);
+    setShowRenewal(false); setShowDiscountApplication(false); setShowFeedbackModal(false); setFeedbackTargetTrip(null);
     setUser(null); setProfile(null); setActiveTab("home"); setAuthView("LOGIN");
   }, []);
 
@@ -201,7 +213,7 @@ function MainApp() {
       toValue: 1,
       duration: 520,
       easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
+      useNativeDriver: Platform.OS !== "web",
     }).start();
 
     commuterService
@@ -219,7 +231,13 @@ function MainApp() {
 
   const handleNavigateToFeedback = (trip?: Trip) => {
     setFeedbackTargetTrip(trip ?? null);
-    setActiveTab("feedback");
+    setFeedbackFormVisible(Boolean(trip));
+    setShowFeedbackModal(true);
+  };
+
+  const closeFeedbackModal = () => {
+    setShowFeedbackModal(false);
+    setFeedbackTargetTrip(null);
   };
 
   const insets = useSafeAreaInsets();
@@ -322,16 +340,8 @@ function MainApp() {
               <RewardsScreen
                 onOpenReceiptScan={() => setShowReceiptScanModal(true)}
                 onOpenRenewal={() => { setShowRenewal(true); void renewal.refresh(); }}
+                onOpenDiscountApplication={() => { setShowDiscountApplication(true); void discountApplication.refresh(); }}
                 renewalState={renewal.state}
-              />
-            )}
-            {activeTab === "feedback" && (
-              <FeedbackScreen
-                initialTrip={feedbackTargetTrip}
-                onFeedbackComplete={() => {
-                  setFeedbackTargetTrip(null);
-                  setActiveTab("home");
-                }}
               />
             )}
             {activeTab === "profile" && (
@@ -361,7 +371,13 @@ function MainApp() {
           {/* Bottom navigation matching the commuter destinations */}
           <CommuterBottomNav
             activeTab={activeTab}
-            onTabChange={setActiveTab}
+            onTabChange={(tab) => {
+              if (tab === "feedback") {
+                handleNavigateToFeedback();
+              } else {
+                setActiveTab(tab);
+              }
+            }}
             rewardsBadge={unreadAnnouncements + availableVouchers}
             lostFoundBadge={lostFoundBadge}
           />
@@ -374,12 +390,12 @@ function MainApp() {
           />
 
           <Modal visible={showRenewal} animationType="slide" onRequestClose={() => setShowRenewal(false)}>
-            <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: insets.bottom, backgroundColor: "#050F1A" }}>
+            <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: insets.bottom, backgroundColor: colors.background }}>
               {showRenewal && <StudentRenewalScreen state={renewal.state} loading={renewal.loading} loadError={renewal.error} onRefresh={refreshRenewal} onClose={() => setShowRenewal(false)} />}
             </View>
           </Modal>
           <Modal visible={showDiscountApplication} animationType="slide" onRequestClose={() => setShowDiscountApplication(false)}>
-            <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: insets.bottom, backgroundColor: "#050F1A" }}>
+            <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: insets.bottom, backgroundColor: colors.background }}>
               {showDiscountApplication && <DiscountApplicationScreen key={user.id}
                 state={discountApplication.state} loading={discountApplication.loading} loadError={discountApplication.error}
                 onRefresh={async () => { await discountApplication.refreshAfterMutation(); await refreshRenewal(); }}
@@ -404,22 +420,42 @@ function MainApp() {
             visible={showShareModal}
             onClose={() => setShowShareModal(false)}
           />
+
+          <Modal
+            visible={showFeedbackModal}
+            transparent
+            animationType="fade"
+            onRequestClose={closeFeedbackModal}
+          >
+            <View style={styles.feedbackModalOverlay}>
+              <View style={[styles.feedbackModalPanel, feedbackFormVisible && { height: "88%" }]}>
+                {showFeedbackModal && (
+                  <FeedbackScreen
+                    initialTrip={feedbackTargetTrip}
+                    onFormVisibilityChange={setFeedbackFormVisible}
+                    onFeedbackComplete={closeFeedbackModal}
+                  />
+                )}
+              </View>
+            </View>
+          </Modal>
         </Animated.View>
       )}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+function appStyles(colors: { [K in keyof typeof commuterColors]: string }) {
+return StyleSheet.create({
   loadingScreen: {
     flex: 1,
-    backgroundColor: "#050F1A",
+    backgroundColor: colors.background,
     alignItems: "center",
     justifyContent: "center",
   },
   appContainer: {
     flex: 1,
-    backgroundColor: "#050F1A",
+    backgroundColor: colors.background,
   },
   mainShell: {
     flex: 1,
@@ -427,4 +463,27 @@ const styles = StyleSheet.create({
   screenViewport: {
     flex: 1,
   },
+  feedbackModalOverlay: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 16,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+  },
+  feedbackModalPanel: {
+    width: "100%",
+    maxWidth: 384,
+    maxHeight: "88%",
+    overflow: "hidden",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.35,
+    shadowRadius: 24,
+    elevation: 16,
+  },
 });
+}
