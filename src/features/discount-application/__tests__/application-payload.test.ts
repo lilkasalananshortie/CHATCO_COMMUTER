@@ -2,6 +2,7 @@
 import { applicationPayload, canCancelApplication, type ApplicationState } from "../application-types";
 import { EMPTY_SCHOOL_FIELDS } from "../../student-renewal/SchoolProofFields";
 jest.mock("react-native", () => ({ StyleSheet: { create: (value: unknown) => value } }));
+jest.mock("../../../core/theme/ThemeProvider", () => ({ useCommuterTheme: () => ({ colors: {}, isLight: false }) }));
 const state: ApplicationState = { commuter_type: "REGULAR", effective_fare_type: "REGULAR", discount_expires_at: null,
   document_required: true, can_submit: true, status: "NOT_APPLIED", application: null };
 const fields = { ...EMPTY_SCHOOL_FIELDS, school_name: " School ", school_year: "2026-2027", grade_level: "10" };

@@ -5,6 +5,7 @@ import { authService } from "../../../core/api/auth-service";
 let mockStates: any[] = [], mockIndex = 0, mockRefs: any[] = [], mockRefIndex = 0;
 jest.mock("react", () => ({ ...jest.requireActual("react"), useState: (initial: unknown) => { const i = mockIndex++; if (!(i in mockStates)) mockStates[i] = initial; return [mockStates[i], (value: any) => { mockStates[i] = value; }]; }, useRef: (initial: unknown) => { const i = mockRefIndex++; return mockRefs[i] ?? (mockRefs[i] = { current: initial }); } }));
 jest.mock("react-native", () => ({ ScrollView: "Scroll", View: "View", Text: "Text", TextInput: "Input", TouchableOpacity: "Button", ActivityIndicator: "Spinner" }));
+jest.mock("../../../core/theme/ThemeProvider", () => ({ useCommuterTheme: () => ({ colors: { background: "#050F1A", textPrimary: "#FFFFFF", textSecondary: "#CBD5E1", textMuted: "#94A3B8", border: "#334155", danger: "#EF4444", primary: "#1A5FB4", primaryLight: "#62A0EA" } }) }));
 jest.mock("../../../core/api/auth-service", () => ({ authService: { setNewPassword: jest.fn(), logout: jest.fn() } }));
 type Element = React.ReactElement<Record<string, any>>;
 function walk(node: any): Element[] { if (Array.isArray(node)) return node.flatMap(walk); if (!React.isValidElement(node)) return []; const e = node as Element; return [e, ...walk(e.props.children)]; }

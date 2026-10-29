@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
+  Animated,
+  Easing,
   TextInput,
   StyleSheet,
   ScrollView,
@@ -21,6 +23,9 @@ import { AuthBackgroundGraphic } from "./AuthBackgroundGraphic";
 import { Mascot } from "../../shared/ui/Mascot";
 import { RegistrationConsent } from "./RegistrationConsent";
 import { registrationAgreement, type AgreementChoices } from "./registration-agreement";
+import { request } from "../../core/api/api-client";
+import { registrationBirthdateError, registrationUsernameError, REGISTRATION_USERNAME_MAX_LENGTH } from "./registration-validation";
+import { useReducedMotion } from "../../shared/useReducedMotion";
 
 interface RegisterScreenProps {
   onRegisterSuccess: () => void;
@@ -124,8 +129,14 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
   const isTablet = windowWidth >= 768;
 
   const [step, setStep] = useState(1);
+  const reduceMotion = useReducedMotion();
+  const previousStep = useRef(step);
+  const stepOpacity = useRef(new Animated.Value(1)).current;
+  const stepTranslateX = useRef(new Animated.Value(0)).current;
   const [loading, setLoading] = useState(false);
   const [agreement, setAgreement] = useState<AgreementChoices>({ terms: false, privacy: false, confirmation: false });
+  const [showRegistrationTerms, setShowRegistrationTerms] = useState(false);
+  const [idUploadRequired, setIdUploadRequired] = useState(true);
   const submitting = useRef(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -136,8 +147,8 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
   const [surname, setSurname] = useState("");
   const [suffix, setSuffix] = useState("None");
   const [birthdate, setBirthdate] = useState("");
-  const [gender, setGender] = useState<"Male" | "Female" | "Prefer not to say">("Male");
-  const [appliedType, setAppliedType] = useState<AppliedType>("REGULAR");
+  const [gender, setGender] = useState<"" | "Male" | "Female" | "Prefer not to say">("");
+  const [appliedType, setAppliedType] = useState<AppliedType | "">("");
 
   // Contact & ID
   const [email, setEmail] = useState("");
@@ -167,12 +178,55 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
   // Field validation errors
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
+  useEffect(() => {
+    const fromStep = previousStep.current;
+    if (fromStep === step) return;
+    previousStep.current = step;
+
+    if (reduceMotion) {
+      stepOpacity.setValue(1);
+      stepTranslateX.setValue(0);
+      return;
+    }
+
+    stepOpacity.setValue(0);
+    stepTranslateX.setValue(step > fromStep ? 26 : -26);
+    const animation = Animated.parallel([
+      Animated.timing(stepOpacity, {
+        toValue: 1,
+        duration: 300,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: Platform.OS !== "web",
+      }),
+      Animated.timing(stepTranslateX, {
+        toValue: 0,
+        duration: 350,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: Platform.OS !== "web",
+      }),
+    ]);
+    animation.start();
+    return () => animation.stop();
+  }, [reduceMotion, step, stepOpacity, stepTranslateX]);
+
   // Resend countdown
   useEffect(() => {
     if (resendIn <= 0) return;
     const timer = setTimeout(() => setResendIn((s) => s - 1), 1000);
     return () => clearTimeout(timer);
   }, [resendIn]);
+
+  useEffect(() => {
+    let cancelled = false;
+    request<{ require_id_upload?: boolean }>("/system-status")
+      .then((status) => {
+        if (!cancelled && status.require_id_upload === false) setIdUploadRequired(false);
+      })
+      .catch(() => {
+        // Match the web fallback: keep ID upload required if status is unavailable.
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const clearFieldError = (key: string) => {
     if (fieldErrors[key]) {
@@ -193,9 +247,12 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
       if (!surname.trim()) errors.surname = "Enter your surname.";
       if (!birthdate.trim()) {
         errors.birthdate = "Enter your birthdate (YYYY-MM-DD).";
-      } else if (!/^\d{4}-\d{2}-\d{2}$/.test(birthdate.trim())) {
-        errors.birthdate = "Use format YYYY-MM-DD.";
+      } else {
+        const dateError = registrationBirthdateError(birthdate);
+        if (dateError) errors.birthdate = dateError;
       }
+      if (!gender) errors.gender = "Select your gender.";
+      if (!appliedType) errors.appliedType = "Select the commuter type you're applying for.";
     }
 
     if (stepNum === 2) {
@@ -213,13 +270,15 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
         errors.contactNumber = "Must be an 11-digit mobile number starting with 09.";
       }
 
-      if (!idFileBlob && !idFileName) {
+      const idRequired = appliedType !== "REGULAR" || idUploadRequired;
+      if (!idFileBlob && !idFileName && idRequired) {
         errors.id = "Please upload or capture your valid ID document.";
       }
     }
 
     if (stepNum === 4) {
-      if (!username.trim()) errors.username = "Choose a unique username.";
+      const usernameError = registrationUsernameError(username);
+      if (usernameError) errors.username = usernameError;
       if (!password) {
         errors.password = "Enter a password.";
       } else {
@@ -395,14 +454,22 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
   const handleSubmitRegistration = async () => {
     if (submitting.current) return;
     if (!validateCurrentStep(4)) return;
-    let accepted: Record<string, string>;
-    try { accepted = registrationAgreement(agreement); }
-    catch (error) { setErrorMessage((error as Error).message); return; }
     if (!isEmailVerified || verifiedEmail !== email.trim().toLowerCase()) {
       setErrorMessage("Verify your current email address before submitting.");
       setStep(2);
       return;
     }
+
+    setErrorMessage(null);
+    setAgreement({ terms: false, privacy: false, confirmation: false });
+    setShowRegistrationTerms(true);
+  };
+
+  const confirmRegistration = async () => {
+    if (submitting.current) return;
+    let accepted: Record<string, string>;
+    try { accepted = registrationAgreement(agreement); }
+    catch (error) { setErrorMessage((error as Error).message); return; }
 
     submitting.current = true;
     setLoading(true);
@@ -410,24 +477,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
 
     try {
       if (Platform.OS !== "web") {
-        let fileUri: string;
-        if (
-          idFileBlob &&
-          typeof idFileBlob === "object" &&
-          "uri" in idFileBlob &&
-          typeof idFileBlob.uri === "string" &&
-          !idFileBlob.uri.startsWith("data:")
-        ) {
-          const rawUri = idFileBlob.uri;
-          fileUri =
-            rawUri.startsWith("file://") || rawUri.startsWith("content://")
-              ? rawUri
-              : `file://${rawUri}`;
-        } else {
-          const sample = await createSampleIdFile();
-          fileUri = (sample as any).uri;
-        }
-
         const parameters: Record<string, string> = {
           ...accepted,
           first_name: String(firstName || "").trim(),
@@ -437,18 +486,28 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
           email: String(email || "").trim().toLowerCase(),
           contact_number: String(contactNumber || "").trim(),
           username: String(username || "").trim(),
-          applied_type: String(appliedType || "REGULAR"),
+          applied_type: String(appliedType),
           password: String(password),
           password_confirmation: String(passwordConfirmation),
         };
-        if (middleName && middleName.trim()) {
-          parameters.middle_name = String(middleName).trim();
+        if (middleName && middleName.trim()) parameters.middle_name = String(middleName).trim();
+        if (suffix && suffix !== "None") parameters.suffix = String(suffix);
+        if (
+          idFileBlob &&
+          typeof idFileBlob === "object" &&
+          "uri" in idFileBlob &&
+          typeof idFileBlob.uri === "string" &&
+          !idFileBlob.uri.startsWith("data:")
+        ) {
+          const rawUri = idFileBlob.uri;
+          const fileUri =
+            rawUri.startsWith("file://") || rawUri.startsWith("content://")
+              ? rawUri
+              : `file://${rawUri}`;
+          await authService.register({ fileUri, parameters });
+        } else {
+          await authService.register({ parameters });
         }
-        if (suffix && suffix !== "None") {
-          parameters.suffix = String(suffix);
-        }
-
-        await authService.register({ fileUri, parameters });
         setIsSuccess(true);
         return;
       }
@@ -469,12 +528,11 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
       formData.append("email", String(email || "").trim().toLowerCase());
       formData.append("contact_number", String(contactNumber || "").trim());
       formData.append("username", String(username || "").trim());
-      formData.append("applied_type", String(appliedType || "REGULAR"));
+      formData.append("applied_type", String(appliedType));
       formData.append("password", String(password));
       formData.append("password_confirmation", String(passwordConfirmation));
 
-      const fileToAttach = idFileBlob || (await createSampleIdFile());
-      formData.append("id_image", fileToAttach as any);
+      if (idFileBlob) formData.append("id_image", idFileBlob as any);
 
       await authService.register(formData);
       setIsSuccess(true);
@@ -483,7 +541,37 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
         err?.response?.data?.message ||
         err?.message ||
         "Registration could not be completed. Please review your details.";
-      setErrorMessage(msg);
+      const responseErrors = err?.response?.data?.errors as Record<string, string[] | string> | undefined;
+      if (responseErrors && Object.keys(responseErrors).length > 0) {
+        const mapped: Record<string, string> = {};
+        const stepByField: Record<string, number> = {
+          first_name: 1, middle_name: 1, suffix: 1, surname: 1, birthdate: 1, gender: 1, applied_type: 1,
+          email: 2, contact_number: 2, id_image: 2,
+          username: 4, password: 4, password_confirmation: 4,
+        };
+        let earliest = 4;
+        Object.entries(responseErrors).forEach(([field, messages]) => {
+          const key = field === "first_name" ? "firstName"
+            : field === "middle_name" ? "middleName"
+            : field === "contact_number" ? "contactNumber"
+            : field === "id_image" ? "id"
+            : field === "applied_type" ? "appliedType"
+            : field === "password_confirmation" ? "passwordConfirmation"
+            : field;
+          mapped[key] = Array.isArray(messages) ? (messages[0] ?? msg) : messages;
+          if (stepByField[field]) earliest = Math.min(earliest, stepByField[field]);
+        });
+        setFieldErrors(mapped);
+        if (earliest < 4) {
+          setShowRegistrationTerms(false);
+          setStep(earliest);
+          setErrorMessage(msg);
+        } else {
+          setErrorMessage(msg);
+        }
+      } else {
+        setErrorMessage(msg);
+      }
     } finally {
       submitting.current = false;
       setLoading(false);
@@ -506,7 +594,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
               <Text style={{ fontWeight: "700", color: "#F59E0B" }}>
                 pending admin approval
               </Text>
-              . An administrator will review your valid ID and verify your discount tier.
+              . An administrator will review your registration and verify any discount category you selected.
             </Text>
 
             <Text style={styles.successSubtext}>
@@ -631,7 +719,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
             </View>
 
             {/* Main Form Surface Card */}
-            <View style={styles.card}>
+            <Animated.View style={[styles.card, { opacity: stepOpacity, transform: [{ translateX: stepTranslateX }] }]}>
               {/* Step Header */}
               <View style={styles.stepTitleSection}>
                 <Text style={styles.stepTitle}>{STEP_COPY[step]?.title ?? ""}</Text>
@@ -733,7 +821,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                     <View style={[styles.fieldGroup, { flex: 1.2 }]}>
                       <Text style={styles.label}>Suffix</Text>
                       <View style={styles.suffixSelector}>
-                        {SUFFIX_OPTIONS.slice(0, 3).map((sfx) => (
+                        {SUFFIX_OPTIONS.map((sfx) => (
                           <TouchableOpacity
                             key={sfx}
                             onPress={() => setSuffix(sfx)}
@@ -792,7 +880,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                         <TouchableOpacity
                           key={g}
                           activeOpacity={0.8}
-                          onPress={() => setGender(g)}
+                          onPress={() => { setGender(g); clearFieldError("gender"); }}
                           style={[
                             styles.optionPill,
                             gender === g && styles.optionPillActive,
@@ -809,6 +897,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                         </TouchableOpacity>
                       ))}
                     </View>
+                    {fieldErrors.gender && <Text style={styles.errorText}>{fieldErrors.gender}</Text>}
                   </View>
 
                   {/* Commuter Category */}
@@ -821,7 +910,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                           <TouchableOpacity
                             key={cat.value}
                             activeOpacity={0.8}
-                            onPress={() => setAppliedType(cat.value)}
+                            onPress={() => { setAppliedType(cat.value); clearFieldError("appliedType"); clearFieldError("id"); }}
                             style={[
                               styles.categoryCard,
                               isSelected && styles.categoryCardActive,
@@ -845,6 +934,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                         );
                       })}
                     </View>
+                    {fieldErrors.appliedType && <Text style={styles.errorText}>{fieldErrors.appliedType}</Text>}
                   </View>
                 </View>
               )}
@@ -927,7 +1017,11 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
 
                   {/* ID Upload Box */}
                   <View style={styles.fieldGroup}>
-                    <Text style={styles.label}>{ID_UPLOAD_LABELS[appliedType]}</Text>
+                    <Text style={styles.label}>
+                      {appliedType === "REGULAR" && !idUploadRequired
+                        ? "Upload Valid Government ID (Optional)"
+                        : appliedType ? ID_UPLOAD_LABELS[appliedType] : "Upload Valid ID (choose a commuter category first)"}
+                    </Text>
 
                     <TouchableOpacity
                       activeOpacity={0.8}
@@ -963,7 +1057,9 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                       <Text style={styles.errorText}>{fieldErrors.id}</Text>
                     ) : (
                       <Text style={styles.helperText}>
-                        Required for identity verification and discount approval.
+                        {appliedType === "REGULAR" && !idUploadRequired
+                          ? "Optional for regular commuters. Required for Student, Senior Citizen, and PWD applications."
+                          : "Required for identity verification and discount approval."}
                       </Text>
                     )}
                   </View>
@@ -1047,6 +1143,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                         onFocus={() => setFocusedField("username")}
                         onBlur={() => setFocusedField(null)}
                         autoCapitalize="none"
+                        maxLength={REGISTRATION_USERNAME_MAX_LENGTH}
                         returnKeyType="next"
                       />
                     </View>
@@ -1163,7 +1260,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                 </View>
               )}
 
-              {step === 4 && <RegistrationConsent value={agreement} onChange={setAgreement} disabled={loading} />}
               {/* ══════════════ ACTION CONTROLS ══════════════ */}
               <View style={styles.actionsContainer}>
                 {step === 1 && (
@@ -1251,9 +1347,20 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                   <Text style={styles.loginPromptLink}>Sign in</Text>
                 </TouchableOpacity>
               </View>
-            </View>
+            </Animated.View>
           </View>
         </ScrollView>
+
+        {/* Registration terms and consent modal */}
+        <RegistrationConsent
+          visible={showRegistrationTerms}
+          value={agreement}
+          onChange={setAgreement}
+          disabled={loading}
+          error={errorMessage}
+          onBack={() => { if (!loading) { setShowRegistrationTerms(false); setErrorMessage(null); } }}
+          onConfirm={confirmRegistration}
+        />
 
         {/* ID Upload / Capture Choice Modal */}
         <Modal

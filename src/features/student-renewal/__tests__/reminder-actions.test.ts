@@ -21,7 +21,7 @@ jest.mock("react", () => ({
   },
 }));
 jest.mock("react-native", () => ({ Modal: "Modal", ScrollView: "ScrollView", Text: "Text", View: "View" }));
-jest.mock("../../../shared/ui/FeatureControls", () => ({ FeatureButton: "Button", featureStyles: {} }));
+jest.mock("../../../shared/ui/FeatureControls", () => ({ FeatureButton: "Button", featureStyles: {}, useFeatureStyles: () => ({ card: {}, title: {}, text: {}, muted: {}, error: {} }) }));
 jest.mock("../../../core/api/student-renewal-service", () => ({ studentRenewalService: { reminder: jest.fn() } }));
 const state = { reminder_due: true, deadline: "2027-10-01T00:00:00+08:00", renewal_period: "September 2027" } as RenewalState;
 const refresh = jest.fn().mockResolvedValue(undefined);

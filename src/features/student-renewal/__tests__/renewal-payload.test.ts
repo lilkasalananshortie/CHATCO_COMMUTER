@@ -1,5 +1,5 @@
 /// <reference types="jest" />
-import { renewalPayload, type RenewalFields } from "../renewal-types";
+import { renewalPayload, schoolProofFieldsError, type RenewalFields } from "../renewal-types";
 const fields: RenewalFields = { school_name: " School ", education_level: "HIGH_SCHOOL", grade_level: "10", school_year: "2027-2028", enrollment_term: "" };
 const file = () => new File(["image"], "proof.jpg", { type: "image/jpeg" });
 test("high school proof carries grade and trims school name", () => {
@@ -30,4 +30,12 @@ test("PDF proof is accepted in browser", () => {
 test("blank school and school year are rejected", () => {
   expect(() => renewalPayload({ ...fields, school_name: " " }, file())).toThrow("school name");
   expect(() => renewalPayload({ ...fields, school_year: " " }, file())).toThrow("school year");
+});
+test("school proof form completeness matches the payload rules before confirmation", () => {
+  expect(schoolProofFieldsError(fields)).toBeNull();
+  expect(schoolProofFieldsError({ ...fields, school_name: " " })).toMatch(/school name/i);
+  expect(schoolProofFieldsError({ ...fields, school_year: " " })).toMatch(/school year/i);
+  expect(schoolProofFieldsError({ ...fields, grade_level: "6" })).toMatch(/Grade 7/i);
+  expect(schoolProofFieldsError({ ...fields, education_level: "COLLEGE", enrollment_term: " " })).toMatch(/semester/i);
+  expect(schoolProofFieldsError({ ...fields, education_level: "COLLEGE", enrollment_term: "1st Semester" })).toBeNull();
 });

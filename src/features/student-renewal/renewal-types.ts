@@ -20,6 +20,16 @@ export interface RenewalFields {
 }
 export type RenewalDocument = { uri: string; name: string; type: string; size?: number } | File;
 
+export function schoolProofFieldsError(fields: RenewalFields): string | null {
+  if (!fields.school_name.trim() || fields.school_name.trim().length > 150) return "Enter your school name (up to 150 characters).";
+  if (!fields.school_year.trim() || fields.school_year.trim().length > 20) return "Enter your school year (up to 20 characters).";
+  if (!["HIGH_SCHOOL", "COLLEGE"].includes(fields.education_level)) return "Choose your education level.";
+  if (fields.education_level === "HIGH_SCHOOL" && !/^(7|8|9|10|11|12)$/.test(fields.grade_level)) return "Choose Grade 7–12.";
+  if (fields.education_level === "COLLEGE" && !fields.enrollment_term.trim()) return "Enter your semester or enrollment term.";
+  if (fields.enrollment_term.trim().length > 50) return "Enrollment term must be 50 characters or fewer.";
+  return null;
+}
+
 export function proofPayload(document: RenewalDocument | null, required = true): FormData {
   const form = new FormData();
   // Local application debugging must not upload a selected file to R2.
@@ -33,12 +43,8 @@ export function proofPayload(document: RenewalDocument | null, required = true):
 
 export function renewalPayload(fields: RenewalFields, document: RenewalDocument | null, documentRequired = true): FormData {
   const form = proofPayload(document, documentRequired);
-  if (!fields.school_name.trim() || fields.school_name.trim().length > 150) throw new Error("Enter your school name (up to 150 characters).");
-  if (!fields.school_year.trim() || fields.school_year.trim().length > 20) throw new Error("Enter your school year (up to 20 characters).");
-  if (!["HIGH_SCHOOL", "COLLEGE"].includes(fields.education_level)) throw new Error("Choose your education level.");
-  if (fields.education_level === "HIGH_SCHOOL" && !/^(7|8|9|10|11|12)$/.test(fields.grade_level)) throw new Error("Choose Grade 7–12.");
-  if (fields.education_level === "COLLEGE" && !fields.enrollment_term.trim()) throw new Error("Enter your semester or enrollment term.");
-  if (fields.enrollment_term.trim().length > 50) throw new Error("Enrollment term must be 50 characters or fewer.");
+  const fieldsError = schoolProofFieldsError(fields);
+  if (fieldsError) throw new Error(fieldsError);
   form.append("school_name", fields.school_name.trim());
   form.append("education_level", fields.education_level);
   form.append("school_year", fields.school_year.trim());

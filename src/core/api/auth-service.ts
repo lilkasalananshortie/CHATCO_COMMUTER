@@ -125,13 +125,15 @@ export const authService = {
   },
 
   async register(
-    input: FormData | { fileUri: string; parameters: Record<string, string> } | any
+    input: FormData | { fileUri?: string; parameters: Record<string, string> } | any
   ): Promise<{ message: string }> {
-    if (Platform.OS !== "web" && typeof input === "object" && input && "fileUri" in input) {
+    if (Platform.OS !== "web" && typeof input === "object" && input && "parameters" in input) {
       const { fileUri, parameters } = input as {
-        fileUri: string;
+        fileUri?: string;
         parameters: Record<string, string>;
       };
+
+      if (!fileUri) return post("/mobile/auth/register", parameters);
 
       const uploadResponse = await FileSystem.uploadAsync(
         `${API_URL}/api/v1/mobile/auth/register`,
