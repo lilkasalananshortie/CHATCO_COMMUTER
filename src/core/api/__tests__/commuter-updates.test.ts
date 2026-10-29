@@ -102,3 +102,17 @@ test("proof storage failures remain retryable errors", async () => {
   mockPost.mockRejectedValue(new Error("The document could not be stored. Please try again."));
   await expect(studentRenewalService.submit(new FormData())).rejects.toThrow("try again");
 });
+test("Lost and Found claim sends validated contact and proof images as multipart form data", async () => {
+  const proof = new Blob(["photo"], { type: "image/jpeg" });
+  await commuterService.claimLostItem("item-1", {
+    proof: "Unique scratch on the case",
+    claimant_contact: "09171234567",
+    images: [{ uri: "blob:proof", name: "proof.jpg", type: "image/jpeg", file: proof }],
+  });
+  const [path, form] = mockPost.mock.calls[0];
+  expect(path).toBe("/lost-found/item-1/claim");
+  expect(form).toBeInstanceOf(FormData);
+  expect(form.get("proof")).toBe("Unique scratch on the case");
+  expect(form.get("claimant_contact")).toBe("09171234567");
+  expect(form.get("images[0]")).toMatchObject({ name: "proof.jpg", type: "image/jpeg", size: 5 });
+});

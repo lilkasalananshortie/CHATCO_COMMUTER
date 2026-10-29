@@ -400,6 +400,7 @@ function MainApp() {
                 state={discountApplication.state} loading={discountApplication.loading} loadError={discountApplication.error}
                 onRefresh={async () => { await discountApplication.refreshAfterMutation(); await refreshRenewal(); }}
                 onClose={() => setShowDiscountApplication(false)}
+                onGoHome={() => { setShowDiscountApplication(false); setActiveTab("home"); }}
                 onOpenRenewal={() => { setShowDiscountApplication(false); setShowRenewal(true); void renewal.refresh(); }} />}
             </View>
           </Modal>

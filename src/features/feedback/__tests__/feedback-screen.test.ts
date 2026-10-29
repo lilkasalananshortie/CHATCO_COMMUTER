@@ -5,12 +5,12 @@ import { commuterService } from "../../../core/api/commuter-service";
 import type { Trip } from "../../../core/domain/types";
 let mockStates: any[] = [], mockRefs: any[] = [], mockStateIndex = 0, mockRefIndex = 0;
 jest.mock("react", () => ({
-  ...jest.requireActual("react"), useEffect: () => {}, useCallback: (fn: unknown) => fn,
+  ...jest.requireActual("react"), useEffect: () => {}, useCallback: (fn: unknown) => fn, useMemo: (fn: () => unknown) => fn(),
   useState: (initial: unknown) => { const index = mockStateIndex++; if (!(index in mockStates)) mockStates[index] = initial;
     return [mockStates[index], (next: any) => { mockStates[index] = typeof next === "function" ? next(mockStates[index]) : next; }]; },
   useRef: (initial: unknown) => { const index = mockRefIndex++; return mockRefs[index] ?? (mockRefs[index] = { current: initial }); },
 }));
-jest.mock("react-native", () => ({ View: "View", Text: "Text", ScrollView: "ScrollView", TouchableOpacity: "Button", TextInput: "Input", ActivityIndicator: "Spinner", StyleSheet: { create: (styles: unknown) => styles } }));
+jest.mock("react-native", () => ({ View: "View", Text: "Text", ScrollView: "ScrollView", TouchableOpacity: "Button", TextInput: "Input", ActivityIndicator: "Spinner", Animated: { View: "AnimatedView", Value: class { setValue() {} interpolate() { return 0; } } }, Easing: { out: (value: unknown) => value, ease: 1 }, StyleSheet: { create: (styles: unknown) => styles } }));
 jest.mock("@expo/vector-icons", () => ({ Ionicons: "Icon" }));
 jest.mock("react-native-svg", () => ({ __esModule: true, default: "Svg", Circle: "Circle", Path: "Path", Line: "Line", Polyline: "Polyline", Rect: "Rect" }));
 jest.mock("../../../core/theme/ThemeProvider", () => ({ useCommuterTheme: () => ({ isLight: false }) }));

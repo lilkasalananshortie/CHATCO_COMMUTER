@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Text } from "../../shared/ui/BrandText";
 import {
+  Animated,
+  Easing,
   View,
   StyleSheet,
   ScrollView,
@@ -29,6 +31,7 @@ import { HailRangeHint } from "./HailRangeHint";
 import { hailDockBottom, isSosDoubleTap, SOS_DOUBLE_TAP_MS } from "./dashboard-ui";
 import { WebIcon } from "../../shared/ui/WebIcon";
 import { WebSpinner } from "../../shared/ui/WebSpinner";
+import { useReducedMotion } from "../../shared/useReducedMotion";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 
 interface DashboardScreenProps {
@@ -78,8 +81,37 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   const [sheetHeight, setSheetHeight] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(windowHeight);
   const hailBottom = hailDockBottom(viewportHeight, sheetHeight, insets.top, showSheet);
+  const reduceMotion = useReducedMotion();
+  const sheetTranslateY = useRef(new Animated.Value(0)).current;
+  const sheetContentOpacity = useRef(new Animated.Value(1)).current;
+  const hailHoldProgress = useRef(new Animated.Value(0)).current;
   const lastSosTapRef = useRef<number | null>(null);
   const sosHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const collapsedOffset = Math.max(0, sheetHeight - 128 - Math.max(insets.bottom, 12));
+    if (reduceMotion) {
+      sheetTranslateY.setValue(showSheet ? 0 : collapsedOffset);
+      sheetContentOpacity.setValue(showSheet ? 1 : 0);
+      return;
+    }
+    const animation = Animated.parallel([
+      Animated.timing(sheetTranslateY, {
+        toValue: showSheet ? 0 : collapsedOffset,
+        duration: 300,
+        easing: Easing.inOut(Easing.ease),
+        useNativeDriver: Platform.OS !== "web",
+      }),
+      Animated.timing(sheetContentOpacity, {
+        toValue: showSheet ? 1 : 0,
+        duration: showSheet ? 240 : 180,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: Platform.OS !== "web",
+      }),
+    ]);
+    animation.start();
+    return () => animation.stop();
+  }, [insets.bottom, reduceMotion, sheetContentOpacity, sheetHeight, sheetTranslateY, showSheet]);
 
   // Derive display values matching web layout
   const displayName = profile?.first_name || user?.name || user?.email?.split("@")[0] || "Commuter";
@@ -409,6 +441,21 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
   const hailHold = useHoldToConfirm(() => { void handleToggleHail(); }, canHail && !activeHail && !hailPending);
 
+  useEffect(() => {
+    if (reduceMotion) {
+      hailHoldProgress.setValue(hailHold.holding ? 1 : 0);
+      return;
+    }
+    const animation = Animated.timing(hailHoldProgress, {
+      toValue: hailHold.holding ? 1 : 0,
+      duration: hailHold.holding ? 600 : 150,
+      easing: hailHold.holding ? Easing.linear : Easing.out(Easing.ease),
+      useNativeDriver: Platform.OS !== "web",
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [hailHold.holding, hailHoldProgress, reduceMotion]);
+
   // Server expiry drives display; only server status ends the hail.
   useEffect(() => {
     if (!activeHail) return;
@@ -512,7 +559,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
       {/* ======================================================== */}
       {/* --- 3. BOTTOM SLIDING SHEET (1:1 Web Mobile UI) --- */}
       {/* ======================================================== */}
-      <View
+      <Animated.View
         onLayout={event => setSheetHeight(event.nativeEvent.layout.height)}
         style={[
           styles.bottomSheet,
@@ -520,6 +567,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             paddingBottom: Math.max(insets.bottom, 12) + 6,
             left: isTablet ? Math.max(0, (windowWidth - 640) / 2) : 0,
             right: isTablet ? Math.max(0, (windowWidth - 640) / 2) : 0,
+            transform: [{ translateY: sheetTranslateY }],
           },
         ]}
       >
@@ -542,7 +590,16 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
         </TouchableOpacity>
 
         {/* Sheet Content (when expanded) */}
-        {showSheet && (
+        <Animated.View
+          style={[
+            {
+              opacity: sheetContentOpacity,
+              transform: [{ translateY: sheetContentOpacity.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }],
+              pointerEvents: showSheet ? "auto" : "none",
+            },
+          ]}
+          importantForAccessibility={showSheet ? "auto" : "no-hide-descendants"}
+        >
           <ScrollView
             style={[styles.sheetScroll, { maxHeight: windowHeight * 0.6 }]}
             contentContainerStyle={styles.sheetScrollContent}
@@ -712,8 +769,8 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
               </TouchableOpacity>
             </View>
           </ScrollView>
-        )}
-      </View>
+        </Animated.View>
+      </Animated.View>
 
       {/* Small independent floating controls; avoid a full-screen touch layer over the sheet. */}
       <View testID="dashboard-hail-dock" style={[styles.hailFloatingContainer, { bottom: hailBottom, right: isTablet ? Math.max(0, (windowWidth - 640) / 2) + 18 : 18 }]}>
@@ -746,6 +803,20 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
                 : "Cannot hail"
             }
           >
+            <Animated.View
+              accessible={false}
+              style={{
+                position: "absolute",
+                top: 0,
+                right: 0,
+                bottom: 0,
+                left: 0,
+                borderRadius: 32,
+                backgroundColor: "rgba(255,255,255,0.25)",
+                pointerEvents: "none",
+                transform: [{ scale: hailHoldProgress }],
+              }}
+            />
             {hailPending ? (
               <WebSpinner size={28} color="#FFFFFF" />
             ) : activeHail ? (
@@ -947,6 +1018,7 @@ const baseStyles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 4,
+    overflow: "hidden",
   },
   hailCircleAvailable: {
     backgroundColor: "#FF6D3A",

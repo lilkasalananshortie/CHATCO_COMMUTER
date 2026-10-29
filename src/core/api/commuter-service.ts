@@ -503,11 +503,15 @@ export const commuterService = {
     };
   },
 
-  async claimLostItem(itemId: string, data: { proof_description?: string; proof?: string; contact_number?: string }): Promise<void> {
-    return post(`/lost-found/${encodeURIComponent(itemId)}/claim`, {
-      proof: data.proof || data.proof_description,
-      contact_number: data.contact_number,
-    });
+  async claimLostItem(itemId: string, data: { proof_description?: string; proof?: string; claimant_contact?: string; images?: Array<{ uri: string; name: string; type: string; file?: Blob }> }): Promise<void> {
+    const form = new FormData();
+    form.append("proof", data.proof || data.proof_description || "");
+    if (data.claimant_contact?.trim()) form.append("claimant_contact", data.claimant_contact.trim());
+    for (const [index, image] of (data.images ?? []).entries()) {
+      if (image.file) form.append(`images[${index}]`, image.file, image.name);
+      else form.append(`images[${index}]`, { uri: image.uri, name: image.name, type: image.type } as any);
+    }
+    return post(`/lost-found/${encodeURIComponent(itemId)}/claim`, form);
   },
 
   async cancelClaim(claimId: string): Promise<void> {

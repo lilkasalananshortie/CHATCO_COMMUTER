@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
+  Animated,
+  Easing,
   View,
   StyleSheet,
   ScrollView,
@@ -20,6 +22,7 @@ import { WebIcon } from "../../shared/ui/WebIcon";
 import Svg, { Path, Circle } from "react-native-svg";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import { themedStyles } from "../../core/theme/themed-styles";
+import { useReducedMotion } from "../../shared/useReducedMotion";
 
 interface FeedbackScreenProps {
   initialTrip?: Trip | null;
@@ -115,6 +118,8 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
   );
 
   const { colors: selectedColors, isLight = false } = useCommuterTheme();
+  const conductorSectionOpacity = useRef(new Animated.Value(0)).current;
+  const conductorSectionOffset = useRef(new Animated.Value(10)).current;
   const colors = selectedColors ?? commuterColors;
   const styles = useMemo(() => themedStyles(baseStyles, colors, isLight), [colors, isLight]);
   useEffect(() => { onFormVisibilityChange?.(scanStatus === "resolved"); }, [scanStatus, onFormVisibilityChange]);
@@ -135,8 +140,38 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(3);
 
+  const reduceMotion = useReducedMotion();
   const driverComplete = driverRating > 0 && driverTags.length > 0;
   const conductorComplete = conductorRating > 0 && conductorTags.length > 0;
+
+  useEffect(() => {
+    if (!driverComplete) {
+      conductorSectionOpacity.setValue(0);
+      conductorSectionOffset.setValue(10);
+      return;
+    }
+    if (reduceMotion) {
+      conductorSectionOpacity.setValue(1);
+      conductorSectionOffset.setValue(0);
+      return;
+    }
+    const animation = Animated.parallel([
+      Animated.timing(conductorSectionOpacity, {
+        toValue: 1,
+        duration: 300,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }),
+      Animated.timing(conductorSectionOffset, {
+        toValue: 0,
+        duration: 300,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }),
+    ]);
+    animation.start();
+    return () => animation.stop();
+  }, [conductorSectionOffset, conductorSectionOpacity, driverComplete, reduceMotion]);
 
   // Auto countdown back to home
   useEffect(() => {
@@ -727,7 +762,7 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
 
         {/* ── CONDUCTOR SECTION (unlocked when driver complete) ── */}
         {driverComplete && (
-          <View style={styles.conductorForm}>
+          <Animated.View style={[styles.conductorForm, { opacity: conductorSectionOpacity, transform: [{ translateY: conductorSectionOffset }] }]}>
             <Text style={styles.conductorIntroTitle}>Now the conductor</Text>
             <Text style={styles.conductorIntroSub}>
               One more, then you&apos;re done.
@@ -857,7 +892,7 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
                 />
               </View>
             )}
-          </View>
+          </Animated.View>
         )}
 
         {/* Submit Error Banner */}

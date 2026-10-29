@@ -7,7 +7,7 @@ let mockStates: any[] = [], mockIndex = 0;
 jest.mock("react", () => ({ ...jest.requireActual("react"), useEffect: () => {}, useMemo: (fn: () => unknown) => fn(), useCallback: (fn: unknown) => fn, useRef: (value: unknown) => ({ current: value }),
   useState: (initial: unknown) => { const index = mockIndex++; if (!(index in mockStates)) mockStates[index] = typeof initial === "function" ? initial() : initial; return [mockStates[index], (value: any) => { mockStates[index] = typeof value === "function" ? value(mockStates[index]) : value; }]; },
 }));
-jest.mock("react-native", () => ({ View: "View", TouchableOpacity: "Button", Modal: "Modal", Linking: { openSettings: jest.fn().mockResolvedValue(undefined) }, ActivityIndicator: "Spinner", ScrollView: "Scroll", Image: "Image", Pressable: "Pressable", Platform: { OS: "android" }, AppState: {}, Vibration: {}, StyleSheet: { create: (value: unknown) => value, absoluteFill: {} }, useWindowDimensions: () => ({ width: 390, height: 844 }) }));
+jest.mock("react-native", () => ({ View: "View", TouchableOpacity: "Button", Modal: "Modal", Linking: { openSettings: jest.fn().mockResolvedValue(undefined) }, ActivityIndicator: "Spinner", ScrollView: "Scroll", Image: "Image", Pressable: "Pressable", Animated: { View: "AnimatedView", Value: class { setValue() {} interpolate() { return 0; } } }, Easing: { inOut: (value: unknown) => value, out: (value: unknown) => value, ease: 1, linear: 2 }, Platform: { OS: "android" }, AppState: {}, Vibration: {}, StyleSheet: { create: (value: unknown) => value, absoluteFill: {} }, useWindowDimensions: () => ({ width: 390, height: 844 }) }));
 jest.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ top: 24, bottom: 12 }) }));
 jest.mock("@expo/vector-icons", () => ({ Ionicons: "Icon" }));
 jest.mock("expo-location", () => ({}));
@@ -17,7 +17,7 @@ jest.mock("../../../core/api/commuter-service", () => ({ commuterService: {} }))
 jest.mock("../CommuterLiveMap", () => ({ CommuterLiveMap: "Map" }), { virtual: true });
 jest.mock("../PaymentHistoryModal", () => ({ PaymentHistoryModal: "History" }));
 jest.mock("../../../shared/ui/MascotMessage", () => ({ MascotMessage: "Notice" }));
-jest.mock("../useHoldToConfirm", () => ({ useHoldToConfirm: () => ({ start: jest.fn(), cancel: jest.fn(), consumeCompleted: () => false }) }));
+jest.mock("../useHoldToConfirm", () => ({ useHoldToConfirm: () => ({ holding: false, start: jest.fn(), cancel: jest.fn(), consumeCompleted: () => false }) }));
 type Element = React.ReactElement<Record<string, any>>;
 function walk(node: any): Element[] { if (Array.isArray(node)) return node.flatMap(walk); if (!React.isValidElement(node)) return []; const element = node as Element; return [element, ...walk(element.props.children)]; }
 const props = { onOpenScan: jest.fn(), onOpenShareRide: jest.fn(), onOpenSos: jest.fn(), onOpenProfile: jest.fn() };

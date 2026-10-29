@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useRef } from "react";
-import { ActivityIndicator, AppState, KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { ActivityIndicator, Animated, AppState, Easing, KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { commuterService } from "../../core/api/commuter-service";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import { Text } from "../../shared/ui/BrandText";
 import { estimateFare, normalizeFareMatrix, type FareCategory, type PublishedFareMatrix } from "./fare-estimate";
 import { emptySelection, matchesFarePoint, reconcileSelection, selectStop, subStops, swapStops, type FareField } from "./fare-selection";
+import { useReducedMotion } from "../../shared/useReducedMotion";
 
 // Paths from web components/commuter/fare/fare-content.tsx.
 const paths = {
@@ -17,6 +18,25 @@ const paths = {
 };
 function FareIcon({ name, color }: { name: keyof typeof paths; color: string }) {
   return <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={name === "close" ? 2.5 : 2} pointerEvents="none"><Path d={paths[name]} strokeLinecap="round" strokeLinejoin="round" /></Svg>;
+}
+function AnimatedFareChevron({ expanded, color }: { expanded: boolean; color: string }) {
+  const reduceMotion = useReducedMotion();
+  const rotation = useRef(new Animated.Value(expanded ? 1 : 0)).current;
+  useEffect(() => {
+    if (reduceMotion) {
+      rotation.setValue(expanded ? 1 : 0);
+      return;
+    }
+    const animation = Animated.timing(rotation, {
+      toValue: expanded ? 1 : 0,
+      duration: 200,
+      easing: Easing.out(Easing.ease),
+      useNativeDriver: Platform.OS !== "web",
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [expanded, reduceMotion, rotation]);
+  return <Animated.View style={{ transform: [{ rotate: rotation.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "180deg"] }) }] }}><FareIcon name="chevron" color={color} /></Animated.View>;
 }
 const categories: [FareCategory, string][] = [["REGULAR", "Regular"], ["STUDENT", "Student"], ["SENIOR", "Senior Citizen"], ["PWD", "PWD"]];
 const money = (value: number) => "₱" + value.toFixed(2);
@@ -110,7 +130,7 @@ export function FareScreen() {
               <View><Text style={[s.label, { color: muted }]}>PT</Text><Text style={{ color: muted, fontWeight: "700" }}>{point.pointNumber}</Text></View>
               <View style={s.grow}><Text style={[s.pointName, { color: ink }]}>{point.name} <Text style={[s.label, { color: muted }]}>Brgy {point.pointNumber}</Text></Text>{stops.length > 0 && <Text numberOfLines={1} style={[s.hint, { color: muted }]}>{stops.join(" · ")}</Text>}<View style={s.row}>{pickup && <Text style={[s.tag, { backgroundColor: accent }]}>PICKUP</Text>}{dropoff && <Text style={[s.tag, { backgroundColor: accent }]}>DROP-OFF</Text>}</View></View>
             </Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel={"Expand " + point.name} accessibilityState={{ expanded: expanded === point.id }} onPress={() => setExpanded(expanded === point.id ? null : point.id)} style={[s.iconButton, { transform: [{ rotate: expanded === point.id ? "180deg" : "0deg" }] }]}><FareIcon name="chevron" color={muted} /></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel={"Expand " + point.name} accessibilityState={{ expanded: expanded === point.id }} onPress={() => setExpanded(expanded === point.id ? null : point.id)} style={s.iconButton}><AnimatedFareChevron expanded={expanded === point.id} color={muted} /></Pressable>
           </View>
           {expanded === point.id && <View style={s.stops}><Text style={[s.hint, { color: muted }]}>SUB PICKUP/DROP-OFF POINTS IN {point.name.toUpperCase()} · tap to select</Text>
             {["", ...stops].map(stop => <Pressable key={stop} accessibilityRole="button" accessibilityLabel={stop || "Use " + point.name + " Point Area only"} onPress={() => { setSelection(previous => selectStop(previous, field, point.id, stop)); setExpanded(null); setQuery(""); if (field === "pickup") setField("destination"); }} style={s.stop}><View style={[s.dot, { width: 6, height: 6, backgroundColor: stop ? accent : "#F59E0B" }]} /><Text style={[s.small, { color: stop ? ink : isLight ? "#92400E" : "#FBBF24", flex: 1 }]}>{stop || "Use Point Area only"}</Text>{stop && ((pickup && selection.pickupLandmark === stop) || (dropoff && selection.destinationLandmark === stop)) ? <Text style={[s.label, { color: accent }]}>{pickup && selection.pickupLandmark === stop ? dropoff && selection.destinationLandmark === stop ? "BOTH" : "PICKUP" : "DROP-OFF"}</Text> : null}</Pressable>)}

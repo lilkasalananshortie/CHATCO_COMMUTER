@@ -1,6 +1,7 @@
 /// <reference types="jest" />
 import { WebIcon } from "../WebIcon";
 import { webIconNodes } from "../web-icon-nodes";
+jest.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 jest.mock("react-native-svg", () => ({ __esModule: true, default: "Svg", Path: "Path", Circle: "Circle", Line: "Line", Polyline: "Polyline", Rect: "Rect" }));
 test("hail uses the two original web location paths", () => {
   expect(webIconNodes["hail-pin"]).toHaveLength(2);

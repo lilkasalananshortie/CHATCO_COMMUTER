@@ -465,11 +465,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailC
 
       <ChangeEmailModal visible={showEmailModal} onClose={() => setShowEmailModal(false)} onChanged={email => {
         setUser(previous => previous ? { ...previous, email } : previous);
-        setProfile(previous => previous ? { ...previous, email } : previous);
         onEmailChanged?.(email);
         void authService.updateStoredEmail(email).catch(() => undefined);
         setSuccessMessage("Email address updated.");
-      }} currentEmail={user?.email ?? profile.email ?? ""} />
+      }} currentEmail={user?.email ?? ""} />
       {/* --- CHANGE PASSWORD MODAL --- */}
       <Modal visible={showPasswordModal} animationType="fade" transparent statusBarTranslucent onRequestClose={() => { if (!isChangingPassword) closePasswordModal(); }}>
         <View style={styles.modalBackdrop}>
@@ -530,8 +529,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailC
 };
 
 function createProfileStyles(colors: { [K in keyof typeof commuterColors]: string }, isLight: boolean) {
-  return {
-    ...baseStyles,
+  const themedStyles = StyleSheet.create({
     container: { ...baseStyles.container, backgroundColor: colors.background },
     centeredScreen: { ...baseStyles.centeredScreen, backgroundColor: colors.background },
     loadingText: { ...baseStyles.loadingText, color: colors.textMuted },
@@ -610,8 +608,8 @@ function createProfileStyles(colors: { [K in keyof typeof commuterColors]: strin
     tourSubtitle: { ...baseStyles.tourSubtitle, color: colors.textSecondary },
     errorTitle: { ...baseStyles.errorTitle, color: colors.textPrimary },
     errorSubtitle: { ...baseStyles.errorSubtitle, color: colors.textMuted },
-    ...profileLayout(isLight),
-  };
+  });
+  return Object.assign({}, baseStyles, themedStyles, profileLayout(isLight));
 }
 
 const baseStyles = StyleSheet.create({

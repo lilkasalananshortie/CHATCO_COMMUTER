@@ -11,7 +11,7 @@ beforeEach(() => { jest.resetAllMocks(); mockState = "dark"; mockChanged = { cur
 test("history appearance persists and light colors have dark text on light surfaces", async () => {
   await render().setAppearance("light");
   expect(appStorage.setItem).toHaveBeenCalledWith("chatco_commuter_appearance", "light");
-  expect(render()).toMatchObject({ isLight: true, colors: { surface: "#FFFFFF", textPrimary: "#0F172A" } });
+  expect(render()).toMatchObject({ isLight: true, colors: { surface: "#FFFFFF", textPrimary: "#111827" } });
 });
 test("device appearance follows OS and a failed write does not claim success", async () => {
   await render().setAppearance("system"); expect(render().isLight).toBe(true);

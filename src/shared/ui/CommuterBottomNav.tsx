@@ -1,15 +1,20 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { Text } from "./BrandText";
 import {
+  Animated,
+  Easing,
+  Platform,
   View,
   TouchableOpacity,
   StyleSheet,
+  type LayoutChangeEvent,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { commuterColors } from "../../core/theme/colors";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import type { CommuterTab } from "../../core/domain/types";
+import { useReducedMotion } from "../useReducedMotion";
 
 export type { CommuterTab };
 
@@ -29,6 +34,10 @@ export const CommuterBottomNav: React.FC<CommuterBottomNavProps> = ({
   const insets = useSafeAreaInsets();
   const { colors, isLight } = useCommuterTheme();
   const styles = createStyles(colors, isLight);
+  const reduceMotion = useReducedMotion();
+  const navWidth = useRef(0);
+  const highlightX = useRef(new Animated.Value(0)).current;
+  const highlightOpacity = useRef(new Animated.Value(0)).current;
 
   const navItems: {
     id: CommuterTab;
@@ -74,6 +83,43 @@ export const CommuterBottomNav: React.FC<CommuterBottomNavProps> = ({
     },
   ];
 
+  const moveHighlight = (width: number) => {
+    if (!width) return;
+    const activeIndex = navItems.findIndex(item => item.id === activeTab);
+    if (activeIndex < 0) return;
+    const slotWidth = (width - 12) / navItems.length;
+    const toX = 6 + activeIndex * slotWidth + (slotWidth - 36) / 2;
+    if (reduceMotion) {
+      highlightX.setValue(toX);
+      highlightOpacity.setValue(1);
+      return;
+    }
+    const animation = Animated.parallel([
+      Animated.timing(highlightX, {
+        toValue: toX,
+        duration: 300,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: Platform.OS !== "web",
+      }),
+      Animated.timing(highlightOpacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: Platform.OS !== "web",
+      }),
+    ]);
+    animation.start();
+  };
+
+  useEffect(() => {
+    moveHighlight(navWidth.current);
+  }, [activeTab, reduceMotion, highlightOpacity, highlightX]);
+
+  const handleNavLayout = (event: LayoutChangeEvent) => {
+    const width = event.nativeEvent.layout.width;
+    navWidth.current = width;
+    moveHighlight(width);
+  };
+
   return (
     <View
       style={[
@@ -83,7 +129,11 @@ export const CommuterBottomNav: React.FC<CommuterBottomNavProps> = ({
         },
       ]}
     >
-      <View style={styles.navRow}>
+      <View onLayout={handleNavLayout} style={styles.navRow}>
+        <Animated.View
+          accessible={false}
+          style={[styles.activeHighlight, { opacity: highlightOpacity, transform: [{ translateX: highlightX }] }]}
+        />
         {navItems.map((item) => {
           const isActive = activeTab === item.id;
           let badgeCount = 0;
@@ -100,15 +150,7 @@ export const CommuterBottomNav: React.FC<CommuterBottomNavProps> = ({
               accessibilityState={{ selected: isActive }}
               accessibilityLabel={`${item.label}${badgeCount > 0 ? `, ${badgeCount} unread` : ""}`}
             >
-              {/* Web-parity top indicator dot */}
-              <View
-                style={[
-                  styles.topDot,
-                  isActive ? styles.topDotActive : styles.topDotHidden,
-                ]}
-              />
-
-              {/* Icon Chip — #1A5FB4 active rounded chip matching web */}
+              {/* The blue circular highlight slides between tabs like the web nav. */}
               <View
                 style={[
                   styles.iconChip,
@@ -165,6 +207,7 @@ return StyleSheet.create({
     justifyContent: "space-around",
     paddingTop: 4,
     paddingHorizontal: 6,
+    position: "relative",
   },
   tabItem: {
     flex: 1,
@@ -172,36 +215,33 @@ return StyleSheet.create({
     justifyContent: "center",
     paddingVertical: 3,
   },
-  topDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    marginBottom: 4,
-  },
-  topDotActive: {
-    backgroundColor: colors.primaryLight,
-  },
-  topDotHidden: {
-    backgroundColor: "transparent",
-  },
   iconChip: {
-    width: 42,
+    width: 36,
     height: 36,
-    borderRadius: 14,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
   },
   iconChipActive: {
-    backgroundColor: colors.primary,
-    shadowColor: "#1A5FB4",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 5,
+    backgroundColor: "transparent",
   },
   iconChipInactive: {
     backgroundColor: "transparent",
+  },
+  activeHighlight: {
+    position: "absolute",
+    left: 0,
+    top: 7,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.primary,
+    shadowColor: "#1A5FB4",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 4,
   },
   badge: {
     position: "absolute",

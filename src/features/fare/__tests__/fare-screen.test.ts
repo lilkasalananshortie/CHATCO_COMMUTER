@@ -23,6 +23,10 @@ test("point expands sub-stops and landmark selection advances to drop-off", () =
   press("Select Alpha"); expect(mockStates[7]).toBe("a");
   press("Market"); expect(mockStates[3].pickupLandmark).toBe("Market"); expect(mockStates[5]).toBe("destination"); expect(mockStates[7]).toBeNull();
 });
+test("expanded fare point passes its state to the animated web-parity chevron", () => {
+  press("Select Alpha");
+  expect(render().find(node => (node.type as any)?.name === "AnimatedFareChevron")?.props.expanded).toBe(true);
+});
 test("point-only selection advances and does not force a landmark", () => {
   press("Select Alpha"); press("Use Alpha Point Area only"); expect(mockStates[3].pickup).toBe("a"); expect(mockStates[3].pickupLandmark).toBe(""); expect(mockStates[5]).toBe("destination");
 });

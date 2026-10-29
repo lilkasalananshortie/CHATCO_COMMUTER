@@ -10,6 +10,7 @@ let mockCursor = 0;
 let mockRefCursor = 0;
 jest.mock("react", () => ({
   ...jest.requireActual("react"),
+  useMemo: (factory: () => unknown) => factory(),
   useEffect: () => {},
   useCallback: (callback: unknown) => callback,
   useRef: (initial: unknown) => {

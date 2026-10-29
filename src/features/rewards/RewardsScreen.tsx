@@ -28,6 +28,10 @@ import { subscribeRewardsChanged } from "../../core/domain/rewards-events";
 import { announcementLabel } from "../../core/domain/announcement-category";
 import Svg, { Circle } from "react-native-svg";
 import type { RenewalState } from "../student-renewal/renewal-types";
+import { useReducedMotion } from "../../shared/useReducedMotion";
+
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+const REWARD_RING_CIRCUMFERENCE = 2 * Math.PI * 40;
 import type {
   RewardProgress,
   Voucher,
@@ -198,9 +202,29 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
   const [walletItems, setWalletItems] = useState<Record<"AVAILABLE" | "USED" | "EXPIRED", Voucher[]>>({ AVAILABLE: [], USED: [], EXPIRED: [] });
   const walletCursors = useRef<Record<"AVAILABLE" | "USED" | "EXPIRED", string | null>>({ AVAILABLE: null, USED: null, EXPIRED: null });
   const [walletHasMore, setWalletHasMore] = useState<Record<"AVAILABLE" | "USED" | "EXPIRED", boolean>>({ AVAILABLE: false, USED: false, EXPIRED: false });
-  const [walletLoading, setWalletLoading] = useState(false);
-  const [walletError, setWalletError] = useState<unknown>(null);
+  const [walletLoading, setWalletLoading] = useState<Record<"AVAILABLE" | "USED" | "EXPIRED", boolean>>({ AVAILABLE: false, USED: false, EXPIRED: false });
+  const [walletError, setWalletError] = useState<Record<"AVAILABLE" | "USED" | "EXPIRED", unknown>>({ AVAILABLE: null, USED: null, EXPIRED: null });
+  const walletRequestIds = useRef<Record<"AVAILABLE" | "USED" | "EXPIRED", number>>({ AVAILABLE: 0, USED: 0, EXPIRED: 0 });
   const previousAvailableVoucherKey = useRef<string | null>(null);
+  const reduceMotion = useReducedMotion();
+  const progressRingValue = useRef(new Animated.Value(0)).current;
+  const progressPercent = data
+    ? Math.min(100, Math.max(0, ((data.currentCycleRides ?? data.current_rides ?? 0) / (data.ridesNeeded ?? data.target_rides ?? 10)) * 100))
+    : 0;
+
+  useEffect(() => {
+    if (reduceMotion) {
+      progressRingValue.setValue(progressPercent);
+      return;
+    }
+    const animation = Animated.timing(progressRingValue, {
+      toValue: progressPercent,
+      duration: 300,
+      useNativeDriver: false,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [progressPercent, progressRingValue, reduceMotion]);
 
   const fetchData = useCallback(async () => {
     if (fetching.current) return;
@@ -241,11 +265,13 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
 
   const fetchWallet = useCallback(async (tab: "AVAILABLE" | "USED" | "EXPIRED", reset = false) => {
     const cursor = reset ? null : walletCursors.current[tab];
+    const requestId = ++walletRequestIds.current[tab];
     if (reset) walletCursors.current[tab] = null;
-    setWalletLoading(true);
+    setWalletLoading(previous => ({ ...previous, [tab]: true }));
+    setWalletError(previous => ({ ...previous, [tab]: null }));
     try {
       const result = await commuterService.getVoucherWallet(tab.toLowerCase() as "available" | "used" | "expired", cursor);
-      if (!mounted.current) return;
+      if (!mounted.current || walletRequestIds.current[tab] !== requestId) return;
       walletCursors.current[tab] = result.nextCursor;
       setWalletHasMore(previous => ({ ...previous, [tab]: result.nextCursor !== null }));
       setWalletItems(previous => {
@@ -253,11 +279,10 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
         const known = new Set(previous[tab].map(item => item.id));
         return { ...previous, [tab]: [...previous[tab], ...result.items.filter(item => !known.has(item.id))] };
       });
-      setWalletError(null);
     } catch (err) {
-      if (mounted.current) setWalletError(err);
+      if (mounted.current && walletRequestIds.current[tab] === requestId) setWalletError(previous => ({ ...previous, [tab]: err }));
     } finally {
-      if (mounted.current) setWalletLoading(false);
+      if (mounted.current && walletRequestIds.current[tab] === requestId) setWalletLoading(previous => ({ ...previous, [tab]: false }));
     }
   }, []);
 
@@ -350,7 +375,10 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
   const currentRides = data.currentCycleRides ?? data.current_rides ?? 0;
   const targetRides = data.ridesNeeded ?? data.target_rides ?? 10;
   const ridesRemaining = Math.max(0, targetRides - currentRides);
-  const progressPercent = Math.min(100, Math.max(0, (currentRides / targetRides) * 100));
+  const progressRingOffset = progressRingValue.interpolate({
+    inputRange: [0, 100],
+    outputRange: [REWARD_RING_CIRCUMFERENCE, 0],
+  });
   const vouchers = data.vouchers || [];
   const availableVoucherCount = data.availableVoucherCount ?? vouchers.filter(voucher => voucherWalletStatus(voucher) === "AVAILABLE").length;
   const visibleVouchers = walletItems[voucherTab];
@@ -467,7 +495,7 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
                       {item.content || item.message}
                     </Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.4)" style={styles.announcementChevron} />
+                  <Ionicons name="chevron-forward" size={16} color={isLight ? colors.textMuted : "rgba(255,255,255,0.4)"} style={styles.announcementChevron} />
                 </TouchableOpacity>
               );
             })}
@@ -497,7 +525,7 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
             <View accessibilityRole="progressbar" accessibilityLabel="Paid rides toward your next free ride" accessibilityValue={{ min: 0, max: 100, now: progressPercent }}>
               <Svg width={192} height={192} viewBox="0 0 100 100" style={{ transform: [{ rotate: "-90deg" }] }}>
                 <Circle cx="50" cy="50" r="40" fill="none" stroke={isLight ? "#E5E7EB" : "rgba(255,255,255,0.05)"} strokeWidth="8" />
-                <Circle cx="50" cy="50" r="40" fill="none" stroke={progressPercent === 100 ? "#10B981" : "#1A5FB4"} strokeWidth="8" strokeLinecap="round" strokeDasharray={`${2 * Math.PI * 40}`} strokeDashoffset={`${2 * Math.PI * 40 * (1 - progressPercent / 100)}`} />
+                <AnimatedCircle cx="50" cy="50" r="40" fill="none" stroke={progressPercent === 100 ? "#10B981" : "#1A5FB4"} strokeWidth="8" strokeLinecap="round" strokeDasharray={`${REWARD_RING_CIRCUMFERENCE}`} strokeDashoffset={progressRingOffset} />
               </Svg>
               <View pointerEvents="none" style={styles.ringCenter}>
                 <Text style={styles.ringBigNumber}>{currentRides}</Text>
@@ -523,7 +551,7 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
               </View>
               <View style={styles.statBox}>
                 <Text style={styles.statBoxLabel}>Vouchers Available</Text>
-                <Text style={[styles.statBoxValue, { color: "#34D399" }]}>
+                <Text style={[styles.statBoxValue, { color: isLight ? "#047857" : "#34D399" }]}>
                   {availableVoucherCount}
                 </Text>
               </View>
@@ -545,19 +573,19 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
           </View>
           </View>
           <View style={styles.vouchersList}>
-            {walletLoading && <View style={styles.walletLoading}><ActivityIndicator size="small" color="#62A0EA" /></View>}
-            {!walletLoading && visibleVouchers.map((voucher, index) => (
+            {walletLoading[voucherTab] && <View style={styles.walletLoading}><ActivityIndicator size="small" color="#62A0EA" /></View>}
+            {!walletLoading[voucherTab] && visibleVouchers.map((voucher, index) => (
               <AnimatedVoucherStub key={`${voucherTab}-${voucher.id}`} voucher={voucher} tab={voucherTab} index={index} />
             ))}
 
-            {!walletLoading && Boolean(walletError) && (
+            {!walletLoading[voucherTab] && Boolean(walletError[voucherTab]) && (
               <View style={styles.walletError}>
                 <Text style={styles.emptyCardText}>We couldn&apos;t load this voucher list.</Text>
                 <TouchableOpacity onPress={() => void fetchWallet(voucherTab, true)} style={styles.walletRetry}><Text style={styles.walletRetryText}>Try again</Text></TouchableOpacity>
               </View>
             )}
 
-            {!walletLoading && !walletError && visibleVouchers.length === 0 && (
+            {!walletLoading[voucherTab] && !walletError[voucherTab] && visibleVouchers.length === 0 && (
               <View style={[styles.emptyCard, voucherTab === "AVAILABLE" && styles.availableEmptyCard]}>
                 {voucherTab === "AVAILABLE" ? (
                   <>
@@ -578,9 +606,9 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
                 )}
               </View>
             )}
-            {!walletError && walletHasMore[voucherTab] && (
-              <TouchableOpacity accessibilityRole="button" disabled={walletLoading} onPress={() => void fetchWallet(voucherTab)} style={styles.walletRetry}>
-                {walletLoading ? <ActivityIndicator size="small" color="#62A0EA" /> : <Text style={styles.walletRetryText}>Load more vouchers</Text>}
+            {!walletError[voucherTab] && walletHasMore[voucherTab] && (
+              <TouchableOpacity accessibilityRole="button" disabled={walletLoading[voucherTab]} onPress={() => void fetchWallet(voucherTab)} style={styles.walletRetry}>
+                {walletLoading[voucherTab] ? <ActivityIndicator size="small" color="#62A0EA" /> : <Text style={styles.walletRetryText}>Load more vouchers</Text>}
               </TouchableOpacity>
             )}
           </View>

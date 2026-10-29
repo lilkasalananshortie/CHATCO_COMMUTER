@@ -163,7 +163,7 @@ export const LegacyLostFoundScreen: React.FC = () => {
     try {
       await commuterService.claimLostItem(claimTargetItem.id, {
         proof_description: proofText.trim(),
-        contact_number: contactNumber.trim(),
+        claimant_contact: contactNumber.trim(),
       });
       Alert.alert(
         "Claim Submitted",

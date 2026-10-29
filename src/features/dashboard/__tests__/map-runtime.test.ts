@@ -7,7 +7,7 @@ import { COMMUTER_ACCOUNT_PATH } from "../commuter-map-pin";
 
 function runtime() {
   const markers: any[] = [];
-  const map = { removeLayer: jest.fn() };
+  const map = { removeLayer: jest.fn(), on: jest.fn(), getBounds: () => ({ contains: () => true }) };
   const window: any = { addEventListener: jest.fn() };
   const element = () => {
     const node: any = { style: {}, className: "", textContent: "", children: [], attributes: {} };

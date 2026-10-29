@@ -7,6 +7,7 @@ import { pickProfilePhoto, profilePhotoForm } from "../profile-photo";
 jest.mock("../ChangeEmailModal", () => ({ ChangeEmailModal: "ChangeEmail" }));
 jest.mock("../../../shared/legal/LegalSupportCard", () => ({ LegalSupportCard: "LegalSupport" }));
 jest.mock("../../../core/theme/ThemeProvider", () => ({ useCommuterTheme: () => ({ appearance: "dark", setAppearance: jest.fn() }) }));
+jest.mock("react-native-svg", () => ({ __esModule: true, default: "Svg", Circle: "Circle", Defs: "Defs", LinearGradient: "LinearGradient", Path: "Path", Rect: "Rect", Stop: "Stop" }));
 let mockStates: any[] = [], mockRefs: any[] = [], mockEffects: Array<() => any> = [];
 let mockStateIndex = 0, mockRefIndex = 0;
 jest.mock("react", () => ({ ...jest.requireActual("react"), useCallback: (fn: unknown) => fn,
@@ -14,7 +15,7 @@ jest.mock("react", () => ({ ...jest.requireActual("react"), useCallback: (fn: un
   useRef: (initial: unknown) => { const i = mockRefIndex++; return mockRefs[i] ?? (mockRefs[i] = { current: initial }); },
   useState: (initial: unknown) => { const i = mockStateIndex++; if (!(i in mockStates)) mockStates[i] = initial; return [mockStates[i], (next: any) => { mockStates[i] = typeof next === "function" ? next(mockStates[i]) : next; }]; },
 }));
-jest.mock("react-native", () => ({ View: "View", Image: "Image", Text: "Text", ScrollView: "ScrollView", TouchableOpacity: "Button", TextInput: "Input", Modal: "Modal", ActivityIndicator: "Spinner", StyleSheet: { create: (s: unknown) => s }, Linking: {}, Alert: { alert: jest.fn() } }));
+jest.mock("react-native", () => ({ Platform: { OS: "ios" }, View: "View", Image: "Image", Text: "Text", ScrollView: "ScrollView", TouchableOpacity: "Button", TextInput: "Input", Modal: "Modal", ActivityIndicator: "Spinner", StyleSheet: { create: (s: unknown) => s }, Linking: {}, Alert: { alert: jest.fn() } }));
 jest.mock("../profile-photo", () => ({ pickProfilePhoto: jest.fn(), profilePhotoForm: jest.fn() }));
 jest.mock("@expo/vector-icons", () => ({ Ionicons: "Icon" }));
 jest.mock("../../discount-application/DiscountApplicationEntry", () => ({ DiscountApplicationEntry: "Application" }));
@@ -33,17 +34,17 @@ beforeEach(() => {
 });
 test("actual password form sends current/new/confirmation and preserves fields for code confirmation", async () => {
   mockStates[12] = "Old-Pass123!"; mockStates[13] = "New-Pass123!"; mockStates[14] = "New-Pass123!";
-  await button("Send Code").props.onPress();
+  await button("Send code").props.onPress();
   const fields = { current_password: "Old-Pass123!", password: "New-Pass123!", password_confirmation: "New-Pass123!" };
   expect(commuterService.requestPasswordChangeCode).toHaveBeenCalledWith(fields);
   mockStates[15] = "123456";
-  await button("Update Password").props.onPress();
+  await button("Update password").props.onPress();
   expect(commuterService.confirmPasswordChange).toHaveBeenCalledWith({ ...fields, code: "123456" });
 });
 test("profile save publishes the genuine returned profile to App", async () => {
   mockStates[4] = true; mockStates[5] = "09189999999";
   (commuterService.updateProfile as jest.Mock).mockResolvedValue({ ...profile, contact_number: "09189999999" });
-  await button("Save Changes").props.onPress();
+  await button("Save").props.onPress();
   expect(saved).toHaveBeenCalledWith(expect.objectContaining({ contact_number: "09189999999", commuter_type: "STUDENT" }));
 });
 test("failed profile fetch shows retry/logout instead of invented identity or contact", async () => {

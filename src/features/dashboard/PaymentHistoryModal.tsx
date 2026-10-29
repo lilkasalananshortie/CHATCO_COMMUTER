@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   Modal,
   TouchableOpacity,
@@ -9,6 +8,7 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from "react-native";
+import { Text } from "../../shared/ui/BrandText";
 import { Ionicons } from "@expo/vector-icons";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import { commuterService } from "../../core/api/commuter-service";
@@ -24,21 +24,21 @@ type TimeFilter = "all" | "today" | "week" | "month";
 
 const PER_PAGE = 20;
 
-function getStatusBadge(status: string) {
+function getStatusBadge(status: string, isLight: boolean) {
   const normalized = (status || "").toLowerCase();
   switch (normalized) {
     case "paid":
-      return { bg: "rgba(16, 185, 129, 0.15)", text: "#34D399", label: "Paid" };
+      return { bg: isLight ? "#DCFCE7" : "rgba(16, 185, 129, 0.15)", text: isLight ? "#047857" : "#34D399", label: "Paid" };
     case "pending":
-      return { bg: "rgba(245, 158, 11, 0.15)", text: "#FBBF24", label: "Pending" };
+      return { bg: isLight ? "#FEF3C7" : "rgba(245, 158, 11, 0.15)", text: isLight ? "#92400E" : "#FBBF24", label: "Pending" };
     case "processing":
-      return { bg: "rgba(98, 160, 234, 0.15)", text: "#62A0EA", label: "Processing" };
+      return { bg: isLight ? "#DBEAFE" : "rgba(98, 160, 234, 0.15)", text: isLight ? "#1A5FB4" : "#62A0EA", label: "Processing" };
     case "failed":
-      return { bg: "rgba(248, 113, 113, 0.15)", text: "#F87171", label: "Failed" };
+      return { bg: isLight ? "#FEE2E2" : "rgba(248, 113, 113, 0.15)", text: isLight ? "#B91C1C" : "#F87171", label: "Failed" };
     case "refunded":
-      return { bg: "rgba(167, 139, 250, 0.15)", text: "#A78BFA", label: "Refunded" };
+      return { bg: isLight ? "#EDE9FE" : "rgba(167, 139, 250, 0.15)", text: isLight ? "#6D28D9" : "#A78BFA", label: "Refunded" };
     default:
-      return { bg: "rgba(255, 255, 255, 0.08)", text: "rgba(255, 255, 255, 0.5)", label: status || "Unknown" };
+      return { bg: isLight ? "#F3F4F6" : "rgba(255, 255, 255, 0.08)", text: isLight ? "#4B5563" : "rgba(255, 255, 255, 0.5)", label: status || "Unknown" };
   }
 }
 
@@ -220,8 +220,7 @@ export const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
               >
                 {history.map((tx) => {
                   const { date, time } = formatDateTime(tx.created_at || tx.paid_at || tx.completed_at);
-                  const badge = getStatusBadge(tx.status || "PAID");
-                  if (isLight) badge.text = ({ Paid: "#047857", Pending: "#92400E", Processing: "#1A5FB4", Failed: "#B91C1C", Refunded: "#6D28D9" } as Record<string, string>)[badge.label] ?? colors.textSecondary;
+                  const badge = getStatusBadge(tx.status || "PAID", isLight);
                   const isExpanded = expandedId === tx.id;
                   const fare = tx.final_amount ?? tx.fare_amount ?? tx.gross_amount ?? 0;
 
