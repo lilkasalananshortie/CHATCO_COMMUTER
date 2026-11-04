@@ -56,6 +56,7 @@ export function FareScreen() {
   const [field, setField] = useState<FareField>("pickup");
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [routePanelOpen, setRoutePanelOpen] = useState(false);
   const active = useRef(true);
   const inFlight = useRef(false);
   const load = async () => {
@@ -95,6 +96,10 @@ export function FareScreen() {
   return <KeyboardAvoidingView style={[s.screen, { backgroundColor: background }]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
     <View style={[s.header, { backgroundColor: surface, borderColor: border }]}>
       <Text accessibilityRole="header" style={[s.title, { color: ink }]}>Fare Calculator</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="Toggle route panel" accessibilityState={{ expanded: routePanelOpen }} onPress={() => setRoutePanelOpen(value => !value)} style={[s.row, { justifyContent: "space-between", paddingVertical: 12 }]}>
+        <Text style={[s.small, { color: ink }]}>Pickup, drop-off & commuter type</Text><AnimatedFareChevron expanded={routePanelOpen} color={muted} />
+      </Pressable>
+      {routePanelOpen && <>
       {(["pickup", "destination"] as const).map((key, index) => {
         const point = key === "pickup" ? from : to;
         const label = key === "pickup" ? "Pickup" : "Drop-off";
@@ -115,6 +120,7 @@ export function FareScreen() {
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.categories}>
         {categories.map(([kind, label]) => <Pressable key={kind} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected: category === kind }} onPress={() => setCategory(kind)} style={[s.category, { backgroundColor: category === kind ? "#1A5FB4" : isLight ? "#F1F5F9" : "#FFFFFF0D" }]}><Text style={[s.small, { color: category === kind ? "white" : muted }]}>{label}</Text></Pressable>)}
       </ScrollView>
+      </>}
     </View>
     <View style={s.searchArea}><View style={[s.search, { borderColor: border, backgroundColor: surface }]}><FareIcon name="search" color={muted} /><TextInput accessibilityLabel="Search barangay or landmark" placeholder="Search barangay or landmark..." placeholderTextColor={muted} value={query} onChangeText={setQuery} style={[s.input, { color: ink }]} /></View><Text style={[s.hint, { color: muted }]}>Tap your {field === "pickup" ? "boarding" : "destination"} Point Area — then select a sub {field === "pickup" ? "pickup" : "drop-off"} point · Auto-opens after selection</Text></View>
     <ScrollView testID="fare-location-list" style={s.list} contentContainerStyle={s.listContent} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={loading} onRefresh={() => void load()} tintColor={accent} />}>

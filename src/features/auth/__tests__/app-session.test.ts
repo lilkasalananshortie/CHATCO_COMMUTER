@@ -49,14 +49,14 @@ function register() { render(); mockEffects[1]!(); return (setSessionEndedHandle
 const user = { id: "owner", role: "COMMUTER", email: "owner@example.test", name: "Owner" };
 beforeEach(() => { mockStates = []; mockRefs = []; jest.clearAllMocks(); render(); mockStates[0] = false; mockStates[1] = false; });
 test("actual App registers expiry handler and clears user/modals/feedback/badges", () => {
-  mockStates[3] = user; mockStates[4] = { first_name: "Owner" }; mockStates[7] = { id: "old-ride" };
-  for (let i = 8; i <= 13; i++) mockStates[i] = true;
-  mockStates[14] = 4; mockStates[15] = 2; mockStates[16] = 3;
+  mockStates[2] = user; mockStates[3] = { first_name: "Owner" }; mockStates[6] = { id: "old-ride" };
+  for (let i = 7; i <= 12; i++) mockStates[i] = true;
+  mockStates[13] = 4; mockStates[14] = 2; mockStates[15] = 3;
   register()();
   expect(render().some(e => e.type === "Login")).toBe(true);
-  expect(mockStates[3]).toBeNull(); expect(mockStates[4]).toBeNull(); expect(mockStates[7]).toBeNull();
-  expect(mockStates.slice(8, 14)).toEqual([false, false, false, false, false, false]);
-  expect(mockStates.slice(14, 17)).toEqual([0, 0, 0]);
+  expect(mockStates[2]).toBeNull(); expect(mockStates[3]).toBeNull(); expect(mockStates[6]).toBeNull();
+  expect(mockStates.slice(7, 13)).toEqual([false, false, false, false, false, false]);
+  expect(mockStates.slice(13, 16)).toEqual([0, 0, 0]);
 });
 test("late profile response from a logged-out login cannot restore account state", async () => {
   let finish!: (value: any) => void;
@@ -65,5 +65,5 @@ test("late profile response from a logged-out login cannot restore account state
   render().find(e => e.type === "Login")!.props.onLoginSuccess(user, "token");
   ended(); finish({ profile: { first_name: "Old account" } });
   await Promise.resolve(); await Promise.resolve();
-  expect(mockStates[3]).toBeNull(); expect(mockStates[4]).toBeNull();
+  expect(mockStates[2]).toBeNull(); expect(mockStates[3]).toBeNull();
 });

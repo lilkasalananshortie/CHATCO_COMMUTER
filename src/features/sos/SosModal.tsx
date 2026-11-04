@@ -11,6 +11,7 @@ import { getSosLocation } from "./location-fix";
 import { Text } from "../../shared/ui/BrandText";
 import { DashboardDialog, useDashboardDialogStyles } from "../dashboard/DashboardDialog";
 import { SosActions } from "./SosActions";
+import { SosSlideToSend } from "../../shared/ui/SosSlideToSend";
 import { commuterService } from "../../core/api/commuter-service";
 import type { SosAlert } from "../../core/domain/types";
 
@@ -39,6 +40,7 @@ export const SosModal: React.FC<SosModalProps> = ({ visible, onClose }) => {
   const [activeSeconds, setActiveSeconds] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [alertId, setAlertId] = useState<string | null>(null);
+  const [emergencyHotline, setEmergencyHotline] = useState<string | null>(null);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -49,6 +51,7 @@ export const SosModal: React.FC<SosModalProps> = ({ visible, onClose }) => {
     setActiveSeconds(0);
     setErrorMessage("");
     setAlertId(null);
+    setEmergencyHotline(null);
     if (pollRef.current) clearInterval(pollRef.current);
     if (timerRef.current) clearInterval(timerRef.current);
   };
@@ -140,6 +143,7 @@ export const SosModal: React.FC<SosModalProps> = ({ visible, onClose }) => {
     } catch (err: any) {
       if (generation.current !== attempt) return;
       setStatus("error");
+      setEmergencyHotline(err?.response?.data?.emergency_hotline ?? null);
       const rawMsg = String(err?.response?.data?.message || err?.message || "");
       if (err?.status === 429 || rawMsg.toLowerCase().includes("too many") || rawMsg.toLowerCase().includes("recently") || rawMsg.toLowerCase().includes("slow down")) {
         setErrorMessage("You have already sent an SOS recently. Please wait before trying again.");
@@ -211,8 +215,8 @@ export const SosModal: React.FC<SosModalProps> = ({ visible, onClose }) => {
       <Text style={[D.body, D.red, { fontWeight: "600" }]}>Only use this in actual emergencies.</Text>
       <View style={D.row}>
         <TouchableOpacity accessibilityRole="button" onPress={onClose} style={[D.button, D.secondary]}><Text style={D.onSecondary}>Cancel</Text></TouchableOpacity>
-        <TouchableOpacity accessibilityRole="button" onPress={handleActivate} style={[D.button, D.danger]}><WebIcon name="triangle-alert" size={16} color="#FFFFFF" /><Text style={D.onPrimary}>Send SOS</Text></TouchableOpacity>
       </View>
+      <SosSlideToSend onSend={handleActivate} />
     </>}
     {(status === "locating" || status === "sending") && <>
       <WebSpinner size={36} color={D.red.color} />
@@ -245,6 +249,7 @@ export const SosModal: React.FC<SosModalProps> = ({ visible, onClose }) => {
         <TouchableOpacity accessibilityRole="button" onPress={() => setStatus("confirming")} style={[D.button, D.danger]}><Text style={D.onPrimary}>Try again</Text></TouchableOpacity>
       </View>
       <Text style={D.label}>Emergency calls</Text>
+      {emergencyHotline && <TouchableOpacity accessibilityRole="button" onPress={() => void handleCallHotline(emergencyHotline)} style={[D.button, D.secondary]}><Text style={D.onSecondary}>Call CHATCO: {emergencyHotline}</Text></TouchableOpacity>}
       <View style={D.row}>
         <TouchableOpacity accessibilityRole="button" onPress={() => void handleCallHotline("911")} style={[D.button, D.secondary]}><Text style={D.onSecondary}>PNP / 911</Text></TouchableOpacity>
         <TouchableOpacity accessibilityRole="button" onPress={() => void handleCallHotline("160")} style={[D.button, D.secondary]}><Text style={D.onSecondary}>BFP Fire 160</Text></TouchableOpacity>

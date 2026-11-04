@@ -32,9 +32,27 @@ function updateUserDirection() {
   userDirection.style.display = 'flex';
 }
 map.on('move zoom', updateUserDirection);
-function markerIcon(label, className, size) {
-  var node = document.createElement('div'); node.className = className; node.textContent = label;
-  return L.divIcon({className: '', html: node, iconSize: [size,size], iconAnchor: [size/2,size/2]});
+function markerIcon(capacity, isWithinRadius) {
+  var colors = { AVAILABLE: '#22c55e', STANDING: '#eab308', FULL: '#ef4444', LAST_TRIP: '#ef4444' };
+  var color = colors[String(capacity || 'AVAILABLE').toUpperCase()] || colors.AVAILABLE;
+  var node = document.createElement('div');
+  node.className = 'vehicle-marker';
+  node.style.borderColor = color;
+  var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', '24'); svg.setAttribute('height', '24'); svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', color); svg.setAttribute('aria-hidden', 'true');
+  var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', 'M19,13V7H20V4H4V7H5V13H2C2,13.93 2.5,14.71 3.5,14.93V20A1,1 0 0,0 4.5,21H5.5A1,1 0 0,0 6.5,20V19H17.5V20A1,1 0 0,0 18.5,21H19.5A1,1 0 0,0 20.5,20V14.93C21.5,14.7 22,13.93 22,13H19M8,15A1.5,1.5 0 0,1 6.5,13.5A1.5,1.5 0 0,1 8,12A1.5,1.5 0 0,1 9.5,13.5A1.5,1.5 0 0,1 8,15M16,15A1.5,1.5 0 0,1 14.5,13.5A1.5,1.5 0 0,1 16,12A1.5,1.5 0 0,1 17.5,13.5A1.5,1.5 0 0,1 16,15M17.5,10.5C15.92,10.18 14.03,10 12,10C9.97,10 8,10.18 6.5,10.5V7H17.5V10.5Z');
+  svg.appendChild(path); node.appendChild(svg);
+  if (isWithinRadius) {
+    var dot = document.createElement('span'); dot.className = 'vehicle-marker-in-range'; node.appendChild(dot);
+  }
+  return L.divIcon({className: '', html: node, iconSize: [44,44], iconAnchor: [22,22], popupAnchor: [0,-25]});
+}
+function distanceMeters(a, b) {
+  var rad = Math.PI / 180, dLat = (b[0] - a[0]) * rad, dLng = (b[1] - a[1]) * rad;
+  var h = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(a[0] * rad) * Math.cos(b[0] * rad) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  return 12742000 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 function accountSvg(size, className) {
   var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -56,13 +74,29 @@ function currentLocationDetails() {
   var title = document.createElement('div'); title.className = 'commuter-popup-title'; title.textContent = 'You are here'; header.appendChild(title); panel.appendChild(header);
   var status = document.createElement('span'); status.className = 'commuter-popup-status'; status.textContent = 'Live GPS'; panel.appendChild(status); return panel;
 }
-function unitDetails(v) {
+function unitDetails(v, userLocation) {
   var node = document.createElement('div'); node.style.minWidth = '160px';
-  [v.unitNumber, v.plateNumber, v.driverName && 'Driver: ' + v.driverName,
+  var capacityLabel = v.capacityStatus === 'FULL' || v.capacityStatus === 'Full' ? 'Full'
+    : v.capacityStatus === 'STANDING' || v.capacityStatus === 'Standing' ? 'Standing only' : 'Seats available';
+  [v.plateNumber || v.unitNumber, capacityLabel, v.routeName && 'Route: ' + v.routeName,
+   v.driverName && 'Driver: ' + v.driverName,
    v.conductorName && 'Conductor: ' + v.conductorName,
    v.availableSeats != null && 'Available seats: ' + v.availableSeats].forEach(function(value) {
     if (!value) return; var row = document.createElement('div'); row.textContent = String(value); node.appendChild(row);
   });
+  if (userLocation && coordinates(userLocation.latitude,userLocation.longitude) && coordinates(v.lat,v.lng)) {
+    var distance = distanceMeters([userLocation.latitude,userLocation.longitude],[v.lat,v.lng]);
+    var distanceLabel = distance < 1000 ? Math.round(distance) + ' m' : (distance / 1000).toFixed(1) + ' km';
+    var distanceRow = document.createElement('div'); distanceRow.textContent = 'Distance: ' + distanceLabel; node.appendChild(distanceRow);
+    if (distance <= 1000) {
+      var eta = Math.max(1, Math.round(distance / (25000 / 60)));
+      var etaRow = document.createElement('div'); etaRow.textContent = 'ETA: ~' + eta + ' min'; node.appendChild(etaRow);
+    } else if (v.capacityStatus === 'FULL' || v.capacityStatus === 'Full') {
+      var note = document.createElement('div'); note.textContent = 'Not accepting passengers'; node.appendChild(note);
+    } else {
+      var note = document.createElement('div'); note.textContent = 'Outside pickup radius'; node.appendChild(note);
+    }
+  }
   return node;
 }
 window.chatcoUpdate = function(state) {
@@ -73,10 +107,15 @@ window.chatcoUpdate = function(state) {
     var key = String(v.id); keep[key] = true;
     var marker = vehicleMarkers[key];
     if (!marker) {
-      marker = L.marker([v.lat,v.lng], {icon: markerIcon(v.unitNumber || 'J', 'vehicle-marker',32)}).addTo(map);
-      marker.bindPopup(unitDetails(v), {autoClose:false,closeOnClick:false}); vehicleMarkers[key] = marker;
+      var user = state.userLocation;
+      var inRange = user && coordinates(user.latitude,user.longitude) && distanceMeters([user.latitude,user.longitude],[v.lat,v.lng]) <= 1000;
+      marker = L.marker([v.lat,v.lng], {icon: markerIcon(v.capacityStatus, inRange)}).addTo(map);
+      marker.bindPopup(unitDetails(v,state.userLocation), {autoClose:false,closeOnClick:false}); vehicleMarkers[key] = marker;
     } else {
-      marker.setLatLng([v.lat,v.lng]); marker.setPopupContent(unitDetails(v));
+      var user = state.userLocation;
+      var inRange = user && coordinates(user.latitude,user.longitude) && distanceMeters([user.latitude,user.longitude],[v.lat,v.lng]) <= 1000;
+      marker.setIcon(markerIcon(v.capacityStatus, inRange));
+      marker.setLatLng([v.lat,v.lng]); marker.setPopupContent(unitDetails(v,state.userLocation));
     }
   });
   Object.keys(vehicleMarkers).forEach(function(key) { if (!keep[key]) { map.removeLayer(vehicleMarkers[key]); delete vehicleMarkers[key]; } });

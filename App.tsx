@@ -16,7 +16,6 @@ import type { User, CommuterProfile, CommuterTab, Trip } from "./src/core/domain
 import { CommuterBottomNav } from "./src/shared/ui/CommuterBottomNav";
 
 // Screens (6 commuter tabs + Onboarding + Splash)
-import { SplashScreen } from "./src/features/splash/SplashScreen";
 import { OnboardingScreen, ONBOARDING_STORAGE_KEY } from "./src/features/onboarding/OnboardingScreen";
 import { LoginScreen } from "./src/features/auth/LoginScreen";
 import { RegisterScreen } from "./src/features/auth/RegisterScreen";
@@ -64,7 +63,6 @@ function ThemeStatusBar() {
 function MainApp() {
   const { colors } = useCommuterTheme();
   const styles = appStyles(colors);
-  const [showSplash, setShowSplash] = useState(true);
   const [initializing, setInitializing] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [user, setUser] = useState<User | null>(null);
@@ -241,11 +239,6 @@ function MainApp() {
   };
 
   const insets = useSafeAreaInsets();
-
-  // Lively animated splash screen on startup
-  if (showSplash) {
-    return <SplashScreen onFinish={() => setShowSplash(false)} />;
-  }
 
   if (initializing) {
     return (

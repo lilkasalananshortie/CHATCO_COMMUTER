@@ -15,7 +15,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { commuterColors } from "../../core/theme/colors";
 import { authService } from "../../core/api/auth-service";
 import type { User } from "../../core/domain/types";
-import { LoginBoardingAnimation } from "./LoginBoardingAnimation";
 import { Mascot } from "../../shared/ui/Mascot";
 import { MascotMessage } from "../../shared/ui/MascotMessage";
 import { getMascotErrorState, shouldIllustrateError } from "../../shared/ui/mascot-error";
@@ -42,12 +41,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [focusedField, setFocusedField] = useState<"identifier" | "password" | null>(null);
   const [loading, setLoading] = useState(false);
-  const [isTakingOff, setIsTakingOff] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [illustratedError, setIllustratedError] = useState<ReturnType<typeof getMascotErrorState> | null>(null);
   const [showRecovery, setShowRecovery] = useState(false);
 
-  const pendingAuthRef = useRef<{ user: User; token: string } | null>(null);
   const submitting = useRef(false);
   const mounted = useRef(true);
   useEffect(() => {
@@ -55,7 +52,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     return () => { mounted.current = false; };
   }, []);
 
-  const canSubmit = !loading && !isTakingOff && identifier.trim().length > 0 && password.length > 0;
+  const canSubmit = !loading && identifier.trim().length > 0 && password.length > 0;
 
   const handleLogin = async () => {
     if (submitting.current) return;
@@ -80,9 +77,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       });
 
       if (!mounted.current) return;
-      // Boarding is cosmetic and starts only after server authentication succeeds.
-      pendingAuthRef.current = { user: response.user, token: response.token };
-      setIsTakingOff(true);
+      onLoginSuccess(response.user, response.token);
     } catch (err: any) {
       if (!mounted.current) return;
       submitting.current = false;
@@ -96,19 +91,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     }
   };
 
-  const handleTakeoffComplete = () => {
-    if (pendingAuthRef.current) {
-      const authenticated = pendingAuthRef.current;
-      pendingAuthRef.current = null;
-      onLoginSuccess(authenticated.user, authenticated.token);
-    }
-  };
-
   if (showRecovery) {
     return <ForgotPasswordScreen onBack={() => setShowRecovery(false)} />;
   }
-
-  if (isTakingOff) return <LoginBoardingAnimation onComplete={handleTakeoffComplete} />;
 
   return (
     <View style={styles.outerContainer}>
@@ -233,7 +218,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
           <TouchableOpacity
             onPress={() => setShowRecovery(true)}
-            disabled={loading || isTakingOff}
+            disabled={loading}
             style={styles.forgotLink}
             accessibilityRole="button"
           >
@@ -243,20 +228,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           {/* Sign In Button */}
           <TouchableOpacity
             onPress={handleLogin}
-            disabled={!canSubmit || isTakingOff}
+            disabled={!canSubmit}
             activeOpacity={0.85}
             style={[
               styles.submitButton,
-              (!canSubmit || isTakingOff) && styles.submitButtonDisabled,
-              isTakingOff && styles.submitButtonDeparting,
+              !canSubmit && styles.submitButtonDisabled,
             ]}
           >
-            {isTakingOff ? (
-              <View style={styles.departingRow}>
-                <Ionicons name="checkmark-circle" size={18} color="#34D399" style={{ marginRight: 6 }} />
-                <Text style={styles.submitButtonText}>All Aboard!</Text>
-              </View>
-            ) : loading ? (
+            {loading ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
               <Text style={styles.submitButtonText}>Sign in</Text>

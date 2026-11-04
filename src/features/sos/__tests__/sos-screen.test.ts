@@ -15,11 +15,12 @@ jest.mock("@expo/vector-icons", () => ({ Ionicons: "Icon" }));
 jest.mock("react-native-svg", () => ({ __esModule: true, default: "Svg", Path: "Path", Circle: "Circle", Line: "Line", Polyline: "Polyline", Rect: "Rect" }));
 jest.mock("../../dashboard/DashboardDialog", () => ({ DashboardDialog: "Dialog", useDashboardDialogStyles: () => ({ red: { color: "red" }, blue: { color: "blue" } }) }));
 jest.mock("../location-fix", () => ({ getSosLocation: jest.fn() }));
+jest.mock("../../../shared/ui/SosSlideToSend", () => ({ SosSlideToSend: "SosSlide" }));
 jest.mock("../../../core/api/commuter-service", () => ({ commuterService: { triggerSos: jest.fn(), getSosStatus: jest.fn(), stopSos: jest.fn() } }));
 type Element = React.ReactElement<Record<string, any>>;
 function walk(node: any): Element[] { if (Array.isArray(node)) return node.flatMap(walk); if (!React.isValidElement(node)) return []; const e = node as Element; return [e, ...walk(e.props.children)]; }
 function render(visible = true) { mockStateIndex = 0; mockRefIndex = 0; mockEffects = []; return walk(SosModal({ visible, onClose: jest.fn() })); }
-function send() { return render().find(e => e.type === "Button" && walk(e).some(child => child.props.children === "Send SOS"))!.props.onPress; }
+function send() { return render().find(e => e.type === "SosSlide")!.props.onSend; }
 beforeEach(() => { mockStates = []; mockRefs = []; jest.resetAllMocks(); });
 test("GPS failure never calls the SOS API and offers retry/call controls", async () => {
   (getSosLocation as jest.Mock).mockRejectedValue(new Error("Location unavailable. Retry or call."));
@@ -28,6 +29,15 @@ test("GPS failure never calls the SOS API and offers retry/call controls", async
   const tree = render();
   expect(tree.some(e => e.props.children === "Try again")).toBe(true);
   expect(tree.some(e => e.props.children === "PNP / 911")).toBe(true);
+});
+
+test("outside-radius rejection shows the server message and configured hotline", async () => {
+  (getSosLocation as jest.Mock).mockResolvedValue({ latitude: 14.7, longitude: 120.9 });
+  (commuterService.triggerSos as jest.Mock).mockRejectedValue({ status: 422, response: { data: { error: "outside_radius", message: "SOS is only available near an on-duty CHATCO jeepney.", emergency_hotline: "09170000000" } } });
+  await send()();
+  const tree = render();
+  expect(tree.some(e => e.props.children === "SOS is only available near an on-duty CHATCO jeepney.")).toBe(true);
+  expect(tree.some(e => e.props.onPress && walk(e).some(child => Array.isArray(child.props.children) && child.props.children.includes("09170000000")))).toBe(true);
 });
 test("valid fix sends actual coordinates once despite duplicate activation", async () => {
   (getSosLocation as jest.Mock).mockResolvedValue({ latitude: 14.7, longitude: 120.9 });

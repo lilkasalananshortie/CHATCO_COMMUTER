@@ -42,6 +42,7 @@ const COMMUTER_TYPE_OPTIONS: { label: string; value: AppliedType; description: s
 ];
 
 const SUFFIX_OPTIONS = ["None", "Jr.", "Sr.", "II", "III", "IV"];
+const MAX_ID_IMAGE_BYTES = 3 * 1024 * 1024;
 
 const ID_UPLOAD_LABELS: Record<AppliedType, string> = {
   REGULAR: "Upload Valid Government ID *",
@@ -127,6 +128,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
   const styles = baseStyles;
   const { width: windowWidth } = useWindowDimensions();
   const isTablet = windowWidth >= 768;
+  const isCompact = windowWidth < 375;
 
   const [step, setStep] = useState(1);
   const reduceMotion = useReducedMotion();
@@ -378,8 +380,8 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
         input.onchange = (e: any) => {
           const file = e.target?.files?.[0];
           if (file) {
-            if (file.size > 5 * 1024 * 1024) {
-              setErrorMessage("That image is over 5MB. Please choose an image under 5MB.");
+            if (file.size > MAX_ID_IMAGE_BYTES) {
+              setErrorMessage("That image is over 3MB. Please choose an image under 3MB.");
               return;
             }
             setIdFileName(file.name);
@@ -404,8 +406,8 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
         });
         if (!result.canceled && result.assets && result.assets.length > 0 && result.assets[0]) {
           const asset = result.assets[0];
-          if (asset.fileSize && asset.fileSize > 5 * 1024 * 1024) {
-            setErrorMessage("That image is over 5MB. Please choose an image under 5MB.");
+          if (asset.fileSize && asset.fileSize > MAX_ID_IMAGE_BYTES) {
+            setErrorMessage("That image is over 3MB. Please choose an image under 3MB.");
             return;
           }
           const filename = asset.fileName || `id_camera_${Date.now()}.jpg`;
@@ -430,8 +432,8 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
         });
         if (!result.canceled && result.assets && result.assets.length > 0 && result.assets[0]) {
           const asset = result.assets[0];
-          if (asset.fileSize && asset.fileSize > 5 * 1024 * 1024) {
-            setErrorMessage("That image is over 5MB. Please choose an image under 5MB.");
+          if (asset.fileSize && asset.fileSize > MAX_ID_IMAGE_BYTES) {
+            setErrorMessage("That image is over 3MB. Please choose an image under 3MB.");
             return;
           }
           const filename = asset.fileName || `id_upload_${Date.now()}.jpg`;
@@ -504,7 +506,11 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
             rawUri.startsWith("file://") || rawUri.startsWith("content://")
               ? rawUri
               : `file://${rawUri}`;
-          await authService.register({ fileUri, parameters });
+          await authService.register({
+            fileUri,
+            fileMimeType: typeof idFileBlob.type === "string" ? idFileBlob.type : undefined,
+            parameters,
+          });
         } else {
           await authService.register({ parameters });
         }
@@ -630,6 +636,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
         <ScrollView
           contentContainerStyle={[
             styles.scrollContent,
+            isCompact && styles.scrollContentCompact,
             isTablet && styles.scrollContentTablet,
           ]}
           keyboardShouldPersistTaps="handled"
@@ -719,7 +726,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
             </View>
 
             {/* Main Form Surface Card */}
-            <Animated.View style={[styles.card, { opacity: stepOpacity, transform: [{ translateX: stepTranslateX }] }]}>
+            <Animated.View style={[styles.card, isCompact && styles.cardCompact, { opacity: stepOpacity, transform: [{ translateX: stepTranslateX }] }]}>
               {/* Step Header */}
               <View style={styles.stepTitleSection}>
                 <Text style={styles.stepTitle}>{STEP_COPY[step]?.title ?? ""}</Text>
@@ -792,8 +799,8 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                   </View>
 
                   {/* Surname & Suffix Row */}
-                  <View style={styles.nameRow}>
-                    <View style={[styles.fieldGroup, { flex: 2, marginRight: 8 }]}>
+                  <View style={[styles.nameRow, isCompact && styles.nameRowCompact]}>
+                    <View style={[styles.fieldGroup, { flex: isCompact ? undefined : 2, width: isCompact ? "100%" : undefined, marginRight: isCompact ? 0 : 8 }]}>
                       <Text style={styles.label}>Surname *</Text>
                       <View
                         style={[
@@ -818,7 +825,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                       {fieldErrors.surname && <Text style={styles.errorText}>{fieldErrors.surname}</Text>}
                     </View>
 
-                    <View style={[styles.fieldGroup, { flex: 1.2 }]}>
+                    <View style={[styles.fieldGroup, { flex: isCompact ? undefined : 1.2, width: isCompact ? "100%" : undefined }]}>
                       <Text style={styles.label}>Suffix</Text>
                       <View style={styles.suffixSelector}>
                         {SUFFIX_OPTIONS.map((sfx) => (
@@ -1047,7 +1054,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                             Tap to attach your valid ID
                           </Text>
                           <Text style={styles.idUploadSub}>
-                            Take photo or upload image (JPG, PNG, WebP • max 5MB)
+                            Take photo or upload image (JPG, PNG, WebP • max 3MB)
                           </Text>
                         </View>
                       )}
@@ -1434,6 +1441,9 @@ const baseStyles = StyleSheet.create({
     paddingBottom: 40,
     flexGrow: 1,
   },
+  scrollContentCompact: {
+    paddingHorizontal: 12,
+  },
   scrollContentTablet: {
     alignItems: "center",
   },
@@ -1585,6 +1595,9 @@ const baseStyles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 6,
   },
+  cardCompact: {
+    padding: 16,
+  },
   stepTitleSection: {
     marginBottom: 18,
   },
@@ -1706,6 +1719,9 @@ const baseStyles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
   },
+  nameRowCompact: {
+    flexDirection: "column",
+  },
   suffixSelector: {
     flexDirection: "row",
     gap: 4,
@@ -1736,10 +1752,12 @@ const baseStyles = StyleSheet.create({
   // Gender Options
   optionsRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
   },
   optionPill: {
     flex: 1,
+    minWidth: 72,
     paddingVertical: 10,
     borderRadius: 12,
     borderWidth: 1.5,

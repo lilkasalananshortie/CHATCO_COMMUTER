@@ -17,10 +17,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Location from "expo-location";
 import { commuterColors } from "../../core/theme/colors";
 import { CommuterLiveMap } from "./CommuterLiveMap";
+import { NearbyUnitsCard } from "./NearbyUnitsCard";
 import { PaymentHistoryModal } from "./PaymentHistoryModal";
 import { commuterService } from "../../core/api/commuter-service";
 import type { HailRequest, VehicleLocation, Trip, CommuterProfile, User } from "../../core/domain/types";
-import { distanceMeters, PICKUP_RADIUS_METERS } from "./route-data";
+import { getNearbyHailableVehicles } from "./nearby-hailing";
 import { MascotMessage } from "../../shared/ui/MascotMessage";
 import { getMascotErrorState } from "../../shared/ui/mascot-error";
 import { hailIsTerminal, hailSecondsRemaining } from "./hail-state";
@@ -263,39 +264,11 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     return () => clearInterval(interval);
   }, [fetchVehicles]);
 
-  // Find nearest vehicle within 1km radius
-  const nearestVehicleInfo = useMemo(() => {
-    if (!userLocation || vehicles.length === 0) return null;
-    let minDistance = Infinity;
-    let nearest: VehicleLocation | null = null;
-
-    for (const v of vehicles) {
-      const vLat = Number(v.latitude ?? (v as any).lat ?? 0);
-      const vLng = Number(v.longitude ?? (v as any).lng ?? 0);
-      if (!Number.isFinite(vLat) || !Number.isFinite(vLng) || (vLat === 0 && vLng === 0)) {
-        continue;
-      }
-      const dist = distanceMeters(userLocation, {
-        latitude: vLat,
-        longitude: vLng,
-      });
-      if (!isNaN(dist) && dist < minDistance) {
-        minDistance = dist;
-        nearest = v;
-      }
-    }
-
-    if (!nearest) return null;
-    const isNearby = minDistance <= PICKUP_RADIUS_METERS;
-    const etaMinutes = Math.max(1, Math.round(minDistance / 416));
-
-    return {
-      vehicle: nearest,
-      distanceMeters: Math.round(minDistance),
-      isNearby,
-      etaMinutes,
-    };
-  }, [userLocation, vehicles]);
+  const nearbyHailableVehicles = useMemo(
+    () => getNearbyHailableVehicles(vehicles, userLocation),
+    [userLocation, vehicles],
+  );
+  const nearestVehicleInfo = nearbyHailableVehicles[0] ?? null;
 
   const isUnitFull =
     nearestVehicleInfo?.vehicle?.capacity_status === "FULL" ||
@@ -306,11 +279,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     (nearestVehicleInfo?.vehicle as any)?.isOnBreak
   );
 
-  const canHail =
-    gpsStatus === "available" &&
-    nearestVehicleInfo?.isNearby === true &&
-    !isUnitFull &&
-    !isUnitOnBreak;
+  const canHail = gpsStatus === "available" && nearestVehicleInfo !== null;
 
   // Capacity alone does not cancel a server-owned hail.
   useEffect(() => {
@@ -631,30 +600,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
 
 
-            {gpsStatus === "available" && canHail && nearestVehicleInfo && (
-              <View style={styles.etaCard}>
-                <View style={styles.etaTopRow}>
-                  <View style={styles.etaLiveIndicator}>
-                    <View style={styles.etaPulseDot} />
-                    <Text style={styles.etaLiveText}>LIVE</Text>
-                  </View>
-                  <Text style={styles.etaMinutesText}>~{nearestVehicleInfo.etaMinutes} min</Text>
-                </View>
-                <View style={styles.etaBottomRow}>
-                  <Text style={styles.etaPlateText}>
-                    {nearestVehicleInfo.vehicle.plate_number || nearestVehicleInfo.vehicle.unit_number || "JEEP"}
-                  </Text>
-                  <Text style={styles.etaDistanceText}>
-                    {(nearestVehicleInfo.distanceMeters / 1000).toFixed(1)} km away
-                  </Text>
-                </View>
-                {vehicles.length > 1 && (
-                  <Text style={styles.etaExtraUnits}>
-                    +{vehicles.length - 1} more vehicle{vehicles.length > 2 ? "s" : ""} in range
-                  </Text>
-                )}
-              </View>
-            )}
+            {gpsStatus === "available" && <NearbyUnitsCard vehicles={nearbyHailableVehicles} />}
 
             {hailNotification && (
               <View style={[styles.statusBox, styles.statusBoxOutside, { borderColor: "#F59E0B" }]}>
@@ -843,7 +789,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
               ? "Locating..."
               : gpsStatus === "denied"
               ? "No GPS"
-              : "Too Far"}
+              : "No nearby units"}
           </Text>
         </View>
 

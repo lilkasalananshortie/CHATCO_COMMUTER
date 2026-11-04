@@ -564,15 +564,15 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
           <View style={styles.voucherHeaderRow}>
           <Text style={styles.voucherSectionTitle}>My vouchers</Text>
           <View accessibilityRole="tablist" accessibilityLabel="Voucher status" style={styles.voucherTabs}>
-            {(["AVAILABLE", "USED", "EXPIRED"] as const).map(tab => <TouchableOpacity key={tab}
+            {(["AVAILABLE", "EXPIRED"] as const).map(tab => <TouchableOpacity key={tab}
               accessibilityRole="tab" accessibilityState={{ selected: tab === voucherTab }}
               onPress={() => setVoucherTab(tab)}
               style={[styles.voucherTab, tab === voucherTab && styles.voucherTabActive]}>
-              <Text style={[styles.voucherTabText, tab === voucherTab && styles.voucherTabTextActive]}>{tab === "AVAILABLE" ? "Available" : tab === "USED" ? "Used" : "Expired"}{tab === "AVAILABLE" && availableVoucherCount > 0 ? ` ${availableVoucherCount}` : ""}</Text>
+              <Text style={[styles.voucherTabText, tab === voucherTab && styles.voucherTabTextActive]}>{tab === "AVAILABLE" ? "Available" : "Expired"}{tab === "AVAILABLE" && availableVoucherCount > 0 ? ` ${availableVoucherCount}` : ""}</Text>
             </TouchableOpacity>)}
           </View>
           </View>
-          <View style={styles.vouchersList}>
+          <ScrollView nestedScrollEnabled style={{ maxHeight: 420 }} contentContainerStyle={styles.vouchersList} accessibilityLabel="Voucher list">
             {walletLoading[voucherTab] && <View style={styles.walletLoading}><ActivityIndicator size="small" color="#62A0EA" /></View>}
             {!walletLoading[voucherTab] && visibleVouchers.map((voucher, index) => (
               <AnimatedVoucherStub key={`${voucherTab}-${voucher.id}`} voucher={voucher} tab={voucherTab} index={index} />
@@ -611,7 +611,7 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
                 {walletLoading[voucherTab] ? <ActivityIndicator size="small" color="#62A0EA" /> : <Text style={styles.walletRetryText}>Load more vouchers</Text>}
               </TouchableOpacity>
             )}
-          </View>
+          </ScrollView>
         </View>
         </>}
       </ScrollView>

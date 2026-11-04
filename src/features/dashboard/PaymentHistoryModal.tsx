@@ -7,6 +7,7 @@ import {
   ScrollView,
   ActivityIndicator,
   RefreshControl,
+  TextInput,
 } from "react-native";
 import { Text } from "../../shared/ui/BrandText";
 import { Ionicons } from "@expo/vector-icons";
@@ -68,6 +69,9 @@ export const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
   const [summary, setSummary] = useState<{ total_spent: number; ride_count: number; average_fare: number } | null>(null);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [dateRange, setDateRange] = useState({ from: "", to: "" });
 
   const requestIdRef = useRef(0);
 
@@ -84,7 +88,7 @@ export const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
       setError(null);
 
       try {
-        const result = await commuterService.getPaymentHistory(target, PER_PAGE, filter);
+        const result = await commuterService.getPaymentHistory(target, PER_PAGE, filter, dateRange);
         if (requestId !== requestIdRef.current) return;
         setHistory((prev) => (target === 1 ? result.items : [...prev, ...result.items]));
         setPage(result.page);
@@ -100,7 +104,7 @@ export const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
         }
       }
     },
-    []
+    [dateRange.from, dateRange.to]
   );
 
   useEffect(() => {
@@ -163,7 +167,7 @@ export const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
             ).map((tab) => (
               <TouchableOpacity
                 key={tab.key}
-                onPress={() => setTimeFilter(tab.key)}
+                onPress={() => { setTimeFilter(tab.key); setDateFrom(""); setDateTo(""); setDateRange({ from: "", to: "" }); }}
                 style={[
                   styles.filterTab,
                   timeFilter === tab.key && styles.filterTabActive,
@@ -182,6 +186,17 @@ export const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
             ))}
           </View>
 
+          <View style={{ paddingHorizontal: 16, paddingBottom: 12, gap: 8 }}>
+            <Text style={{ color: colors.textSecondary, fontSize: 12 }}>Choose a date or date range (YYYY-MM-DD)</Text>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <TextInput accessibilityLabel="Payment history start date" placeholder="From: YYYY-MM-DD" placeholderTextColor={colors.textSecondary} value={dateFrom} onChangeText={setDateFrom} maxLength={10} autoCapitalize="none" style={{ flex: 1, color: colors.textPrimary, borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 10 }} />
+              <TextInput accessibilityLabel="Payment history end date" placeholder="To: YYYY-MM-DD" placeholderTextColor={colors.textSecondary} value={dateTo} onChangeText={setDateTo} maxLength={10} autoCapitalize="none" style={{ flex: 1, color: colors.textPrimary, borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 10 }} />
+            </View>
+            <View style={{ flexDirection: "row", gap: 16 }}>
+              <TouchableOpacity accessibilityRole="button" onPress={() => setDateRange({ from: dateFrom.trim(), to: dateTo.trim() })}><Text style={{ color: colors.primary, fontWeight: "600" }}>Apply dates</Text></TouchableOpacity>
+              <TouchableOpacity accessibilityRole="button" onPress={() => { setDateFrom(""); setDateTo(""); setDateRange({ from: "", to: "" }); setTimeFilter("all"); }}><Text style={{ color: colors.textSecondary }}>Clear dates</Text></TouchableOpacity>
+            </View>
+          </View>
           {/* List Area */}
           <View style={{ flex: 1 }}>
             {isLoading ? (
@@ -295,6 +310,12 @@ export const PaymentHistoryModal: React.FC<PaymentHistoryModalProps> = ({
                               {tx.payment_method || "GCash"}
                             </Text>
                           </View>
+                          {tx.voucher && <View style={styles.detailRow}><Text style={styles.detailLabel}>Voucher used</Text><Text style={styles.detailValue}>{tx.voucher.type === "DISCOUNT" ? `₱${Number(tx.voucher.amount ?? 0).toFixed(2)} discount` : "Free ride"}</Text></View>}
+                          {tx.payment_group && <View style={{ gap: 8, paddingVertical: 8 }}>
+                            <Text style={styles.detailValue}>Group: {tx.payment_group.reference_number} · {tx.payment_group.passenger_count} passengers</Text>
+                            <Text style={styles.detailLabel}>Group total: ₱{tx.payment_group.total_amount.toFixed(2)}</Text>
+                            {tx.payment_group.transactions.map(seat => <View key={seat.transaction_id} style={styles.detailRow}><Text style={styles.detailLabel}>{seat.transaction_id === tx.id ? "You" : seat.passenger_name || seat.passenger_role}</Text><Text style={styles.detailValue}>₱{seat.final_amount.toFixed(2)}{seat.voucher ? seat.voucher.type === "DISCOUNT" ? " · Discount voucher" : " · Free ride" : ""}</Text></View>)}
+                          </View>}
                           <View style={styles.detailRow}>
                             <Text style={styles.detailLabel}>Ref ID</Text>
                             <Text style={styles.detailValueMono} numberOfLines={1}>

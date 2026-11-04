@@ -35,10 +35,17 @@ test("a unit leaving removes only its marker; invalid coordinates are rejected",
   expect(r.L.marker).toHaveBeenCalledTimes(1); expect(r.map.removeLayer).toHaveBeenCalledWith(r.markers[0]);
 });
 test("backend labels use text nodes instead of interpolated executable markup", () => {
-  const r = runtime(); r.update({ vehicles: [{ ...unit, unitNumber: '<img src=x onerror="bad()">' }] });
-  const icon = r.L.marker.mock.calls[0] as unknown as any[];
-  expect(icon[1].icon.html.textContent).toContain("<img");
+  const r = runtime(); r.update({ vehicles: [{ ...unit, plateNumber: '<img src=x onerror="bad()">' }] });
+  const popup = r.markers[0].bindPopup.mock.calls[0][0];
+  expect(text(popup)).toContain('<img src=x onerror="bad()">');
   expect(mapUpdateScript({ value: "</script>" })).not.toContain("</script>");
+});
+test("nearby unit popup includes distance and estimated arrival", () => {
+  const r = runtime();
+  r.update({ vehicles: [unit], userLocation: { latitude: unit.lat, longitude: unit.lng } });
+  const popup = r.markers[0].bindPopup.mock.calls[0][0];
+  expect(text(popup)).toContain("Distance: 0 m");
+  expect(text(popup)).toContain("ETA: ~1 min");
 });
 test("profile masks email for display without changing the source address", () => {
   const email = "commuter@example.test";

@@ -49,7 +49,8 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
   const mapState = useMemo(() => ({ vehicles: vehicles.map(v => ({
     id: v.vehicle_id || v.id || v.unit_number, unitNumber: v.unit_number,
     plateNumber: v.plate_number, lat: Number(v.latitude), lng: Number(v.longitude),
-    availableSeats: v.available_seats, driverName: v.driver_name, conductorName: v.conductor_name,
+    availableSeats: v.available_seats, capacityStatus: v.capacity_status, routeName: v.route_name,
+    driverName: v.driver_name, conductorName: v.conductor_name,
   })), userLocation, isHailing }), [vehicles, userLocation, isHailing]);
   useEffect(() => { webViewRef.current?.injectJavaScript(mapUpdateScript(mapState)); }, [mapState, isLight]);
 
@@ -74,20 +75,20 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
     
     ${commuterLocationCss(isLight)}
     .vehicle-marker {
-      width: 32px;
-      height: 32px;
-      background: #1A5FB4;
-      border: 2px solid #FFFFFF;
+      position: relative;
+      width: 44px;
+      height: 44px;
+      background: #071A2E;
+      border: 2.5px solid #22c55e;
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
       box-shadow: 0 3px 8px rgba(7, 26, 46, 0.4);
       color: white;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      font-weight: 800;
-      font-size: 10px;
+      box-shadow: 0 0 12px rgba(0,0,0,.5);
     }
+    .vehicle-marker-in-range { position:absolute; top:-2px; right:-2px; width:14px; height:14px; border-radius:50%; background:#22c55e; border:2px solid #071A2E; box-shadow:0 0 6px rgba(34,197,94,.6); }
 
 
 

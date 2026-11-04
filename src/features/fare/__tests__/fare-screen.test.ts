@@ -18,6 +18,7 @@ beforeEach(() => {
     { id: "a", name: "Alpha", code: "ALP", pointNumber: 1, regularFare: 17, discountedFare: 13.6, landmarks: ["Market"] },
     { id: "b", name: "Beta", pointNumber: 8, regularFare: 40, discountedFare: 32 },
   ] }); mockStates[1] = false;
+  press("Toggle route panel");
 });
 test("point expands sub-stops and landmark selection advances to drop-off", () => {
   press("Select Alpha"); expect(mockStates[7]).toBe("a");
@@ -49,5 +50,5 @@ test("fare summary is outside the scrolling list", () => {
 });
 test("discount selection shows authoritative-matrix estimate", () => {
   press("Select Alpha"); press("Market"); press("Select Beta"); press("Student");
-  expect(render().some(node => node.props.children === "₱18.40")).toBe(true);
+  expect(render().some(node => node.props.children === "₱20.80")).toBe(true);
 });
