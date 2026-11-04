@@ -1,7 +1,21 @@
 /// <reference types="jest" />
 jest.mock("../api-client", () => ({ post: jest.fn(), request: jest.fn(), put: jest.fn(), del: jest.fn() }));
+jest.mock("expo-file-system", () => ({
+  File: class MockExpoFile {
+    constructor(public uri: string) {}
+    async bytes() { return new Uint8Array([112, 114, 111, 111, 102]); }
+  },
+}));
 import { post, request } from "../api-client";
 import { commuterService } from "../commuter-service";
+
+test("payment history passes single dates and ranges to the shared authoritative endpoint", async () => {
+  mockRequest.mockResolvedValue({ data: [], current_page: 1, last_page: 1 });
+  await commuterService.getPaymentHistory(1, 20, "all", { from: "2026-11-01", to: "2026-11-04" });
+  expect(mockRequest).toHaveBeenLastCalledWith("/mobile/commuter/payments?page=1&per_page=20&date_from=2026-11-01&date_to=2026-11-04");
+  await commuterService.getPaymentHistory(1, 20, "all", { from: "2026-11-04" });
+  expect(mockRequest).toHaveBeenLastCalledWith("/mobile/commuter/payments?page=1&per_page=20&date_from=2026-11-04");
+});
 import { studentRenewalService } from "../student-renewal-service";
 const mockPost = post as jest.Mock;
 const mockRequest = request as jest.Mock;
@@ -115,4 +129,14 @@ test("Lost and Found claim sends validated contact and proof images as multipart
   expect(form.get("proof")).toBe("Unique scratch on the case");
   expect(form.get("claimant_contact")).toBe("09171234567");
   expect(form.get("images[0]")).toMatchObject({ name: "proof.jpg", type: "image/jpeg", size: 5 });
+});
+test("native Lost and Found photos are converted from URI to supported multipart bytes", async () => {
+  await commuterService.claimLostItem("item-2", {
+    proof: "Distinctive mark",
+    images: [{ uri: "file:///proof.png", name: "proof.png", type: "image/png" }],
+  });
+  const [, form] = mockPost.mock.calls[0];
+  const image = form.get("images[0]");
+  expect(image).toBeInstanceOf(Blob);
+  expect(image).toMatchObject({ name: "proof.png", type: "image/png", size: 5 });
 });

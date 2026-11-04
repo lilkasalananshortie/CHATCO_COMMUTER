@@ -39,6 +39,7 @@ export interface VehicleLocation {
   capacity_status?: "AVAILABLE" | "FULL" | "LAST_TRIP" | null;
   driver_name?: string | null;
   conductor_name?: string | null;
+    route_name?: string | null;
   updated_at?: string | null;
 }
 
@@ -92,6 +93,8 @@ export interface HailRequest {
 }
 
 export interface Trip {
+  voucher?: { type: string; amount: number | null } | null;
+  payment_group?: { reference_number: string; total_amount: number; passenger_count: number; transactions: Array<{ transaction_id: string; passenger_name: string | null; passenger_role: string; final_amount: number; voucher: { type: string; amount: number | null } | null }> } | null;
   id: string;
   shift_id?: string | null;
   can_leave_feedback?: boolean;

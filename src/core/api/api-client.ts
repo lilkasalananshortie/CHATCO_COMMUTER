@@ -79,7 +79,7 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
     }
     if ((payload as any)?.error === "outside_radius") {
       const dist = (payload as any).distance_m ? ` (${Math.round((payload as any).distance_m)}m away)` : "";
-      message = `Vehicle is outside the 1km hail radius${dist}.`;
+      message = payload?.message ?? `Vehicle is outside the 1km hail radius${dist}.`;
     }
     const err = new Error(message);
     (err as any).status = response.status;

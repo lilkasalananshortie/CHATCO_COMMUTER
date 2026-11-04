@@ -113,7 +113,7 @@ export const commuterService = {
         bearing: item.bearing ?? item.heading ?? null,
         capacity_status: item.capacity_status ?? item.vehicle_capacity_status ?? "AVAILABLE",
         available_seats: item.available_seats ?? null,
-        updated_at: item.updated_at,
+        updated_at: item.updated_at ?? item.last_update ?? null,
       };
     });
   },
@@ -128,6 +128,7 @@ export const commuterService = {
       baseFareDiscounted: number;
       succeedingFareRegular: number;
       succeedingFareDiscounted: number;
+      discountRate?: number;
       totalPoints: number;
     };
   }> {
@@ -294,7 +295,7 @@ export const commuterService = {
   },
 
   // Payment History
-  async getPaymentHistory(page = 1, perPage = 20, filter?: string): Promise<{
+  async getPaymentHistory(page = 1, perPage = 20, filter?: string, range?: { from?: string; to?: string }): Promise<{
     items: Trip[];
     page: number;
     lastPage: number;
@@ -305,6 +306,8 @@ export const commuterService = {
     query.set("page", String(page));
     query.set("per_page", String(perPage));
     if (filter && filter !== "all") query.set("filter", filter);
+    if (range?.from) query.set("date_from", range.from);
+    if (range?.to) query.set("date_to", range.to);
 
     const res = await request<any>(`/mobile/commuter/payments?${query.toString()}`);
     const rows = Array.isArray(res) ? res : res.data || [];
@@ -508,8 +511,14 @@ export const commuterService = {
     form.append("proof", data.proof || data.proof_description || "");
     if (data.claimant_contact?.trim()) form.append("claimant_contact", data.claimant_contact.trim());
     for (const [index, image] of (data.images ?? []).entries()) {
-      if (image.file) form.append(`images[${index}]`, image.file, image.name);
-      else form.append(`images[${index}]`, { uri: image.uri, name: image.name, type: image.type } as any);
+      // Expo's native fetch serializer accepts Blob/File bytes, but not React Native's
+      // `{ uri, name, type }` FormData part. Keep browser File uploads unchanged.
+      let multipartImage = image.file;
+      if (!multipartImage) {
+        const { File } = await import("expo-file-system");
+        multipartImage = new Blob([await new File(image.uri).bytes()], { type: image.type });
+      }
+      form.append(`images[${index}]`, multipartImage, image.name);
     }
     return post(`/lost-found/${encodeURIComponent(itemId)}/claim`, form);
   },

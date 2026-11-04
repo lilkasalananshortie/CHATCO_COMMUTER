@@ -1,5 +1,13 @@
 /// <reference types="jest" />
 import { mapTrip } from "../trips";
+
+test("payment history keeps voucher and group amounts without exposing voucher codes", () => {
+  const trip = mapTrip({ transaction_id: "payer", payment_method: "GCASH", final_amount: 0, voucher: { type: "FREE_RIDE", amount: null, code: "PRIVATE" }, payment_group: { reference_number: "GROUP", total_amount: "17.00", passenger_count: 2, transactions: [{ transaction_id: "payer", final_amount: "0", voucher: { type: "FREE_RIDE", code: "PRIVATE" } }, { transaction_id: "companion", passenger_role: "REGULAR", final_amount: "17", voucher: null }] } });
+  expect(trip.voucher).toEqual({ type: "FREE_RIDE", amount: null });
+  expect(trip.payment_group?.total_amount).toBe(17);
+  expect(trip.payment_group?.transactions.map(seat => seat.final_amount)).toEqual([0, 17]);
+  expect(JSON.stringify(trip)).not.toContain("PRIVATE");
+});
 const row = { transaction_id: "ride", shift_id: "shift", payment_method: "CASH", status: "PAID", can_leave_feedback: true, final_amount: "17.00" };
 test("transaction and shift identifiers never overwrite each other", () => {
   expect(mapTrip(row)).toMatchObject({ id: "ride", shift_id: "shift", can_leave_feedback: true, final_amount: 17 });

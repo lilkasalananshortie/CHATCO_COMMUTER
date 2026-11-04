@@ -125,11 +125,12 @@ export const authService = {
   },
 
   async register(
-    input: FormData | { fileUri?: string; parameters: Record<string, string> } | any
+    input: FormData | { fileUri?: string; fileMimeType?: string; parameters: Record<string, string> } | any
   ): Promise<{ message: string }> {
     if (Platform.OS !== "web" && typeof input === "object" && input && "parameters" in input) {
-      const { fileUri, parameters } = input as {
+      const { fileUri, fileMimeType, parameters } = input as {
         fileUri?: string;
+        fileMimeType?: string;
         parameters: Record<string, string>;
       };
 
@@ -142,7 +143,7 @@ export const authService = {
           fieldName: "id_image",
           httpMethod: "POST",
           uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-          mimeType: fileUri.toLowerCase().endsWith(".png") ? "image/png" : "image/jpeg",
+          mimeType: fileMimeType || (fileUri.toLowerCase().endsWith(".png") ? "image/png" : fileUri.toLowerCase().endsWith(".webp") ? "image/webp" : "image/jpeg"),
           parameters,
           headers: {
             Accept: "application/json",

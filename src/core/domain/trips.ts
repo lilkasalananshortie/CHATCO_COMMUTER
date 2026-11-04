@@ -1,5 +1,7 @@
 import type { Trip } from "./types";
 
+const voucherInfo = (voucher: any): NonNullable<Trip["voucher"]> | null => voucher ? { type: String(voucher.type), amount: voucher.amount == null ? null : Number(voucher.amount) } : null;
+
 /** Keep transaction identity separate from its shift; backend eligibility wins. */
 export function mapTrip(row: any): Trip {
   const id = row.transaction_id ?? row.id;
@@ -17,6 +19,11 @@ export function mapTrip(row: any): Trip {
     final_amount: Number(row.final_amount ?? row.amount ?? 0),
     fare_amount: Number(row.final_amount ?? row.amount ?? 0),
     payment_method: method as Trip["payment_method"], status: status as Trip["status"],
+    voucher: voucherInfo(row.voucher),
+    payment_group: row.payment_group ? {
+      reference_number: String(row.payment_group.reference_number ?? ""), total_amount: Number(row.payment_group.total_amount ?? 0), passenger_count: Number(row.payment_group.passenger_count ?? 1),
+      transactions: (row.payment_group.transactions ?? []).map((seat: any) => ({ transaction_id: String(seat.transaction_id), passenger_name: seat.passenger_name ?? null, passenger_role: String(seat.passenger_role ?? "REGULAR"), final_amount: Number(seat.final_amount ?? 0), voucher: voucherInfo(seat.voucher) })),
+    } : null,
     paid_at: row.paid_at ?? row.paidAt ?? null,
     completed_at: row.completed_at ?? row.paid_at ?? row.paidAt ?? null,
     created_at: row.created_at ?? row.createdAt,

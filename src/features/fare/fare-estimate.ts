@@ -4,7 +4,7 @@ export interface PublishedFarePoint {
 }
 export interface PublishedFareMatrix {
   route: { id: string; name: string }; points: PublishedFarePoint[];
-  config: { baseFareRegular: number; baseFareDiscounted: number; baseBarangayCount?: number };
+  config: { baseFareRegular: number; baseFareDiscounted: number; baseBarangayCount?: number; succeedingFareRegular?: number; discountRate?: number };
 }
 export type FareCategory = "REGULAR" | "STUDENT" | "SENIOR" | "PWD";
 
@@ -16,22 +16,27 @@ export function normalizeFareMatrix(raw: any): PublishedFareMatrix {
     regularFare: Number(p.regularFare ?? p.regular_fare), discountedFare: Number(p.discountedFare ?? p.discounted_fare),
     landmarks: list(p.landmarks), subStops: list(p.subStops ?? p.sub_stops),
   }));
-  const config = { baseFareRegular: Number(raw.config?.baseFareRegular ?? 17), baseFareDiscounted: Number(raw.config?.baseFareDiscounted ?? 13.6), baseBarangayCount: Number(raw.config?.baseBarangayCount ?? 4) };
+  const baseFareRegular = Number(raw.config?.baseFareRegular ?? 17);
+  const baseFareDiscounted = Number(raw.config?.baseFareDiscounted ?? 13.6);
+  const config = { baseFareRegular, baseFareDiscounted, baseBarangayCount: Number(raw.config?.baseBarangayCount ?? 4), succeedingFareRegular: Number(raw.config?.succeedingFareRegular ?? 2.25), discountRate: Number(raw.config?.discountRate ?? ((1 - baseFareDiscounted / baseFareRegular) * 100)) };
   if (points.some((p: PublishedFarePoint) => !p.id || !Number.isFinite(p.pointNumber) || !Number.isFinite(p.regularFare) || p.regularFare < 0 || !Number.isFinite(p.discountedFare) || p.discountedFare < 0)
-    || !Number.isFinite(config.baseFareRegular) || config.baseFareRegular <= 0 || !Number.isFinite(config.baseFareDiscounted) || config.baseFareDiscounted <= 0) {
+    || Object.values(config).some(value => !Number.isFinite(value)) || config.baseFareRegular <= 0 || config.baseFareDiscounted < 0
+    || !Number.isInteger(config.baseBarangayCount) || config.baseBarangayCount < 1 || config.succeedingFareRegular < 0 || config.discountRate < 0 || config.discountRate > 100) {
     throw new Error("The published fare matrix is incomplete. Please refresh or contact support.");
   }
   return { route: raw.route, points, config };
 }
 
-/** Estimate only; uses the same cumulative-point difference and minimum as web. */
+/** Estimate only; mirrors the backend Financial Rules, which price the final ride. */
 export function estimateFare(matrix: PublishedFareMatrix, fromId: string, toId: string, category: FareCategory) {
   const from = matrix.points.find((p) => p.id === fromId);
   const to = matrix.points.find((p) => p.id === toId);
   if (!from || !to) throw new Error("Select a valid pickup and destination.");
   const round = (v: number) => Math.round((v + Number.EPSILON) * 100) / 100;
-  const regular = round(Math.max(Math.abs(from.regularFare - to.regularFare), matrix.config.baseFareRegular));
-  const discounted = round(Math.max(Math.abs(from.discountedFare - to.discountedFare), matrix.config.baseFareDiscounted));
+  const traversed = Math.abs(from.pointNumber - to.pointNumber) + 1;
+  const regular = round(matrix.config.baseFareRegular + Math.max(0, traversed - (matrix.config.baseBarangayCount ?? 4)) * (matrix.config.succeedingFareRegular ?? 2.25));
+  const rate = matrix.config.discountRate ?? ((1 - matrix.config.baseFareDiscounted / matrix.config.baseFareRegular) * 100);
+  const discounted = round(regular * (100 - rate) / 100);
   const amount = category === "REGULAR" ? regular : discounted;
   return { regular, amount, discount: round(regular - amount) };
 }
