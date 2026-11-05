@@ -47,10 +47,10 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
     });
   } catch (cause) {
     const errorDetail = cause instanceof Error ? cause.message : String(cause);
-    console.error(`[API Network Error] ${init.method ?? "GET"} ${API_URL}/api/v1${path}:`, cause);
-    if (cause instanceof Error && cause.name === "AbortError") {
+    if (controller.signal.aborted || (cause instanceof Error && cause.name === "AbortError")) {
       throw new NetworkError(`The ChatCo server did not respond within ${REQUEST_TIMEOUT_MS / 1000}s. Check your connection and try again.`);
     }
+    console.error(`[API Network Error] ${init.method ?? "GET"} ${API_URL}/api/v1${path}:`, cause);
     throw new NetworkError(
       `Unable to reach the ChatCo server (${errorDetail}). Target: ${API_URL}. Check your internet connection or host settings.`
     );

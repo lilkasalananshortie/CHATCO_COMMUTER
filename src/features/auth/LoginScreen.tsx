@@ -82,6 +82,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       if (!mounted.current) return;
       submitting.current = false;
       const msg =
+        err?.response?.data?.errors?.login?.[0] ||
         err?.response?.data?.message ||
         err?.message ||
         "Login failed. Please check your credentials and try again.";

@@ -8,9 +8,9 @@ import { FeatureButton, useFeatureStyles } from "../../shared/ui/FeatureControls
 import { EMPTY_SCHOOL_FIELDS, SchoolProofFields } from "./SchoolProofFields";
 import { SupportingDocumentField } from "./SupportingDocumentField";
 import { pickRenewalDocument } from "./pick-renewal-document";
-import { RENEWAL_LABELS, renewalPayload, schoolProofFieldsError, type RenewalDocument, type RenewalFields, type RenewalState } from "./renewal-types";
+import { RENEWAL_LABELS, readNativeProof, renewalPayload, schoolProofFieldsError, type RenewalDocument, type RenewalFields, type RenewalState } from "./renewal-types";
 
-const date = (iso: string) => new Date(iso).toLocaleString("en-PH", { timeZone: "Asia/Manila" });
+const date = (iso: string) => new Date(iso).toLocaleString("en-PH", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "Asia/Manila" });
 const renewalStatusColor = (status: string, isLight: boolean) => status === "APPROVED" ? (isLight ? "#047857" : "#34D399")
   : status === "NEEDS_CORRECTION" ? (isLight ? "#92400E" : "#FDE68A")
     : status === "PENDING" ? (isLight ? "#1A5FB4" : "#BAE6FD")
@@ -49,10 +49,10 @@ export function StudentRenewalScreen({ state, loading, loadError, onRefresh, onC
     pending.current = true; setBusy(true); setError(""); setSuccess("");
     try {
       if (regular) await studentRenewalService.switchToRegular();
-      else await studentRenewalService.submit(renewalPayload(fields, document));
+      else await studentRenewalService.submit(renewalPayload(fields, document, true, await readNativeProof(document)));
       if (!mounted.current) return;
       setDocument(null); setConfirmRegular(false);
-      setSuccess(regular ? "Your commuter category is now Regular." : "Enrollment proof submitted for review. This does not mean it has been approved.");
+      setSuccess(regular ? "Your commuter category is now Regular." : "Your proof was submitted. An admin will verify your student status.");
       await onRefresh();
     } catch (e) { if (mounted.current) setError((e as Error).message); }
     finally { pending.current = false; if (mounted.current) setBusy(false); }
@@ -91,7 +91,7 @@ export function StudentRenewalScreen({ state, loading, loadError, onRefresh, onC
     </>}
     <Modal visible={confirmRegular} transparent animationType="fade" onRequestClose={() => { if (!busy) setConfirmRegular(false); }}>
       <View style={{ flex: 1, backgroundColor: "#000B", justifyContent: "center", alignItems: "center", padding: 16 }}><ScrollView style={{ width: "100%", maxWidth: 448, maxHeight: "90%", flexGrow: 0, borderRadius: 16, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }} contentContainerStyle={{ padding: 20, gap: 14 }}>
-        <Text style={s.heading}>Switch to Regular?</Text><Text style={s.text}>Your student discount will stop and outstanding renewal applications will be cancelled. This does not delete your account or ride history.</Text>
+        <Text style={s.heading}>Switch to Regular?</Text><Text style={s.text}>Your student discount ends immediately and any pending renewal is cancelled. Your account, rides, and rewards remain available.</Text>
         <FeatureButton label="Confirm switch to Regular" disabled={busy} onPress={() => void perform(true)} />
         <FeatureButton label="Keep student account" secondary disabled={busy} onPress={() => setConfirmRegular(false)} />
       </ScrollView></View>

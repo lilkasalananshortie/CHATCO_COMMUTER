@@ -75,27 +75,29 @@ function currentLocationDetails() {
   var status = document.createElement('span'); status.className = 'commuter-popup-status'; status.textContent = 'Live GPS'; panel.appendChild(status); return panel;
 }
 function unitDetails(v, userLocation) {
-  var node = document.createElement('div'); node.style.minWidth = '160px';
-  var capacityLabel = v.capacityStatus === 'FULL' || v.capacityStatus === 'Full' ? 'Full'
-    : v.capacityStatus === 'STANDING' || v.capacityStatus === 'Standing' ? 'Standing only' : 'Seats available';
-  [v.plateNumber || v.unitNumber, capacityLabel, v.routeName && 'Route: ' + v.routeName,
-   v.driverName && 'Driver: ' + v.driverName,
-   v.conductorName && 'Conductor: ' + v.conductorName,
-   v.availableSeats != null && 'Available seats: ' + v.availableSeats].forEach(function(value) {
-    if (!value) return; var row = document.createElement('div'); row.textContent = String(value); node.appendChild(row);
-  });
+  var node = document.createElement('section'); node.className = 'unit-popup';
+  var header = document.createElement('div'); header.className = 'unit-popup-header';
+  var iconDefinition = markerIcon(v.capacityStatus, false); var icon = (iconDefinition.options || iconDefinition).html.children[0]; icon.setAttribute('fill', 'currentColor'); icon.setAttribute('class', 'unit-popup-icon'); header.appendChild(icon);
+  var heading = document.createElement('div'); var subtitle = document.createElement('div'); subtitle.className = 'unit-popup-subtitle'; subtitle.textContent = 'Unit details'; heading.appendChild(subtitle);
+  var title = document.createElement('div'); title.className = 'unit-popup-title'; title.textContent = String(v.plateNumber || v.unitNumber || '—'); heading.appendChild(title); header.appendChild(heading); node.appendChild(header);
+  var body = document.createElement('div'); body.className = 'unit-popup-body'; node.appendChild(body);
+  var capacity = String(v.capacityStatus || 'AVAILABLE').toUpperCase();
+  var capacityLabel = capacity === 'FULL' ? 'Full' : capacity === 'STANDING' ? 'Standing only' : capacity === 'LAST_TRIP' ? 'Last trip' : 'Available';
+  var status = document.createElement('div'); status.className = 'unit-popup-status ' + (capacity === 'FULL' ? 'danger' : capacity === 'STANDING' ? 'warning' : 'success'); status.textContent = capacityLabel; body.appendChild(status);
+  var details = document.createElement('div'); details.className = 'unit-popup-details'; body.appendChild(details);
+  function row(label, value) { var element = document.createElement('div'); element.className = 'unit-popup-row'; var key = document.createElement('span'); key.textContent = label + ': '; var val = document.createElement('span'); val.textContent = String(value); element.appendChild(key); element.appendChild(val); details.appendChild(element); }
+  row('Route', v.routeName || '—');
   if (userLocation && coordinates(userLocation.latitude,userLocation.longitude) && coordinates(v.lat,v.lng)) {
     var distance = distanceMeters([userLocation.latitude,userLocation.longitude],[v.lat,v.lng]);
     var distanceLabel = distance < 1000 ? Math.round(distance) + ' m' : (distance / 1000).toFixed(1) + ' km';
-    var distanceRow = document.createElement('div'); distanceRow.textContent = 'Distance: ' + distanceLabel; node.appendChild(distanceRow);
+    row('Distance', distanceLabel);
     if (distance <= 1000) {
       var eta = Math.max(1, Math.round(distance / (25000 / 60)));
-      var etaRow = document.createElement('div'); etaRow.textContent = 'ETA: ~' + eta + ' min'; node.appendChild(etaRow);
-    } else if (v.capacityStatus === 'FULL' || v.capacityStatus === 'Full') {
-      var note = document.createElement('div'); note.textContent = 'Not accepting passengers'; node.appendChild(note);
-    } else {
-      var note = document.createElement('div'); note.textContent = 'Outside pickup radius'; node.appendChild(note);
+      row('ETA', '~' + eta + ' min');
     }
+    if (capacity === 'FULL' || distance > 1000) { var notes = document.createElement('div'); notes.className = 'unit-popup-notes'; var note = document.createElement('div'); note.className = 'unit-popup-note ' + (capacity === 'FULL' ? 'danger' : 'warning'); note.textContent = capacity === 'FULL' ? 'Not accepting passengers' : 'Outside pickup radius'; notes.appendChild(note); body.appendChild(notes); }
+  } else if (capacity === 'FULL') {
+    var notes = document.createElement('div'); notes.className = 'unit-popup-notes'; var note = document.createElement('div'); note.className = 'unit-popup-note danger'; note.textContent = 'Not accepting passengers'; notes.appendChild(note); body.appendChild(notes);
   }
   return node;
 }
@@ -110,7 +112,7 @@ window.chatcoUpdate = function(state) {
       var user = state.userLocation;
       var inRange = user && coordinates(user.latitude,user.longitude) && distanceMeters([user.latitude,user.longitude],[v.lat,v.lng]) <= 1000;
       marker = L.marker([v.lat,v.lng], {icon: markerIcon(v.capacityStatus, inRange)}).addTo(map);
-      marker.bindPopup(unitDetails(v,state.userLocation), {autoClose:false,closeOnClick:false}); vehicleMarkers[key] = marker;
+      marker.bindPopup(unitDetails(v,state.userLocation), {className:'chatco-unit-popup',closeButton:false,minWidth:0,maxWidth:320}); vehicleMarkers[key] = marker;
     } else {
       var user = state.userLocation;
       var inRange = user && coordinates(user.latitude,user.longitude) && distanceMeters([user.latitude,user.longitude],[v.lat,v.lng]) <= 1000;

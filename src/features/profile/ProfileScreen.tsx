@@ -83,7 +83,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailC
     try {
       const photo = await pickProfilePhoto();
       if (!photo || !mounted.current) return;
-      const updated = await commuterService.uploadProfilePhoto(profilePhotoForm(photo));
+      const form = await profilePhotoForm(photo);
+      if (!mounted.current) return;
+      const updated = await commuterService.uploadProfilePhoto(form);
       if (!mounted.current) return;
       setProfile(previous => previous ? { ...previous, profile_image_url: updated.profile_image_url } : updated);
       onProfileSaved?.(updated);

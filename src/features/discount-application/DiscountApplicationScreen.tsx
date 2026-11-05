@@ -9,7 +9,7 @@ import { ProfileIcon } from "../profile/ProfileIcon";
 import { EMPTY_SCHOOL_FIELDS, SchoolProofFields } from "../student-renewal/SchoolProofFields";
 import { pickRenewalDocument } from "../student-renewal/pick-renewal-document";
 import { SupportingDocumentField } from "../student-renewal/SupportingDocumentField";
-import { schoolProofFieldsError, type RenewalDocument, type RenewalFields } from "../student-renewal/renewal-types";
+import { readNativeProof, schoolProofFieldsError, type RenewalDocument, type RenewalFields } from "../student-renewal/renewal-types";
 import { APPLICATION_LABELS, DISCOUNT_CATEGORIES, applicationPayload, canCancelApplication, type ApplicationState, type DiscountCategory } from "./application-types";
 
 export function DiscountApplicationScreen({ state, loading, loadError, onRefresh, onClose, onGoHome, onOpenRenewal }: {
@@ -25,6 +25,7 @@ export function DiscountApplicationScreen({ state, loading, loadError, onRefresh
   const [message, setMessage] = useState<{ title: string; body: string } | null>(null);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [refreshResult, setRefreshResult] = useState<{ title: string; body: string } | null>(null);
   // Use the returned authoritative state immediately, before the follow-up GET completes.
   const [saved, setSaved] = useState<{ base: ApplicationState | null; state: ApplicationState } | null>(null);
   const current = saved?.base === state ? saved.state : state;
@@ -55,7 +56,7 @@ export function DiscountApplicationScreen({ state, loading, loadError, onRefresh
     try {
       if (cancel && !canCancelApplication(current)) throw new Error("This application can no longer be cancelled. Refresh its status.");
       const result = cancel ? await discountApplicationService.cancel(current.application!.id)
-        : await discountApplicationService.submit(applicationPayload(current, category, fields, document));
+        : await discountApplicationService.submit(applicationPayload(current, category, fields, document, await readNativeProof(document, current.document_required !== false)));
       if (!mounted.current) return;
       setSaved({ base: state, state: result }); setDocument(null); setConfirmCancel(false);
       setMessage(cancel
@@ -70,6 +71,19 @@ export function DiscountApplicationScreen({ state, loading, loadError, onRefresh
     } finally { pending.current = false; if (mounted.current) setBusy(false); }
   };
   const blocked = busy || loading || !!loadError;
+  const refreshStatus = async () => {
+    if (pending.current || loading) return;
+    pending.current = true; setBusy(true);
+    try {
+      const next = await discountApplicationService.state();
+      if (mounted.current) {
+        setSaved({ base: state, state: next });
+        setRefreshResult({ title: "Status refreshed", body: "Your application status is up to date." });
+      }
+    } catch (reason) {
+      if (mounted.current) setRefreshResult({ title: "Unable to refresh", body: reason instanceof Error ? reason.message : "Please try again." });
+    } finally { pending.current = false; if (mounted.current) setBusy(false); }
+  };
   const application = current?.application;
   const correction = current?.status === "NEEDS_CORRECTION";
   const renewal = application?.request_type === "RENEWAL";
@@ -86,7 +100,7 @@ export function DiscountApplicationScreen({ state, loading, loadError, onRefresh
   const fieldLabel = { color: colors.textMuted, fontSize: 12 } as const;
   const fieldValue = { color: colors.textPrimary, fontSize: 14, fontWeight: "600" as const, marginTop: 4 };
   const separator = { borderBottomWidth: 1, borderBottomColor: colors.borderSubtle } as const;
-  const panel = { backgroundColor: isLight ? colors.surface : "rgba(255,255,255,0.035)", borderColor: colors.border, borderWidth: 1, borderRadius: 16, padding: 18 } as const;
+  const panel = { backgroundColor: isLight ? colors.surface : "rgba(255,255,255,0.035)", borderColor: colors.border, borderWidth: 1, borderRadius: 12, padding: 16 } as const;
   return <KeyboardAvoidingView style={[s.screen, { backgroundColor: colors.background }]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
     <View style={{ borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: isLight ? colors.surface : "#071A2E", paddingHorizontal: 20, paddingTop: 14, paddingBottom: 18 }}>
       <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back to home" disabled={busy} onPress={onGoHome} style={{ minHeight: 36, flexDirection: "row", alignItems: "center", gap: 8 }}>
@@ -95,7 +109,7 @@ export function DiscountApplicationScreen({ state, loading, loadError, onRefresh
       <Text style={[s.title, { fontSize: 23, marginTop: 2 }]}>Discount Application</Text>
       <Text style={{ color: colors.textSecondary, fontSize: 14, lineHeight: 21, marginTop: 4 }}>Tell us which discount applies to you and send proof for verification.</Text>
     </View>
-    <ScrollView contentContainerStyle={[s.content, { padding: 20, paddingBottom: 36, gap: 20 }]} keyboardShouldPersistTaps="handled">
+    <ScrollView contentContainerStyle={[s.content, { paddingHorizontal: 12, paddingTop: 16, paddingBottom: 36, gap: 16 }]} keyboardShouldPersistTaps="handled">
       {loading && <View accessibilityLiveRegion="polite" style={{ minHeight: 180, justifyContent: "center", alignItems: "center", gap: 10 }}><ActivityIndicator color={isLight ? "#1A5FB4" : "#62A0EA"} /><Text style={s.muted}>Loading your application status...</Text></View>}
       {!!loadError && <View accessibilityLiveRegion="polite" style={{ backgroundColor: isLight ? "#FEF2F2" : "rgba(248,113,113,0.1)", borderColor: isLight ? "#FECACA" : "rgba(248,113,113,0.25)", borderWidth: 1, padding: 14, borderRadius: 12, gap: 10 }}><Text style={s.error}>{loadError}</Text><FeatureButton secondary label="Refresh status" disabled={busy} onPress={() => { setSaved(null); void onRefresh(); }} /></View>}
       {!!error && <Text accessibilityLiveRegion="polite" style={[s.error, { padding: 12, borderRadius: 10, backgroundColor: isLight ? "#FEF2F2" : "rgba(248,113,113,0.1)" }]}>{error}</Text>}
@@ -118,10 +132,10 @@ export function DiscountApplicationScreen({ state, loading, loadError, onRefresh
           : current.can_submit && !loadError ? <View style={{ gap: 20 }}>
             <View>
               <Text style={{ color: colors.textPrimary, fontWeight: "700", fontSize: 15 }}>{correction ? "Application category" : "Choose your discount category"}</Text>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 9, marginTop: 12 }}>
+              <View style={{ flexDirection: "column", gap: 9, marginTop: 12 }}>
                 {(Object.keys(DISCOUNT_CATEGORIES) as DiscountCategory[]).map((value) => {
                   const selected = category === value;
-                  return <TouchableOpacity key={value} accessibilityRole="radio" accessibilityLabel={DISCOUNT_CATEGORIES[value]} accessibilityState={{ checked: selected, disabled: blocked || correction }} disabled={blocked || correction} onPress={() => { setCategory(value); setFields(EMPTY_SCHOOL_FIELDS); setDocument(null); setError(""); }} style={{ flex: 1, minWidth: 96, minHeight: 104, justifyContent: "space-between", gap: 10, padding: 13, borderRadius: 12, borderWidth: 1, borderColor: selected ? (isLight ? "#1A5FB4" : "#62A0EA") : colors.border, backgroundColor: selected ? (isLight ? "#EAF3FF" : "rgba(26,95,180,0.2)") : (isLight ? colors.surface : "rgba(255,255,255,0.03)"), opacity: blocked || correction ? 0.7 : 1 }}>
+                  return <TouchableOpacity key={value} accessibilityRole="radio" accessibilityLabel={DISCOUNT_CATEGORIES[value]} accessibilityState={{ checked: selected, disabled: blocked || correction }} disabled={blocked || correction} onPress={() => { setCategory(value); setFields(EMPTY_SCHOOL_FIELDS); setDocument(null); setError(""); }} style={{ width: "100%", minHeight: 88, justifyContent: "flex-start", gap: 12, padding: 13, borderRadius: 10, borderWidth: 1, borderColor: selected ? (isLight ? "#1A5FB4" : "#62A0EA") : colors.border, backgroundColor: selected ? (isLight ? "#EAF3FF" : "#1A5FB4") : (isLight ? colors.surface : "rgba(255,255,255,0.03)"), opacity: blocked || correction ? 0.7 : 1 }}>
                     <Ionicons name={value === "STUDENT" ? "school-outline" : value === "PWD" ? "accessibility-outline" : "id-card-outline"} size={20} color={selected ? (isLight ? "#1A5FB4" : "#99C1F1") : colors.textMuted} />
                     <View><Text style={{ color: colors.textPrimary, fontWeight: "700", fontSize: 14 }}>{DISCOUNT_CATEGORIES[value]}</Text><Text style={{ color: colors.textMuted, fontSize: 11, lineHeight: 15, marginTop: 3 }}>{categoryDetails[value]}</Text></View>
                   </TouchableOpacity>;
@@ -131,7 +145,7 @@ export function DiscountApplicationScreen({ state, loading, loadError, onRefresh
             {!!category && <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 18, gap: 14 }}>
               <View><Text style={{ color: colors.textPrimary, fontSize: 16, fontWeight: "700" }}>Supporting document</Text><Text style={[s.muted, { marginTop: 5 }]}>{requiresDocument ? category === "STUDENT" ? "Use a school ID showing the current school year or another document proving current enrollment." : `Upload your ${DISCOUNT_CATEGORIES[category]} ID/card. The name should match your verified commuter account.` : "Document upload is disabled for local workflow testing. No file will be sent or stored."}</Text></View>
               {category === "STUDENT" && <SchoolProofFields fields={fields} onChange={setFields} disabled={blocked} />}
-              {requiresDocument && <><Text style={fieldLabel}>{category === "STUDENT" ? "Enrollment proof" : `${DISCOUNT_CATEGORIES[category]} ID/card`}</Text><SupportingDocumentField document={document} label={busy ? "Choosing supporting document…" : "Choose supporting document"} disabled={blocked} onChoose={() => void choose()} onRemove={() => setDocument(null)} /></>}
+              {requiresDocument && <><Text style={fieldLabel}>{category === "STUDENT" ? "Enrollment proof" : `${DISCOUNT_CATEGORIES[category]} ID/card`}</Text><SupportingDocumentField webLayout document={document} label={busy ? "Choosing supporting document…" : "Choose supporting document"} disabled={blocked} onChoose={() => void choose()} onRemove={() => setDocument(null)} /></>}
             </View>}
             <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, padding: 13, borderRadius: 12, borderWidth: 1, borderColor: isLight ? "rgba(26,95,180,0.2)" : "rgba(98,160,234,0.2)", backgroundColor: isLight ? "#F0F7FF" : "rgba(98,160,234,0.07)" }}><ProfileIcon name="shield-check" size={19} color={isLight ? "#1A5FB4" : "#99C1F1"} /><Text style={[s.text, { flex: 1, fontSize: 13 }]}>Your fare stays Regular while the team checks your document. Once approved, your new classification is used by the existing fare discount process. Student discounts require annual renewal.</Text></View>
             {!!schoolFieldsError && category === "STUDENT" && <Text style={s.error}>{schoolFieldsError}</Text>}
@@ -141,28 +155,48 @@ export function DiscountApplicationScreen({ state, loading, loadError, onRefresh
             <Text style={s.text}>{current.status === "PENDING" ? "Your supporting document is being verified. Your account stays Regular until approval. We will send the result to Rewards & Updates." : current.status === "APPROVED" ? "Your discount application was approved. Your current commuter classification is shown above." : "New discount applications are available to active Regular commuter accounts."}</Text>
             {current.commuter_type === "STUDENT" && current.discount_expires_at && <View style={{ gap: 8 }}><Text style={s.muted}>Your Student discount expires {new Date(current.discount_expires_at).toLocaleDateString("en-PH", { dateStyle: "medium", timeZone: "Asia/Manila" })} Philippine time.</Text><TouchableOpacity accessibilityRole="button" onPress={onOpenRenewal} style={{ minHeight: 40, justifyContent: "center" }}><Text style={{ color: isLight ? "#1A5FB4" : "#99C1F1", textDecorationLine: "underline", fontWeight: "700" }}>View annual renewal</Text></TouchableOpacity></View>}
             {canCancelApplication(current) && <FeatureButton secondary label="Cancel application" disabled={blocked} onPress={() => setConfirmCancel(true)} />}
-            <TouchableOpacity accessibilityRole="button" disabled={busy || loading} onPress={() => { setSaved(null); void onRefresh(); }} style={{ minHeight: 42, flexDirection: "row", alignItems: "center", gap: 7 }}><Text style={{ color: isLight ? "#1A5FB4" : "#99C1F1", fontWeight: "700", fontSize: 14 }}>Refresh status</Text><Ionicons name="arrow-forward" size={15} color={isLight ? "#1A5FB4" : "#99C1F1"} /></TouchableOpacity>
+            <TouchableOpacity accessibilityRole="button" disabled={busy || loading} onPress={() => void refreshStatus()} style={{ minHeight: 42, flexDirection: "row", alignItems: "center", gap: 7 }}><Text style={{ color: isLight ? "#1A5FB4" : "#99C1F1", fontWeight: "700", fontSize: 14 }}>Refresh status</Text><Ionicons name="arrow-forward" size={15} color={isLight ? "#1A5FB4" : "#99C1F1"} /></TouchableOpacity>
           </View>}
       </View>}
-      <View style={[panel, { gap: 17 }]}>
+      <View style={[panel, { gap: 14 }]}>
         <Text style={{ color: isLight ? "#1A5FB4" : "#99C1F1", fontSize: 12, fontWeight: "800", letterSpacing: 1 }}>WHAT HAPPENS NEXT</Text>
         {[ ["01", "Send your proof", "Choose the category and upload a clear document."], ["02", "Admin verification", "A reviewer checks that the document is valid."], ["03", "Classification update", "If approved, the discount is applied to future eligible fares."] ].map(([number, title, description], index) => {
           const step = current?.status === "APPROVED" ? 3 : current?.status === "PENDING" ? 1 : 0;
           const done = index < step;
-          return <View key={number} style={{ flexDirection: "row", gap: 13 }}><View style={{ width: 25, height: 25, borderRadius: 13, borderWidth: 1, borderColor: done ? "#1A5FB4" : colors.border, backgroundColor: done ? "#1A5FB4" : "transparent", justifyContent: "center", alignItems: "center" }}>{done ? <ProfileIcon name="check" size={14} color="#FFFFFF" /> : <Text style={{ color: colors.textMuted, fontSize: 10, fontWeight: "700" }}>{number}</Text>}</View><View style={{ flex: 1, gap: 3 }}><Text style={{ color: colors.textPrimary, fontSize: 14, fontWeight: "700" }}>{title}</Text><Text style={{ color: colors.textMuted, fontSize: 12, lineHeight: 17 }}>{description}</Text></View></View>;
+          const active = index === step;
+          return <View key={number} style={{ flexDirection: "row", gap: 10, paddingBottom: index < 2 ? 12 : 0 }}>{index < 2 && <View style={{ position: "absolute", left: 9.5, top: 24, bottom: -14, width: 1, backgroundColor: done ? (isLight ? "rgba(26,95,180,0.5)" : "rgba(98,160,234,0.6)") : colors.border }} />}<View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 1, borderColor: done ? "#1A5FB4" : active ? "#62A0EA" : colors.border, backgroundColor: done ? "#1A5FB4" : active ? "rgba(98,160,234,0.1)" : "transparent", justifyContent: "center", alignItems: "center" }}>{done ? <ProfileIcon name="check" size={12} color="#FFFFFF" /> : <Text style={{ color: active ? (isLight ? "#1A5FB4" : "#99C1F1") : colors.textMuted, fontSize: 9, fontWeight: "700" }}>{number}</Text>}</View><View style={{ flex: 1, gap: 2 }}><Text style={{ color: active || done ? colors.textPrimary : colors.textSecondary, fontSize: 12, fontWeight: "700" }}>{title}</Text><Text style={{ color: colors.textMuted, fontSize: 11, lineHeight: 15 }}>{description}</Text></View></View>;
         })}
-        <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 15, gap: 8 }}><Text style={{ color: colors.textMuted, fontSize: 11, fontWeight: "800", letterSpacing: 0.7 }}>BEFORE YOU SUBMIT</Text><Text style={s.muted}>• Use a clear, complete photo or PDF.</Text><Text style={s.muted}>• Files must be JPG, PNG, WebP, or PDF and no larger than 5 MB.</Text><Text style={s.muted}>• Only authorized reviewers can access your document.</Text></View>
+        <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 15, gap: 8 }}><Text style={{ color: colors.textMuted, fontSize: 11, fontWeight: "800", letterSpacing: 0.7 }}>BEFORE YOU SUBMIT</Text><Text style={{ color: colors.textSecondary, fontSize: 11, lineHeight: 17 }}>Use a clear, complete photo or PDF.</Text><Text style={{ color: colors.textSecondary, fontSize: 11, lineHeight: 17 }}>Files must be JPG, PNG, WebP, or PDF and no larger than 5 MB.</Text><Text style={{ color: colors.textSecondary, fontSize: 11, lineHeight: 17 }}>Only authorized reviewers can access your document.</Text></View>
       </View>
     </ScrollView>
+    <Modal visible={!!refreshResult} transparent animationType="fade" onRequestClose={() => setRefreshResult(null)}>
+      <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center", padding: 16 }}>
+        <View accessibilityViewIsModal style={{ width: "100%", maxWidth: 360, padding: 16, gap: 12, borderRadius: 10, borderWidth: 1, borderColor: isLight ? "#E5E7EB" : "#2A3A55", backgroundColor: isLight ? "#FFFFFF" : "#1A2540" }}>
+          <Text style={s.heading}>{refreshResult?.title}</Text><Text style={s.text}>{refreshResult?.body}</Text>
+          <FeatureButton label="OK" onPress={() => setRefreshResult(null)} />
+        </View>
+      </View>
+    </Modal>
     <Modal visible={confirmSubmit} transparent animationType="fade" onRequestClose={() => { if (!busy) setConfirmSubmit(false); }}>
-      <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "center", alignItems: "center", padding: 16 }}><ScrollView style={{ width: "100%", maxWidth: 448, maxHeight: "90%", flexGrow: 0, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface }} contentContainerStyle={{ padding: 20, gap: 14 }} keyboardShouldPersistTaps="handled">
-        <Text style={s.heading}>{correction ? "Submit corrected documents?" : "Submit discount application?"}</Text>
-        <Text style={s.text}>You are applying for the {category ? DISCOUNT_CATEGORIES[category] : "selected"} commuter discount. The details and document will be sent to an admin for verification. Your account remains Regular until approval.</Text>
-        {!requiresDocument && <Text style={s.muted}>Local workflow testing only: no document will be sent or stored.</Text>}
-        {document && <Text numberOfLines={1} style={s.muted}>Document: {document.name}</Text>}
-        <FeatureButton secondary label="Go back" disabled={busy} onPress={() => setConfirmSubmit(false)} />
-        <FeatureButton label={busy ? "Submitting..." : "Confirm submission"} disabled={busy} onPress={() => { setConfirmSubmit(false); void perform(false); }} />
-      </ScrollView></View>
+      <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center", padding: 16, paddingBottom: 64 }}>
+        <View accessibilityViewIsModal style={{ width: "100%", maxWidth: 360, maxHeight: "100%", borderRadius: 10, borderWidth: 1, borderColor: isLight ? "#E5E7EB" : "#2A3A55", backgroundColor: isLight ? "#FFFFFF" : "#1A2540", overflow: "hidden" }}>
+          <ScrollView style={{ flexGrow: 0 }} contentContainerStyle={{ padding: 13 }} keyboardShouldPersistTaps="handled">
+            <Text style={{ color: colors.textPrimary, fontSize: 14, lineHeight: 20, fontWeight: "700", paddingRight: 28 }}>{correction ? "Submit corrected documents?" : "Submit discount application?"}</Text>
+            <Text style={{ marginTop: 10, color: isLight ? "#4B5563" : "rgba(255,255,255,0.7)", fontSize: 12, lineHeight: 18 }}>You are applying for the {category ? DISCOUNT_CATEGORIES[category] : "selected"} commuter discount. The details and document will be sent to an admin for verification. Your account remains Regular until approval.</Text>
+            {!requiresDocument ? <Text style={{ marginTop: 10, color: isLight ? "#92400E" : "#FDE68A", fontSize: 10, lineHeight: 16 }}>Local workflow testing only: no document will be sent or stored.</Text>
+              : document && <View style={{ marginTop: 10, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, borderWidth: 1, borderColor: isLight ? "#E5E7EB" : "rgba(255,255,255,0.1)", backgroundColor: isLight ? "#F9FAFB" : "rgba(255,255,255,0.05)" }}><Text numberOfLines={1} style={{ color: isLight ? "#4B5563" : "rgba(255,255,255,0.6)", fontSize: 10, lineHeight: 14 }}>Document: {document.name}</Text></View>}
+            <View style={{ marginTop: 19, gap: 10 }}>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={busy ? "Submitting..." : "Confirm submission"} accessibilityState={{ disabled: busy }} disabled={busy} onPress={() => { setConfirmSubmit(false); void perform(false); }} style={{ minHeight: 36, borderRadius: 6, backgroundColor: "#1A5FB4", justifyContent: "center", alignItems: "center", opacity: busy ? 0.5 : 1 }}>
+                <Text style={{ color: "#FFFFFF", fontSize: 12, fontWeight: "600" }}>{busy ? "Submitting..." : "Confirm submission"}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" disabled={busy} onPress={() => setConfirmSubmit(false)} style={{ minHeight: 36, borderRadius: 6, borderWidth: 1, borderColor: isLight ? "#E5E7EB" : "#2A3A55", backgroundColor: isLight ? "#FFFFFF" : "#0B1A2B", justifyContent: "center", alignItems: "center", opacity: busy ? 0.5 : 1 }}>
+                <Text style={{ color: isLight ? "#4B5563" : "rgba(255,255,255,0.8)", fontSize: 12, fontWeight: "600" }}>Go back</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close modal" disabled={busy} onPress={() => setConfirmSubmit(false)} style={{ position: "absolute", top: 7, right: 7, width: 28, height: 28, alignItems: "center", justifyContent: "center" }}><Ionicons name="close" size={16} color="#94A3B8" /></TouchableOpacity>
+        </View>
+      </View>
     </Modal>
     <Modal visible={confirmCancel} transparent animationType="fade" onRequestClose={() => { if (!busy) setConfirmCancel(false); }}>
       <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "center", alignItems: "center", padding: 16 }}><ScrollView style={{ width: "100%", maxWidth: 448, maxHeight: "90%", flexGrow: 0, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface }} contentContainerStyle={{ padding: 20, gap: 14 }} keyboardShouldPersistTaps="handled">

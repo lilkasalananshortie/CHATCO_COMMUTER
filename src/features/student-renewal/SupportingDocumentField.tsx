@@ -18,13 +18,25 @@ function usePreviewUri(document: RenewalDocument | null) {
   return uri;
 }
 
-export function SupportingDocumentField({ document, label, disabled, onChoose, onRemove }: {
-  document: RenewalDocument | null; label: string; disabled: boolean; onChoose: () => void; onRemove: () => void;
+export function SupportingDocumentField({ document, label, disabled, onChoose, onRemove, webLayout = false }: {
+  document: RenewalDocument | null; label: string; disabled: boolean; onChoose: () => void; onRemove: () => void; webLayout?: boolean;
 }) {
-  const { colors } = useCommuterTheme();
+  const { colors, isLight } = useCommuterTheme();
   const previewUri = usePreviewUri(document);
   const isImage = Boolean(document && document.type.startsWith("image/"));
   const size = document?.size == null ? "Size unavailable" : `${(document.size / (1024 * 1024)).toFixed(document.size < 1024 * 1024 ? 2 : 1)} MB`;
+  if (webLayout) return <View style={{ gap: 8 }}>
+    <View style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, overflow: "hidden" }}>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel={label} disabled={disabled || !!document} onPress={onChoose} style={{ height: 192, justifyContent: "center", alignItems: "center", gap: 8, backgroundColor: isLight ? "#F9FAFB" : "#0E1628", borderBottomWidth: 1, borderBottomColor: colors.border, opacity: disabled ? 0.5 : 1 }}>
+        {isImage && previewUri ? <Image source={{ uri: previewUri }} style={{ width: "100%", height: "100%" }} resizeMode="contain" /> : <><Ionicons name={document ? "document-text-outline" : "push-outline"} size={28} color={isLight ? "#1A5FB4" : "#99C1F1"} /><Text style={{ color: colors.textPrimary, fontSize: 14, fontWeight: "500" }}>{document ? "PDF document" : "Choose a file"}</Text></>}
+      </TouchableOpacity>
+      <View style={{ minHeight: 56, flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 8, paddingLeft: 14, paddingRight: 8, backgroundColor: isLight ? "#FFFFFF" : "rgba(255,255,255,0.05)" }}>
+        <View style={{ flex: 1 }}><Text numberOfLines={1} style={{ color: document ? colors.textPrimary : colors.textMuted, fontSize: 14 }}>{document?.name ?? "No file selected"}</Text>{document && <Text style={{ color: colors.textSecondary, fontSize: 12 }}>{size}</Text>}</View>
+        {document && <TouchableOpacity accessibilityRole="button" accessibilityLabel="Remove supporting document" disabled={disabled} onPress={onRemove} style={{ width: 40, height: 40, alignItems: "center", justifyContent: "center" }}><Ionicons name="close" size={16} color={colors.textSecondary} /></TouchableOpacity>}
+      </View>
+    </View>
+    <Text style={{ color: colors.textSecondary, fontSize: 12, lineHeight: 19 }}>JPG, PNG, WebP, or PDF; up to 5 MB. Your document is available only to authorized reviewers.</Text>
+  </View>;
   return <View style={{ gap: 8 }}>
     <TouchableOpacity accessibilityRole="button" disabled={disabled} onPress={onChoose} style={{ minHeight: 72, flexDirection: "row", alignItems: "center", gap: 12, padding: 10, borderRadius: 12, borderWidth: 1, borderColor: document ? colors.primary : colors.border, backgroundColor: colors.surfaceSecondary, opacity: disabled ? 0.6 : 1 }}>
       <View style={{ width: 52, height: 52, borderRadius: 9, overflow: "hidden", alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceHover }}>

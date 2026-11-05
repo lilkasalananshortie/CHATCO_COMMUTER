@@ -61,7 +61,7 @@ test("double submit taps send one request, then show pending rather than an edit
   (discountApplicationService.submit as jest.Mock).mockReturnValue(new Promise((done) => { resolve = done; }));
   button("Submit application").props.onPress();
   const press = button("Confirm submission").props.onPress;
-  press(); press();
+  press(); press(); await flush();
   expect(discountApplicationService.submit).toHaveBeenCalledTimes(1);
   resolve({ ...state, status: "PENDING", can_submit: false }); await flush();
   expect(refresh).toHaveBeenCalledTimes(1);

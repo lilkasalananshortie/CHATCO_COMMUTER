@@ -27,7 +27,7 @@ const unit = { id: "unit", unitNumber: "U1", plateNumber: "ABC", lat: 14.8, lng:
 test("location polls update the same marker and popup without recreating the map", () => {
   const r = runtime(); r.update({ vehicles: [unit] }); r.update({ vehicles: [{ ...unit, lat: 14.9 }] });
   expect(r.L.marker).toHaveBeenCalledTimes(1);
-  expect(r.markers[0].bindPopup).toHaveBeenCalledWith(expect.anything(), { autoClose: false, closeOnClick: false });
+  expect(r.markers[0].bindPopup).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ className: "chatco-unit-popup", closeButton: false }));
   expect(r.markers[0].setLatLng).toHaveBeenCalledWith([14.9, 120.8]); expect(r.markers[0].setPopupContent).toHaveBeenCalledTimes(1);
 });
 test("a unit leaving removes only its marker; invalid coordinates are rejected", () => {
@@ -44,8 +44,8 @@ test("nearby unit popup includes distance and estimated arrival", () => {
   const r = runtime();
   r.update({ vehicles: [unit], userLocation: { latitude: unit.lat, longitude: unit.lng } });
   const popup = r.markers[0].bindPopup.mock.calls[0][0];
-  expect(text(popup)).toContain("Distance: 0 m");
-  expect(text(popup)).toContain("ETA: ~1 min");
+  expect(text(popup)).toMatch(/Distance:\s+0 m/);
+  expect(text(popup)).toMatch(/ETA:\s+~1 min/);
 });
 test("profile masks email for display without changing the source address", () => {
   const email = "commuter@example.test";

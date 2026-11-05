@@ -20,7 +20,7 @@ export const APPLICATION_LABELS: Record<ApplicationState["status"], string> = {
 export function canCancelApplication(state: ApplicationState): boolean {
   return state.application?.request_type === "APPLICATION" && ["PENDING", "NEEDS_CORRECTION"].includes(state.status);
 }
-export function applicationPayload(state: ApplicationState, category: DiscountCategory | "", fields: RenewalFields, document: RenewalDocument | null): FormData {
+export function applicationPayload(state: ApplicationState, category: DiscountCategory | "", fields: RenewalFields, document: RenewalDocument | null, nativeBytes?: Blob): FormData {
   if (!state.can_submit || state.commuter_type !== "REGULAR") throw new Error("This account cannot submit an application. Refresh its status.");
   if (!Object.prototype.hasOwnProperty.call(DISCOUNT_CATEGORIES, category)) throw new Error("Choose a discount category.");
   const current = state.application;
@@ -28,7 +28,7 @@ export function applicationPayload(state: ApplicationState, category: DiscountCa
   if (correction && (!current || current.request_type !== "APPLICATION")) throw new Error("Open Student Renewal to correct this request.");
   if (correction && current?.requested_type !== category) throw new Error("Cancel this application first to change its discount category.");
   // Only an explicit backend false allows local debugging without proof. Do not infer this from the device's development mode.
-  const form = category === "STUDENT" ? renewalPayload(fields, document, state.document_required !== false) : proofPayload(document, state.document_required !== false);
+  const form = category === "STUDENT" ? renewalPayload(fields, document, state.document_required !== false, nativeBytes) : proofPayload(document, state.document_required !== false, nativeBytes);
   form.append("requested_type", category);
   if (correction && current) {
     form.append("application_id", current.id);

@@ -1,7 +1,14 @@
 /// <reference types="jest" />
-import { renewalPayload, schoolProofFieldsError, type RenewalFields } from "../renewal-types";
+import { readNativeProof, renewalPayload, schoolProofFieldsError, type RenewalFields } from "../renewal-types";
+jest.mock("expo-file-system", () => ({ File: class { bytes() { return Promise.resolve(new Uint8Array([1, 2, 3])); } } }));
 const fields: RenewalFields = { school_name: " School ", education_level: "HIGH_SCHOOL", grade_level: "10", school_year: "2027-2028", enrollment_term: "" };
 const file = () => new File(["image"], "proof.jpg", { type: "image/jpeg" });
+test("native proof submits a MIME-typed file with its original name", async () => {
+  const document = { uri: "file:///proof.pdf", name: "proof.pdf", type: "application/pdf" };
+  const bytes = await readNativeProof(document);
+  const payload = renewalPayload(fields, document, true, bytes);
+  expect(payload.get("document")).toMatchObject({ name: "proof.pdf", type: "application/pdf", size: 3 });
+});
 test("high school proof carries grade and trims school name", () => {
   const payload = renewalPayload(fields, file());
   expect(payload.get("school_name")).toBe("School");

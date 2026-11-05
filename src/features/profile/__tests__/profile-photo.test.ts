@@ -5,6 +5,7 @@ import { pickProfilePhoto, profilePhotoForm } from "../profile-photo";
 
 jest.mock("react-native", () => ({ Platform: { OS: "android" } }));
 jest.mock("expo-image-picker", () => ({ requestMediaLibraryPermissionsAsync: jest.fn(), launchImageLibraryAsync: jest.fn() }));
+jest.mock("expo-file-system", () => ({ File: class { bytes() { return Promise.resolve(new Uint8Array([1, 2, 3])); } } }));
 beforeEach(() => {
   jest.resetAllMocks();
   (Platform as { OS: string }).OS = "android";
@@ -22,12 +23,12 @@ test("cancelled picker is not a failed upload", async () => {
   expect(await pickProfilePhoto()).toBeNull();
 });
 
-test.each(["image/gif", "image/svg+xml", "application/pdf", ""])('rejects unsupported type %s', type => {
-  expect(() => profilePhotoForm({ uri: "file:///photo", name: "photo", type })).toThrow("JPG, PNG or WebP");
+test.each(["image/gif", "image/svg+xml", "application/pdf", ""])('rejects unsupported type %s', async type => {
+  await expect(profilePhotoForm({ uri: "file:///photo", name: "photo", type })).rejects.toThrow("JPG, PNG or WebP");
 });
 
-test("rejects files over 3MB", () => {
-  expect(() => profilePhotoForm({ uri: "file:///photo", name: "photo.jpg", type: "image/jpeg", size: 3 * 1024 * 1024 + 1 })).toThrow("3 MB");
+test("rejects files over 3MB", async () => {
+  await expect(profilePhotoForm({ uri: "file:///photo", name: "photo.jpg", type: "image/jpeg", size: 3 * 1024 * 1024 + 1 })).rejects.toThrow("3 MB");
 });
 
 test("browser photo uses the actual File rather than a local URI string", async () => {
@@ -36,16 +37,17 @@ test("browser photo uses the actual File rather than a local URI string", async 
   (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValue({ canceled: false, assets: [{ uri: "blob:photo", mimeType: "image/png", width: 50, height: 50, file }] });
   const photo = await pickProfilePhoto();
   expect(ImagePicker.requestMediaLibraryPermissionsAsync).not.toHaveBeenCalled();
-  expect(profilePhotoForm(photo!).get("photo")).toBe(file);
+  expect((await profilePhotoForm(photo!)).get("photo")).toBe(file);
 });
 
-test("native multipart preserves URI, name and MIME type", () => {
+test("native multipart sends file bytes with the original name and MIME type", async () => {
   const Original = globalThis.FormData;
   const append = jest.fn();
   globalThis.FormData = class { append = append; } as unknown as typeof FormData;
   try {
-    profilePhotoForm({ uri: "file:///photo.webp", name: "photo.webp", type: "image/webp" });
-    expect(append).toHaveBeenCalledWith("photo", { uri: "file:///photo.webp", name: "photo.webp", type: "image/webp" });
+    await profilePhotoForm({ uri: "file:///photo.webp", name: "photo.webp", type: "image/webp" });
+    expect(append).toHaveBeenCalledWith("photo", expect.any(Blob), "photo.webp");
+    expect(append.mock.calls[0][1]).toMatchObject({ type: "image/webp", size: 3 });
   } finally { globalThis.FormData = Original; }
 });
 

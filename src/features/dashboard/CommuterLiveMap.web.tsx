@@ -129,10 +129,18 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
     tileLayer.addTo(map);
 
     var routePoints = ${routePointsJs};
-    var polyline = L.polyline(routePoints, {
-      color: '#1A5FB4',
-      weight: 5,
-      opacity: 0.85,
+    L.polyline(routePoints, {
+      color: '${isLight ? "#1A5FB4" : "#62A0EA"}',
+      weight: 8,
+      opacity: 0.2,
+      lineCap: 'round',
+      lineJoin: 'round'
+    }).addTo(map);
+    L.polyline(routePoints, {
+      color: '${isLight ? "#1A5FB4" : "#62A0EA"}',
+      weight: 4,
+      opacity: 0.9,
+      dashArray: '10 10',
       lineCap: 'round',
       lineJoin: 'round'
     }).addTo(map);

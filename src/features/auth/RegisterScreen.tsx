@@ -323,8 +323,9 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
       setStep(3);
     } catch (err: any) {
       const msg = err?.message || "";
-      if (msg.includes("429") || msg.includes("already requested")) {
+      if (err?.status === 429 || msg.includes("429") || msg.includes("already requested")) {
         setResendIn(60);
+        setErrorMessage("You requested a code a moment ago — check your inbox for it.");
         setStep(3);
       } else {
         setErrorMessage(err?.message || "Could not send verification code. Please check your email address.");
@@ -457,7 +458,9 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
     if (submitting.current) return;
     if (!validateCurrentStep(4)) return;
     if (!isEmailVerified || verifiedEmail !== email.trim().toLowerCase()) {
-      setErrorMessage("Verify your current email address before submitting.");
+      setErrorMessage(verifiedEmail && verifiedEmail !== email.trim().toLowerCase()
+        ? "Your email address changed, so it needs verifying again."
+        : "Verify your current email address before submitting.");
       setStep(2);
       return;
     }

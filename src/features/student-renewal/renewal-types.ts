@@ -30,19 +30,28 @@ export function schoolProofFieldsError(fields: RenewalFields): string | null {
   return null;
 }
 
-export function proofPayload(document: RenewalDocument | null, required = true): FormData {
+export async function readNativeProof(document: RenewalDocument | null, required = true): Promise<Blob | undefined> {
+  if (!required || !document || !("uri" in document)) return undefined;
+  const { File } = await import("expo-file-system");
+  return new Blob([await new File(document.uri).bytes()], { type: document.type });
+}
+
+export function proofPayload(document: RenewalDocument | null, required = true, nativeBytes?: Blob): FormData {
   const form = new FormData();
   // Local application debugging must not upload a selected file to R2.
   if (!required) return form;
   if (!document) throw new Error("Choose your supporting proof first.");
   if (document.size != null && document.size > 5 * 1024 * 1024) throw new Error("Enrollment proof must be 5MB or smaller.");
   if (!["image/jpeg", "image/png", "image/webp", "application/pdf"].includes(document.type)) throw new Error("Choose a JPG, PNG, WebP or PDF document.");
-  form.append("document", document as any);
+  if ("uri" in document) {
+    if (!nativeBytes) throw new Error("Unable to read the selected document.");
+    form.append("document", nativeBytes, document.name);
+  } else form.append("document", document);
   return form;
 }
 
-export function renewalPayload(fields: RenewalFields, document: RenewalDocument | null, documentRequired = true): FormData {
-  const form = proofPayload(document, documentRequired);
+export function renewalPayload(fields: RenewalFields, document: RenewalDocument | null, documentRequired = true, nativeBytes?: Blob): FormData {
+  const form = proofPayload(document, documentRequired, nativeBytes);
   const fieldsError = schoolProofFieldsError(fields);
   if (fieldsError) throw new Error(fieldsError);
   form.append("school_name", fields.school_name.trim());

@@ -65,6 +65,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   const isTablet = windowWidth >= 768;
 
   const [vehicles, setVehicles] = useState<VehicleLocation[]>([]);
+  const vehicleRequestInFlight = useRef(false);
   const [vehicleError, setVehicleError] = useState<unknown>(null);
   const [retryingVehicles, setRetryingVehicles] = useState(false);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
@@ -137,12 +138,16 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
   // Fetch vehicles from API
   const fetchVehicles = useCallback(async () => {
+    if (vehicleRequestInFlight.current) return;
+    vehicleRequestInFlight.current = true;
     try {
       const data = await commuterService.getVehicleLocations();
       setVehicles(data || []);
       setVehicleError(null);
     } catch (error) {
       setVehicleError(error);
+    } finally {
+      vehicleRequestInFlight.current = false;
     }
   }, []);
 
@@ -321,8 +326,20 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
         setActiveHail(null);
         setHailError(null);
         if (Platform.OS !== "web") Vibration.vibrate(100);
-      } catch {
-        setHailError("Unable to cancel your hail. It remains active until the server confirms cancellation. Please retry.");
+      } catch (error) {
+        try {
+          const current = await commuterService.getHailStatus(activeHail.id);
+          if (!current || hailIsTerminal(current)) {
+            setActiveHail(null);
+            setHailError(null);
+          } else {
+            setActiveHail(current);
+            const reason = error instanceof Error ? error.message : "";
+            setHailError(reason || "Unable to cancel your hail. Please retry.");
+          }
+        } catch {
+          setHailError("Unable to confirm your hail status. Check your connection and try again.");
+        }
       } finally {
         hailBusy.current = false;
         setHailPending(false);
@@ -697,10 +714,10 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
               <TouchableOpacity
                 activeOpacity={0.8}
                 onPress={onOpenShareRide}
-                style={styles.quickActionBtn}
+                style={[styles.quickActionBtn, { backgroundColor: isLight ? "#F9FAFB" : "rgba(255,255,255,0.05)", borderColor: isLight ? "#E5E7EB" : "rgba(255,255,255,0.1)" }]}
               >
-                <WebIcon name="share-ride" size={16} color="#62A0EA" style={{ marginRight: 6 }} />
-                <Text style={styles.quickActionText}>Share Ride</Text>
+                <WebIcon name="share-ride" size={16} color={isLight ? "#1A5FB4" : "#93C5FD"} style={{ marginRight: 6 }} />
+                <Text style={[styles.quickActionText, { color: isLight ? "#374151" : "rgba(255,255,255,0.7)" }]}>Share Ride</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
