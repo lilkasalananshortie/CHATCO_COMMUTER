@@ -8,7 +8,7 @@ import { COMMUTER_ACCOUNT_PATH } from "../commuter-map-pin";
 function runtime() {
   const markers: any[] = [];
   const map = { removeLayer: jest.fn(), on: jest.fn(), getBounds: () => ({ contains: () => true }) };
-  const window: any = { addEventListener: jest.fn() };
+  const window: any = { addEventListener: jest.fn(), ReactNativeWebView: { postMessage: jest.fn() } };
   const element = () => {
     const node: any = { style: {}, className: "", textContent: "", children: [], attributes: {} };
     node.appendChild = (child: unknown) => node.children.push(child);
@@ -17,13 +17,22 @@ function runtime() {
   };
   const document = { createElement: element, createElementNS: element };
   const L = { divIcon: (options: unknown) => options, marker: jest.fn(() => {
-    const marker = { addTo: jest.fn().mockReturnThis(), bindPopup: jest.fn().mockReturnThis(), setLatLng: jest.fn(), setPopupContent: jest.fn(), setIcon: jest.fn() };
+    const marker = { addTo: jest.fn().mockReturnThis(), bindPopup: jest.fn().mockReturnThis(), on: jest.fn().mockReturnThis(), setLatLng: jest.fn(), setPopupContent: jest.fn(), setIcon: jest.fn() };
     markers.push(marker); return marker;
   }), circle: jest.fn(() => ({ addTo: jest.fn().mockReturnThis(), setLatLng: jest.fn() })) };
   runInNewContext(MAP_RUNTIME, { window, document, map, L });
-  return { update: window.chatcoUpdate, markers, map, L };
+  return { update: window.chatcoUpdate, markers, map, L, window };
 }
 const unit = { id: "unit", unitNumber: "U1", plateNumber: "ABC", lat: 14.8, lng: 120.8, driverName: "Driver", conductorName: "Conductor", availableSeats: 0 };
+test("opening a unit requests its authenticated details without refetching on location polls", () => {
+  const r = runtime(); r.update({ vehicles: [unit] });
+  const [event, handler] = r.markers[0].on.mock.calls[0];
+  expect(event).toBe("popupopen");
+  handler();
+  expect(JSON.parse(r.window.ReactNativeWebView.postMessage.mock.calls[0][0])).toEqual({ type: "chatco-unit-open", id: "unit" });
+  r.update({ vehicles: [{ ...unit, lat: 14.9 }] });
+  expect(r.window.ReactNativeWebView.postMessage).toHaveBeenCalledTimes(1);
+});
 test("location polls update the same marker and popup without recreating the map", () => {
   const r = runtime(); r.update({ vehicles: [unit] }); r.update({ vehicles: [{ ...unit, lat: 14.9 }] });
   expect(r.L.marker).toHaveBeenCalledTimes(1);

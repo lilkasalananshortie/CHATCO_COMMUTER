@@ -34,6 +34,14 @@ test("mobile requests retain bearer authentication and unwrap the existing envel
     expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer session-token" }) }));
 });
 
+test("unit details use the backend commuter route and the authenticated envelope", async () => {
+  const { commuterService } = await import("../commuter-service");
+  const details = { vehicle_id: "unit-1", unit_number: "NAB 0002", driver: { name: "Driver", rating_count: 1, average_rating: 5 }, conductor: null };
+  const fetchMock = jest.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({ data: details }) } as Response);
+  expect(await commuterService.getVehicleDetails("unit-1")).toEqual(details);
+  expect(fetchMock).toHaveBeenCalledWith("https://api.chatco.test/api/v1/commuter/vehicles/unit-1/details", expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer session-token" }) }));
+});
+
 test("invalid mobile login does not revoke an existing local session", async () => {
   jest.spyOn(globalThis, "fetch").mockResolvedValue({
     ok: false, status: 401, json: async () => ({ message: "Invalid credentials" }),

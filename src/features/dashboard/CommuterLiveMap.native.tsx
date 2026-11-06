@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Text, View, StyleSheet, StyleProp, ViewStyle } from "react-native";
 import { WebView } from "react-native-webview";
 import Constants from "expo-constants";
@@ -8,6 +8,7 @@ import { usePublishedRoute } from "./usePublishedRoute";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import { MAP_RUNTIME, mapUpdateScript } from "./map-runtime";
 import { commuterLocationCss } from "./commuter-map-pin";
+import { UnitDetailsPanel } from "./UnitDetailsPanel";
 
 const CARTO_API_KEY =
   process.env.EXPO_PUBLIC_CARTO_API_KEY ||
@@ -29,6 +30,7 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
   style,
 }) => {
   const webViewRef = useRef<WebView>(null);
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const route = usePublishedRoute();
   const { isLight, colors } = useCommuterTheme();
 
@@ -52,6 +54,9 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
     availableSeats: v.available_seats, capacityStatus: v.capacity_status, routeName: v.route_name,
     driverName: v.driver_name, conductorName: v.conductor_name,
   })), userLocation, isHailing }), [vehicles, userLocation, isHailing]);
+  useEffect(() => {
+    if (selectedVehicleId && !vehicles.some(v => String(v.vehicle_id || v.id) === selectedVehicleId)) setSelectedVehicleId(null);
+  }, [vehicles, selectedVehicleId]);
   useEffect(() => { webViewRef.current?.injectJavaScript(mapUpdateScript(mapState)); }, [mapState, isLight]);
 
   const htmlContent = useMemo(() => `
@@ -164,9 +169,16 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
         originWhitelist={["*"]}
         source={source}
         onLoadEnd={() => webViewRef.current?.injectJavaScript(mapUpdateScript(mapState))}
+        onMessage={(event) => {
+          try {
+            const message = JSON.parse(event.nativeEvent.data);
+            if (message?.type === "chatco-unit-open" && vehicles.some(v => String(v.vehicle_id || v.id) === String(message.id))) setSelectedVehicleId(String(message.id));
+          } catch { /* Ignore unrelated WebView messages. */ }
+        }}
         style={styles.webView}
         scrollEnabled={false}
       />
+      <UnitDetailsPanel vehicleId={selectedVehicleId} onClose={() => setSelectedVehicleId(null)} />
     </View>
   );
 };

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Text, View, StyleSheet, StyleProp, ViewStyle } from "react-native";
 import Constants from "expo-constants";
 import { commuterColors } from "../../core/theme/colors";
@@ -7,6 +7,7 @@ import { usePublishedRoute } from "./usePublishedRoute";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import { MAP_RUNTIME } from "./map-runtime";
 import { commuterLocationCss } from "./commuter-map-pin";
+import { UnitDetailsPanel } from "./UnitDetailsPanel";
 
 const CARTO_API_KEY =
   process.env.EXPO_PUBLIC_CARTO_API_KEY ||
@@ -30,6 +31,7 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
   const route = usePublishedRoute();
   const { isLight, colors } = useCommuterTheme();
   const frameRef = useRef<HTMLIFrameElement>(null);
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const routeCenter = useMemo(() => {
     const latitudes = route.coordinates.map(p => p[0]);
     const longitudes = route.coordinates.map(p => p[1]);
@@ -50,6 +52,18 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
     availableSeats: v.available_seats, capacityStatus: v.capacity_status, routeName: v.route_name,
     driverName: v.driver_name, conductorName: v.conductor_name,
   })), userLocation, isHailing }), [vehicles, userLocation, isHailing]);
+  useEffect(() => {
+    if (selectedVehicleId && !vehicles.some(v => String(v.vehicle_id || v.id) === selectedVehicleId)) setSelectedVehicleId(null);
+  }, [vehicles, selectedVehicleId]);
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== frameRef.current?.contentWindow || event.data?.type !== "chatco-unit-open") return;
+      const id = String(event.data.id);
+      if (vehicles.some(v => String(v.vehicle_id || v.id) === id)) setSelectedVehicleId(id);
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [vehicles]);
   useEffect(() => { frameRef.current?.contentWindow?.postMessage({ type: "chatco-map-update", state: mapState }, "*"); }, [mapState, isLight]);
 
   const htmlContent = useMemo(() => `
@@ -168,6 +182,7 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
         },
         title: "Commuter Live Map",
       })}
+      <UnitDetailsPanel vehicleId={selectedVehicleId} onClose={() => setSelectedVehicleId(null)} />
     </View>
   );
 };

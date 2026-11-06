@@ -9,6 +9,7 @@ export interface LoginResult {
   user: User;
   profile?: CommuterProfile;
   token: string;
+  unverified?: boolean;
 }
 
 const USER_KEY = "chatco_commuter_user";
@@ -60,7 +61,7 @@ export const authService = {
       return { user: data.user, profile: data.profile ? { ...data.profile, id: data.profile.id ?? data.user.id } : undefined, token };
     } catch (error) {
       // Connectivity failure is not token revocation. Never fabricate a profile.
-      if (error instanceof NetworkError && cachedUser?.role === "COMMUTER") return { user: cachedUser, token };
+      if (error instanceof NetworkError && cachedUser?.role === "COMMUTER") return { user: cachedUser, token, unverified: true };
       const status = (error as { status?: number }).status;
       if (status === 401 || status === 403) await authService.clearLocalSession();
       return null;

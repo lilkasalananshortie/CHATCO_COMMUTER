@@ -112,7 +112,13 @@ window.chatcoUpdate = function(state) {
       var user = state.userLocation;
       var inRange = user && coordinates(user.latitude,user.longitude) && distanceMeters([user.latitude,user.longitude],[v.lat,v.lng]) <= 1000;
       marker = L.marker([v.lat,v.lng], {icon: markerIcon(v.capacityStatus, inRange)}).addTo(map);
-      marker.bindPopup(unitDetails(v,state.userLocation), {className:'chatco-unit-popup',closeButton:false,minWidth:0,maxWidth:320}); vehicleMarkers[key] = marker;
+      marker.bindPopup(unitDetails(v,state.userLocation), {className:'chatco-unit-popup',closeButton:false,minWidth:0,maxWidth:320});
+      marker.on('popupopen', function() {
+        var message = {type:'chatco-unit-open', id:key};
+        if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(message));
+        else if (window.parent && window.parent !== window) window.parent.postMessage(message, '*');
+      });
+      vehicleMarkers[key] = marker;
     } else {
       var user = state.userLocation;
       var inRange = user && coordinates(user.latitude,user.longitude) && distanceMeters([user.latitude,user.longitude],[v.lat,v.lng]) <= 1000;

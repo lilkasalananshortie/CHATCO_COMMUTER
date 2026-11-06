@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { View, StyleSheet, ActivityIndicator, Animated, Easing, Modal, Platform } from "react-native";
+import { View, Text, Pressable, StyleSheet, ActivityIndicator, Animated, Easing, Modal, Platform } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -68,6 +68,7 @@ function MainApp() {
   const [user, setUser] = useState<User | null>(null);
   const currentUserId = useRef<string | undefined>(undefined);
   const sessionEpoch = useRef(0);
+  const sessionVerified = useRef(false);
   currentUserId.current = user?.id;
   const [profile, setProfile] = useState<CommuterProfile | null>(null);
   const [authView, setAuthView] = useState<"LOGIN" | "REGISTER">("LOGIN");
@@ -86,11 +87,11 @@ function MainApp() {
   const [showShareModal, setShowShareModal] = useState(false);
   const [showRenewal, setShowRenewal] = useState(false);
   const [showDiscountApplication, setShowDiscountApplication] = useState(false);
-  const operationalUserId = user?.must_change_password ? undefined : user?.id;
+  const operationalUserId = !sessionVerified.current || user?.must_change_password ? undefined : user?.id;
   const discountApplication = useDiscountApplication(operationalUserId);
   const renewal = useStudentRenewal(operationalUserId);
   useEffect(() => {
-    if (!user || !discountApplication.state || profile?.commuter_type === discountApplication.state.commuter_type) return;
+    if (!sessionVerified.current || !user || !discountApplication.state || profile?.commuter_type === discountApplication.state.commuter_type) return;
     let cancelled = false;
     const requestedFor = user.id;
     void commuterService.getProfile().then((result) => {
@@ -112,9 +113,11 @@ function MainApp() {
   const [lostFoundBadge, setLostFoundBadge] = useState(0);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackFormVisible, setFeedbackFormVisible] = useState(false);
+  const [retryingSession, setRetryingSession] = useState(false);
 
   const handleLogout = useCallback(() => {
     sessionEpoch.current++;
+    sessionVerified.current = false;
     currentUserId.current = undefined;
     setUnreadAnnouncements(0); setAvailableVouchers(0); setLostFoundBadge(0);
     setShowScanModal(false); setShowReceiptScanModal(false); setShowSosModal(false); setShowShareModal(false);
@@ -137,8 +140,10 @@ function MainApp() {
 
         const session = await authService.restoreSession();
         if (!cancelled && epoch === sessionEpoch.current && session) {
+          sessionVerified.current = !session.unverified;
           currentUserId.current = session.user.id;
           setUser(session.user);
+          if (session.unverified) return;
           if (session.user.must_change_password) return;
           if (session.profile) setProfile(session.profile);
           try {
@@ -164,7 +169,7 @@ function MainApp() {
 
   // Poll unread announcements count & available vouchers if logged in (matching web layout)
   const fetchUnreadCount = useCallback(async () => {
-    if (!user || user.must_change_password) return;
+    if (!sessionVerified.current || !user || user.must_change_password) return;
     try {
       const [announcementRes, rewardsRes, claimsRes] = await Promise.allSettled([
         commuterService.getUnreadAnnouncementCount(),
@@ -200,6 +205,7 @@ function MainApp() {
 
   const handleLoginSuccess = (loggedInUser: User, token: string) => {
     const epoch = ++sessionEpoch.current;
+    sessionVerified.current = true;
     currentUserId.current = loggedInUser.id;
     setProfile(null);
     // Reset to 0 and trigger smooth entrance transition into dashboard
@@ -240,6 +246,26 @@ function MainApp() {
 
   const insets = useSafeAreaInsets();
 
+  const retrySession = async () => {
+    const epoch = sessionEpoch.current;
+    setRetryingSession(true);
+    try {
+      const session = await authService.restoreSession();
+      if (epoch !== sessionEpoch.current) return;
+      if (!session) {
+        await authService.clearLocalSession();
+        handleLogout();
+      } else if (!session.unverified) {
+        sessionVerified.current = true;
+        currentUserId.current = session.user.id;
+        setProfile(session.profile ?? null);
+        setUser(session.user);
+      }
+    } finally {
+      if (epoch === sessionEpoch.current) setRetryingSession(false);
+    }
+  };
+
   if (initializing) {
     return (
       <View style={styles.loadingScreen}>
@@ -261,6 +287,19 @@ function MainApp() {
       />
     );
   }
+
+  if (user && !sessionVerified.current) return (
+    <View style={[styles.loadingScreen, { padding: 24, gap: 16 }]}>
+      <Text style={{ color: colors.textPrimary, fontSize: 20, fontWeight: "700", textAlign: "center" }}>Session not verified</Text>
+      <Text style={{ color: colors.textSecondary, textAlign: "center" }}>Reconnect to ChatCo to verify your account before continuing.</Text>
+      <Pressable disabled={retryingSession} onPress={() => void retrySession()} style={{ backgroundColor: colors.primary, padding: 14, borderRadius: 10 }}>
+        <Text style={{ color: "white", fontWeight: "700" }}>{retryingSession ? "Checking session…" : "Try again"}</Text>
+      </Pressable>
+      <Pressable onPress={() => { void authService.clearLocalSession().finally(handleLogout); }} style={{ padding: 12 }}>
+        <Text style={{ color: colors.textSecondary }}>Sign out</Text>
+      </Pressable>
+    </View>
+  );
 
   if (user?.must_change_password) return <SetNewPasswordScreen onDone={handleLogout} />;
 

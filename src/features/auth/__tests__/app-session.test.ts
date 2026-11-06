@@ -3,6 +3,7 @@ import React from "react";
 import App from "../../../../App";
 import { setSessionEndedHandler } from "../../../core/api/api-client";
 import { commuterService } from "../../../core/api/commuter-service";
+import { authService } from "../../../core/api/auth-service";
 let mockStates: any[] = [], mockRefs: any[] = [], mockEffects: Array<() => any> = [];
 let mockStateIndex = 0, mockRefIndex = 0;
 jest.mock("react", () => ({ ...jest.requireActual("react"),
@@ -10,7 +11,7 @@ jest.mock("react", () => ({ ...jest.requireActual("react"),
   useRef: (initial: unknown) => { const i = mockRefIndex++; return mockRefs[i] ?? (mockRefs[i] = { current: initial }); },
   useState: (initial: unknown) => { const i = mockStateIndex++; if (!(i in mockStates)) mockStates[i] = initial; return [mockStates[i], (next: any) => { mockStates[i] = typeof next === "function" ? next(mockStates[i]) : next; }]; },
 }));
-jest.mock("react-native", () => ({ View: "View", Modal: "Modal", ActivityIndicator: "Spinner", StyleSheet: { create: (s: unknown) => s },
+jest.mock("react-native", () => ({ View: "View", Text: "Text", Pressable: "Pressable", Modal: "Modal", ActivityIndicator: "Spinner", StyleSheet: { create: (s: unknown) => s },
   Platform: { OS: "android" }, Animated: { View: "AnimatedView", Value: class { setValue() {} interpolate() {} }, timing: () => ({ start() {} }) }, Easing: { out: (v: any) => v, cubic: 1 } }));
 jest.mock("react-native-safe-area-context", () => ({ SafeAreaProvider: "SafeArea", useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock("expo-status-bar", () => ({ StatusBar: "StatusBar" }));
@@ -66,4 +67,14 @@ test("late profile response from a logged-out login cannot restore account state
   ended(); finish({ profile: { first_name: "Old account" } });
   await Promise.resolve(); await Promise.resolve();
   expect(mockStates[2]).toBeNull(); expect(mockStates[3]).toBeNull();
+});
+
+test("cached offline account is gated until the server validates its session", async () => {
+  mockStates[2] = user;
+  expect(render().some(e => e.type === "Text" && e.props.children === "Session not verified")).toBe(true);
+  expect(render().some(e => e.type === "Dashboard")).toBe(false);
+  (authService.restoreSession as jest.Mock).mockResolvedValue({ user, token: "token" });
+  const retry = render().find(e => e.type === "Pressable" && walk(e).some(child => child.props.children === "Try again"))!;
+  await retry.props.onPress();
+  expect(render().some(e => e.type === "Dashboard")).toBe(true);
 });

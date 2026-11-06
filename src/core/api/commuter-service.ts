@@ -48,6 +48,17 @@ export interface ReceiptClaimResult {
   message: string;
 }
 
+export interface VehicleDetails {
+  vehicle_id: string;
+  shift_id: string;
+  unit_number: string;
+  plate_number: string | null;
+  route_name: string | null;
+  location_updated_at: string | null;
+  driver: { name: string; photo_url: string | null; average_rating: number | null; rating_count: number } | null;
+  conductor: { name: string; photo_url: string | null; average_rating: number | null; rating_count: number } | null;
+}
+
 export interface PasswordChangeInput {
   current_password: string;
   password: string;
@@ -93,6 +104,9 @@ export const commuterService = {
   },
 
   // Live Vehicle Tracking
+  async getVehicleDetails(vehicleId: string): Promise<VehicleDetails> {
+    return request(`/commuter/vehicles/${encodeURIComponent(vehicleId)}/details`);
+  },
   async getVehicleLocations(): Promise<VehicleLocation[]> {
     const raw = await request<any[]>("/mobile/commuter/vehicles/locations");
     if (!Array.isArray(raw)) return [];

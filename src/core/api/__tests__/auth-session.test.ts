@@ -21,7 +21,7 @@ test("restart validates existing bearer session before restoring current user", 
 });
 test("offline startup keeps only genuine cached user, never invents a profile", async () => {
   (request as jest.Mock).mockRejectedValue(new NetworkError("offline"));
-  expect(await authService.restoreSession()).toEqual({ user, token: "token" });
+  expect(await authService.restoreSession()).toEqual({ user, token: "token", unverified: true });
   expect(appStorage.removeItem).not.toHaveBeenCalled();
 });
 test.each([401, 403])("invalid session %s is cleared instead of treated as offline", async status => {
