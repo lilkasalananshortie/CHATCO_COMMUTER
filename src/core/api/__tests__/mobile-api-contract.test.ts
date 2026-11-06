@@ -18,6 +18,13 @@ afterAll(() => {
 beforeEach(() => jest.clearAllMocks());
 afterEach(() => jest.restoreAllMocks());
 
+test("disabled receipt rewards preserve the backend message and commuter session", async () => {
+  const message = "The free ride promo isn't available at the moment.";
+  jest.spyOn(globalThis, "fetch").mockResolvedValue({ ok: false, status: 403, json: async () => ({ message }) } as Response);
+  await expect(client.post("/mobile/commuter/receipts/claim", { qr_token: "receipt" })).rejects.toThrow(message);
+  expect(appStorage.removeItem).not.toHaveBeenCalled();
+});
+
 test("mobile requests retain bearer authentication and unwrap the existing envelope", async () => {
   const fetchMock = jest.spyOn(globalThis, "fetch").mockResolvedValue({
     ok: true, json: async () => ({ success: true, data: { id: "shared-account" } }),

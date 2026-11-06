@@ -2,13 +2,15 @@
 import React from "react";
 import { FareScreen } from "../FareScreen";
 import { normalizeFareMatrix } from "../fare-estimate";
+import { commuterService } from "../../../core/api/commuter-service";
 let mockStates: any[] = [], mockIndex = 0;
-jest.mock("react", () => ({ ...jest.requireActual("react"), useEffect: () => {}, useRef: (value: unknown) => ({ current: value }), useState: (initial: unknown) => { const index = mockIndex++; if (!(index in mockStates)) mockStates[index] = initial; return [mockStates[index], (value: any) => { mockStates[index] = typeof value === "function" ? value(mockStates[index]) : value; }]; } }));
-jest.mock("react-native", () => ({ ActivityIndicator: "Spinner", AppState: {}, KeyboardAvoidingView: "Keyboard", Platform: { OS: "android" }, Pressable: "Button", RefreshControl: "Refresh", ScrollView: "Scroll", TextInput: "Input", View: "View", StyleSheet: { create: (s: unknown) => s } }));
+let mockEffect: () => () => void;
+jest.mock("react", () => ({ ...jest.requireActual("react"), useEffect: (effect: () => () => void) => { mockEffect = effect; }, useRef: (value: unknown) => ({ current: value }), useState: (initial: unknown) => { const index = mockIndex++; if (!(index in mockStates)) mockStates[index] = initial; return [mockStates[index], (value: any) => { mockStates[index] = typeof value === "function" ? value(mockStates[index]) : value; }]; } }));
+jest.mock("react-native", () => ({ ActivityIndicator: "Spinner", AppState: { currentState: "active", addEventListener: () => ({ remove: jest.fn() }) }, KeyboardAvoidingView: "Keyboard", Platform: { OS: "android" }, Pressable: "Button", RefreshControl: "Refresh", ScrollView: "Scroll", TextInput: "Input", View: "View", StyleSheet: { create: (s: unknown) => s } }));
 jest.mock("react-native-svg", () => ({ __esModule: true, default: "Svg", Path: "Path" }));
 jest.mock("../../../shared/ui/BrandText", () => ({ Text: "Text" }));
 jest.mock("../../../core/theme/ThemeProvider", () => ({ useCommuterTheme: () => ({ isLight: false }) }));
-jest.mock("../../../core/api/commuter-service", () => ({ commuterService: {} }));
+jest.mock("../../../core/api/commuter-service", () => ({ commuterService: { getFareMatrix: jest.fn() } }));
 function walk(node: any): any[] { if (Array.isArray(node)) return node.flatMap(walk); if (!React.isValidElement(node)) return []; return [node, ...walk((node.props as any).children)]; }
 function render() { mockIndex = 0; return walk(FareScreen()); }
 function press(label: string) { render().find(node => node.props.accessibilityLabel === label)!.props.onPress(); }
@@ -50,5 +52,24 @@ test("fare summary is outside the scrolling list", () => {
 });
 test("discount selection shows authoritative-matrix estimate", () => {
   press("Select Alpha"); press("Market"); press("Select Beta"); press("Student");
-  expect(render().some(node => node.props.children === "₱20.80")).toBe(true);
+  expect(render().some(node => node.props.children === "₱21.25")).toBe(true);
+});
+
+test("open calculator recovers from an outage and reconciles changed stops on the next poll", async () => {
+  jest.useFakeTimers();
+  const original = mockStates[0];
+  const fetch = commuterService.getFareMatrix as jest.Mock;
+  fetch.mockReset().mockRejectedValueOnce(new Error("Offline")).mockResolvedValue({ ...original, points: [original.points[1]], config: { ...original.config, succeedingFareRegular: 3 } });
+  mockStates[3] = { pickup: "a", destination: "b", pickupLandmark: "Market", destinationLandmark: "" };
+  render();
+  const cleanup = mockEffect();
+  try {
+    await Promise.resolve(); await Promise.resolve();
+    expect(mockStates[0]).toBeNull();
+    expect(mockStates[2]).toBe("Offline");
+    await jest.advanceTimersByTimeAsync(15000);
+    expect(mockStates[0].config.succeedingFareRegular).toBe(3);
+    expect(mockStates[3]).toMatchObject({ pickup: "", destination: "b", pickupLandmark: "" });
+    expect(mockStates[2]).toBe("");
+  } finally { cleanup(); jest.useRealTimers(); }
 });

@@ -59,11 +59,11 @@ export function FareScreen() {
   const [routePanelOpen, setRoutePanelOpen] = useState(false);
   const active = useRef(true);
   const inFlight = useRef(false);
-  const load = async () => {
+  const load = async (background = false) => {
     if (inFlight.current) return;
-    inFlight.current = true; setLoading(true); setError("");
+    inFlight.current = true; if (!background) setLoading(true); setError("");
     // Never display an old tariff as current, but retain IDs for revalidation.
-    setMatrix(null);
+    if (!background) setMatrix(null);
     try {
       const result = normalizeFareMatrix(await commuterService.getFareMatrix());
       if (active.current) {
@@ -71,13 +71,19 @@ export function FareScreen() {
         setSelection(previous => reconcileSelection(previous, result));
         setExpanded(previous => result.points.some(point => point.id === previous) ? previous : null);
       }
-    } catch (e) { if (active.current) setError(e instanceof Error ? e.message : "Unable to load fares. Please retry."); }
+    } catch (e) { if (active.current) { setMatrix(null); setError(e instanceof Error ? e.message : "Unable to load fares. Please retry."); } }
     finally { inFlight.current = false; if (active.current) setLoading(false); }
   };
   useEffect(() => {
     active.current = true; void load();
     const subscription = AppState.addEventListener("change", state => { if (state === "active") void load(); });
-    return () => { active.current = false; subscription.remove(); };
+    const timer = setInterval(() => { if (AppState.currentState !== "background") void load(true); }, 15000);
+    const reconnect = () => void load(true);
+    if (Platform.OS === "web") globalThis.addEventListener?.("online", reconnect);
+    return () => {
+      active.current = false; subscription.remove(); clearInterval(timer);
+      if (Platform.OS === "web") globalThis.removeEventListener?.("online", reconnect);
+    };
   }, []);
   const from = matrix?.points.find(point => point.id === selection.pickup);
   const to = matrix?.points.find(point => point.id === selection.destination);

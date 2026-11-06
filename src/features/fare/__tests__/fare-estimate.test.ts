@@ -9,14 +9,26 @@ const raw = {
   ],
 };
 const matrix = normalizeFareMatrix(raw);
-test("updated default minimum is 17 regular and 13.60 discounted", () => {
+
+test("33 unpinned API stops retain IDs and calculate the complete route", () => {
+  const current = normalizeFareMatrix({ ...raw, points: Array.from({ length: 33 }, (_, i) => ({ ...raw.points[0], id: String(i + 1), pointNumber: i + 1, latitude: null, longitude: null })) });
+  expect(current.points).toHaveLength(33);
+  expect(estimateFare(current, "1", "33", "STUDENT")).toEqual({ regular: 86.5, amount: 69.25, discount: 17.25 });
+  expect(estimateFare(current, "33", "1", "REGULAR").amount).toBe(86.5);
+});
+
+test("discount applies before quarter rounding, never to the rounded regular fare", () => {
+  const current = normalizeFareMatrix({ ...raw, config: { baseFareRegular: 17.35, discountRate: 20 } });
+  expect(estimateFare(current, "a", "b", "PWD")).toEqual({ regular: 17.25, amount: 14, discount: 3.25 });
+});
+test("updated default minimum is 17 regular and 13.50 discounted", () => {
   expect(estimateFare(matrix, "a", "b", "REGULAR")).toEqual({ regular: 17, amount: 17, discount: 0 });
 });
 test.each(["STUDENT", "SENIOR", "PWD"] as const)("%s estimate uses published discounted fares", (kind) => {
-  expect(estimateFare(matrix, "a", "b", kind)).toEqual({ regular: 17, amount: 13.6, discount: 3.4 });
+  expect(estimateFare(matrix, "a", "b", kind)).toEqual({ regular: 17, amount: 13.5, discount: 3.5 });
 });
 test("long trip uses Financial Rules rather than stored endpoint fare differences", () => {
-  expect(estimateFare(matrix, "a", "c", "STUDENT")).toEqual({ regular: 28.25, amount: 22.6, discount: 5.65 });
+  expect(estimateFare(matrix, "a", "c", "STUDENT")).toEqual({ regular: 29, amount: 23.25, discount: 5.75 });
   expect(estimateFare(matrix, "c", "a", "STUDENT")).toEqual(estimateFare(matrix, "a", "c", "STUDENT"));
 });
 test("same stop uses minimum fare", () => { expect(estimateFare(matrix, "a", "a", "REGULAR").amount).toBe(17); });
@@ -38,8 +50,8 @@ test("a trip beginning after stop 1 still counts both endpoints", () => {
     { ...raw.points[0], pointNumber: 5, regularFare: 19.25, discountedFare: 15.4 },
     { ...raw.points[1], pointNumber: 10, regularFare: 30.5, discountedFare: 24.4 },
   ] });
-  expect(estimateFare(current, "a", "b", "REGULAR").amount).toBe(21.5);
-  expect(estimateFare(current, "a", "b", "STUDENT").amount).toBe(17.2);
+  expect(estimateFare(current, "a", "b", "REGULAR").amount).toBe(21.75);
+  expect(estimateFare(current, "a", "b", "STUDENT").amount).toBe(17.5);
 });
 
 test.each([0, 25, 100])("published %s percent discount applies to the final fare", rate => {
