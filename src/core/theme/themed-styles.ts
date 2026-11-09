@@ -7,7 +7,7 @@ const alwaysWhiteText = new Set([
   "announcementPrimaryActionText", "voucherTabTextActive",
   "sectionTabTextActive", "useVoucherBtnText", "permissionRetryText", "submitButtonText",
   "stepNumberText", "cardCategoryText", "actionPrimaryText", "actionDangerText",
-  "sosButtonText", "neutralButtonText", "buttonText", "passwordSubmitText",
+  "neutralButtonText", "buttonText", "passwordSubmitText",
 ]);
 
 // The web keeps the branded GCash gradient card identical in both themes.

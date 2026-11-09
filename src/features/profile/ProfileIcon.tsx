@@ -1,3 +1,5 @@
+import React, { type CSSProperties } from "react";
+import { Platform } from "react-native";
 import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from "react-native-svg";
 import { WebIcon } from "../../shared/ui/WebIcon";
 
@@ -18,6 +20,19 @@ export type ProfileIconName = keyof typeof paths | "user-round" | "shield-check"
 /** The same 24px SVG view box, round strokes and geometry as the web icons. */
 export function ProfileIcon({ name, size = 22, color = "#99C1F1" }: { name: ProfileIconName; size?: number; color?: string }) {
   if (!(name in paths)) return <WebIcon name={name as "user-round" | "shield-check" | "clock" | "shield-alert" | "x" | "check"} size={size} color={color} />;
+  if (Platform.OS === "web") {
+    const nodes: React.ReactNode[] = [];
+    if (name === "mail") nodes.push(React.createElement("rect", { key: "mail", x: 2, y: 4, width: 20, height: 16, rx: 2 }));
+    nodes.push(React.createElement("path", { key: "outline", d: paths[name as keyof typeof paths] }));
+    if (name === "camera") nodes.push(React.createElement("circle", { key: "lens", cx: 12, cy: 13, r: 3 }));
+    if (name === "key") nodes.push(React.createElement("circle", { key: "keyhole", cx: 16.5, cy: 7.5, r: 0.5, fill: color }));
+    if (name === "sun") nodes.push(React.createElement("circle", { key: "sun", cx: 12, cy: 12, r: 4 }));
+    return React.createElement("svg", {
+      width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: color,
+      strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true,
+      focusable: false, style: { width: size, height: size, flexShrink: 0, pointerEvents: "none" } as CSSProperties,
+    }, ...nodes);
+  }
   return <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }} accessible={false}>
     {name === "mail" && <Rect x={2} y={4} width={20} height={16} rx={2} />}
     <Path d={paths[name as keyof typeof paths]} />
@@ -28,11 +43,21 @@ export function ProfileIcon({ name, size = 22, color = "#99C1F1" }: { name: Prof
 }
 
 export function ProfileIdentityBackground({ isLight }: { isLight: boolean }) {
-  return <Svg width="100%" height="100%" style={{ position: "absolute", top: 0, left: 0 }} preserveAspectRatio="none" accessible={false}>
+  if (Platform.OS === "web") {
+    return React.createElement("div", {
+      "aria-hidden": true,
+      style: {
+        position: "absolute", top: 0, left: 0, width: "100%", height: "100%", borderRadius: 16,
+        background: isLight ? "linear-gradient(135deg, #F0F7FF, #FFFFFF)" : "linear-gradient(135deg, #102E50, #071A2E)",
+        pointerEvents: "none",
+      } as CSSProperties,
+    });
+  }
+  return <Svg width="100%" height="100%" style={{ pointerEvents: "none", position: "absolute", top: 0, left: 0 }} preserveAspectRatio="none"  accessible={false}>
     <Defs><LinearGradient id="profileIdentity" x1="0%" y1="0%" x2="100%" y2="100%">
       <Stop offset="0%" stopColor={isLight ? "#F0F7FF" : "#102E50"} />
       <Stop offset="100%" stopColor={isLight ? "#FFFFFF" : "#071A2E"} />
     </LinearGradient></Defs>
-    <Rect width="100%" height="100%" fill="url(#profileIdentity)" />
+    <Rect width="100%" height="100%" rx={16} ry={16} fill="url(#profileIdentity)" />
   </Svg>;
 }

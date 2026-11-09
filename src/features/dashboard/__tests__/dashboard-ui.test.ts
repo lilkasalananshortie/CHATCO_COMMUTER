@@ -1,9 +1,5 @@
 /// <reference types="jest" />
-import { hailDockBottom, hailHint, isSosDoubleTap } from "../dashboard-ui";
-test("the first SOS tap never opens confirmation, including clock zero", () => expect(isSosDoubleTap(null, 0)).toBe(false));
-test("a second tap inside the web's 600 ms window opens confirmation", () => expect(isSosDoubleTap(100, 700)).toBe(true));
-test("a slow second tap does not open SOS", () => expect(isSosDoubleTap(100, 701)).toBe(false));
-test("clock rollback cannot count as a double tap", () => expect(isSosDoubleTap(100, 99)).toBe(false));
+import { hailDockBottom, hailHint } from "../dashboard-ui";
 test.each(["denied", "unavailable", "out-of-range"] as const)("hail help provides actionable copy for %s", reason => {
   expect(hailHint(reason).title.length).toBeGreaterThan(0);
   expect(hailHint(reason).message).toMatch(/location|GPS/);

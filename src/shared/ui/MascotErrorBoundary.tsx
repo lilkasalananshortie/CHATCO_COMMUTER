@@ -1,4 +1,4 @@
-import React, { Component, type ReactNode } from "react";
+import React, { Component, type ErrorInfo, type ReactNode } from "react";
 import { ScrollView, StyleSheet } from "react-native";
 import { MascotMessage } from "./MascotMessage";
 
@@ -7,6 +7,11 @@ export class MascotErrorBoundary extends Component<{ children: ReactNode }, { fa
   state = { failed: false, attempt: 0 };
 
   static getDerivedStateFromError() { return { failed: true }; }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    // Expo's web log forwarding can omit Error objects; send readable text.
+    console.error(`[CHATCO render error] ${error.name}: ${error.message}\n${error.stack ?? ""}\n${info.componentStack ?? ""}`);
+  }
 
   render() {
     if (this.state.failed) {

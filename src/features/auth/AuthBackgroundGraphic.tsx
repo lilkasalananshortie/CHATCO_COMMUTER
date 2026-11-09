@@ -42,7 +42,7 @@ export const AuthBackgroundGraphic: React.FC = () => {
   }, [orbBreathe]);
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+    <View style={[StyleSheet.absoluteFill, { pointerEvents: "none" }]} >
       {/* Deep Midnight Ambient Gradient Glows */}
       <Animated.View
         style={[

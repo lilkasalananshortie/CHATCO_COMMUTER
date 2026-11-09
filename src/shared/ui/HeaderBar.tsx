@@ -16,7 +16,6 @@ interface HeaderBarProps {
   title?: string;
   userName?: string;
   unreadAnnouncements?: number;
-  onOpenSos: () => void;
   onOpenAnnouncements?: () => void;
   onOpenProfile?: () => void;
   onOpenTour?: () => void;
@@ -26,7 +25,6 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   title = "CHATCO",
   userName,
   unreadAnnouncements = 0,
-  onOpenSos,
   onOpenAnnouncements,
   onOpenProfile,
   onOpenTour,
@@ -69,7 +67,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
           </View>
         </TouchableOpacity>
 
-        {/* Right: Actions (App Guide + Announcements + SOS) */}
+        {/* Right: Actions (App Guide + Announcements) */}
         <View style={styles.actionsContainer}>
           {/* App Guide & Tour Button */}
           {onOpenTour && (
@@ -100,18 +98,6 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                 </Text>
               </View>
             )}
-          </TouchableOpacity>
-
-          {/* Urgent SOS Button */}
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={onOpenSos}
-            style={styles.sosButton}
-            accessibilityRole="button"
-            accessibilityLabel="Emergency SOS Alert"
-          >
-            <Ionicons name="warning" size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
-            <Text style={styles.sosButtonText}>SOS</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -226,25 +212,6 @@ return StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 9,
     fontWeight: "800",
-  },
-  sosButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: commuterColors.danger,
-    height: 36,
-    paddingHorizontal: 12,
-    borderRadius: 18,
-    shadowColor: commuterColors.danger,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  sosButtonText: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "900",
-    letterSpacing: 0.5,
   },
 });
 }

@@ -201,7 +201,7 @@ export const ModernJeepneySilhouette: React.FC<ModernJeepneySilhouetteProps> = (
   const wDiameter = 32 * scale;
 
   return (
-    <View style={[styles.container, { width, height }]} pointerEvents="none">
+    <View style={[styles.container, { width, height }, { pointerEvents: "none" }]} >
       {/* Animated Vehicle Body Container (Moves with takeoff and suspension) */}
       <Animated.View
         style={[
@@ -526,7 +526,7 @@ export const ModernJeepneySilhouette: React.FC<ModernJeepneySilhouetteProps> = (
       </Animated.View>
 
       {/* Ground Road Track & Moving Lane Markings */}
-      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <View style={[StyleSheet.absoluteFill, { pointerEvents: "none" }]} >
         <Svg width="100%" height="100%" viewBox="0 0 380 155" fill="none">
           {/* Solid Highway Baseline */}
           <Line

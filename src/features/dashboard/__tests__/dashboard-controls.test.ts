@@ -2,6 +2,7 @@
 import React from "react";
 import { DashboardScreen } from "../DashboardScreen";
 import { HailRangeHint } from "../HailRangeHint";
+import { COLLAPSED_TOOLS_HEIGHT, hailDockBottom, newlyNearbyVehicle, toolsSheetCollapsedOffset } from "../dashboard-ui";
 import { Linking } from "react-native";
 let mockStates: any[] = [], mockIndex = 0;
 jest.mock("react", () => ({ ...jest.requireActual("react"), useEffect: () => {}, useMemo: (fn: () => unknown) => fn(), useCallback: (fn: unknown) => fn, useRef: (value: unknown) => ({ current: value }),
@@ -20,7 +21,7 @@ jest.mock("../../../shared/ui/MascotMessage", () => ({ MascotMessage: "Notice" }
 jest.mock("../useHoldToConfirm", () => ({ useHoldToConfirm: () => ({ holding: false, start: jest.fn(), cancel: jest.fn(), consumeCompleted: () => false }) }));
 type Element = React.ReactElement<Record<string, any>>;
 function walk(node: any): Element[] { if (Array.isArray(node)) return node.flatMap(walk); if (!React.isValidElement(node)) return []; const element = node as Element; return [element, ...walk(element.props.children)]; }
-const props = { onOpenScan: jest.fn(), onOpenShareRide: jest.fn(), onOpenSos: jest.fn(), onOpenProfile: jest.fn() };
+const props = { onOpenScan: jest.fn(), onOpenShareRide: jest.fn(), onOpenProfile: jest.fn() };
 function render(): Element[] {
   mockIndex = 0;
   return walk(DashboardScreen(props));
@@ -34,16 +35,48 @@ test("the dashboard avatar opens profile", () => {
 
 test("hail is present on the first render before any layout measurement", () => {
   const tree = render();
-  expect(mockStates[14]).toBe(0);
+  expect(mockStates[13]).toBe(0);
   expect(tree.find(node => node.props.testID === "dashboard-hail-overlay")).toBeDefined();
   expect(tree.find(node => node.props.accessibilityLabel === "Cannot hail")).toBeDefined();
 });
 test("hail stays below the header and inside a short viewport with a tall tools panel", () => {
-  render(); mockStates[14] = 500; mockStates[15] = 320;
+  render(); mockStates[13] = 500; mockStates[14] = 320;
   const dock = render().find(node => node.props.testID === "dashboard-hail-dock")!;
   const position = dock.props.style[1];
   expect(position.bottom).toBeGreaterThanOrEqual(12);
   expect(320 - position.bottom - 88).toBeGreaterThanOrEqual(96);
+});
+
+test("collapsed tools expose only their handle and keep the hail control beside it", () => {
+  expect(COLLAPSED_TOOLS_HEIGHT).toBe(36);
+  expect(toolsSheetCollapsedOffset(500)).toBe(500 - COLLAPSED_TOOLS_HEIGHT);
+  expect(hailDockBottom(844, 500, 24, false)).toBe(COLLAPSED_TOOLS_HEIGHT + 6);
+  render();
+  const handle = render().find(node => node.props.accessibilityLabel === "Collapse tools sheet")!;
+  handle.props.onPress();
+  expect(render().find(node => node.props.accessibilityLabel === "Expand tools sheet")).toBeDefined();
+});
+
+test("nearby notifications do not repeat each poll and reset after leaving range", () => {
+  const notified = new Set<string>();
+  const nearby = [
+    { vehicle: { vehicle_id: "unit-1", unit_number: "NAB 0002" }, distanceMeters: 80 },
+    { vehicle: { vehicle_id: "unit-2", unit_number: "NAB 0003" }, distanceMeters: 90 },
+  ] as any;
+  expect(newlyNearbyVehicle(nearby, notified)).toBe(nearby[0]);
+  expect(newlyNearbyVehicle(nearby, notified)).toBe(nearby[1]);
+  expect(newlyNearbyVehicle(nearby, notified)).toBeNull();
+  expect(newlyNearbyVehicle([], notified)).toBeNull();
+  expect(newlyNearbyVehicle(nearby, notified)).toBe(nearby[0]);
+});
+
+test("a notification banner remains visible when the tools sheet is collapsed", () => {
+  render();
+  mockStates[15] = { title: "CHATCO Jeep Nearby!", message: "NAB 0002 is 80m away." };
+  render().find(node => node.props.accessibilityLabel === "Collapse tools sheet")!.props.onPress();
+  const tree = render();
+  expect(tree.find(node => node.props.accessibilityLabel === "Expand tools sheet")).toBeDefined();
+  expect(tree.find(node => node.props.accessibilityLabel === "Dismiss notification")).toBeDefined();
 });
 test("the visible hail pin is the web SVG rather than an icon-font glyph", () => {
   expect(render().some(node => node.props.name === "hail-pin" && node.props.size === 28)).toBe(true);
@@ -60,12 +93,20 @@ test("the GCash card opens scan and uses a web-matching gradient", () => {
   const tree = render(); tree.find(node => node.props.accessibilityLabel === "Pay with GCash")!.props.onPress();
   expect(props.onOpenScan).toHaveBeenCalledTimes(1);
   expect(tree.filter(node => node.type === "Stop").map(node => node.props.stopColor)).toEqual(["#1A5FB4", "#123B6E"]);
+  expect(tree.find(node => node.type === "Gradient")?.props).toMatchObject({ x2: "100%", y2: "100%" });
+  expect(tree.find(node => node.type === "Rect")?.props.rx).toBe(16);
 });
-test("SOS requires two taps, not a single click", () => {
-  const now = jest.spyOn(Date, "now").mockReturnValue(100);
-  const button = render().find(node => node.type === "Button" && walk(node).some(child => child.props.children === "SOS"))!;
-  button.props.onPress(); expect(props.onOpenSos).not.toHaveBeenCalled();
-  now.mockReturnValue(600); button.props.onPress(); expect(props.onOpenSos).toHaveBeenCalledTimes(1);
+test("GCash uses a rounded browser gradient on Expo Web", () => {
+  const platform = jest.requireMock("react-native").Platform as { OS: string };
+  platform.OS = "web";
+  try {
+    const gradient = render().find(node => node.type === "div" && String(node.props.style?.background).includes("linear-gradient"));
+    expect(gradient?.props.style).toMatchObject({ borderRadius: 16, pointerEvents: "none" });
+  } finally { platform.OS = "android"; }
+});
+test("dashboard omits SOS and keeps Share Ride", () => {
+  expect(render().some(node => node.props.children === "SOS")).toBe(false);
+  expect(render().some(node => node.props.children === "Share Ride")).toBe(true);
 });
 test("Share Ride opens the existing share flow", () => {
   render().find(node => node.type === "Button" && walk(node).some(child => child.props.children === "Share Ride"))!.props.onPress();

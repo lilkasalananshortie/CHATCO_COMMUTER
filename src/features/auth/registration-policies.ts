@@ -71,9 +71,9 @@ export const REGISTRATION_TERMS: PolicySection[] = [
     id: "safety-and-conduct",
     title: "Safety and responsible use",
     paragraphs: [
-      "Use SOS, ride sharing, feedback, and reports honestly and for their intended purposes. Do not submit false emergencies, misleading reports, or abusive content.",
+      "Use ride sharing, feedback, and reports honestly and for their intended purposes. Do not submit misleading reports or abusive content.",
       "Share ride links only with trusted people because a sharing link can reveal ride or location information.",
-      "For immediate danger, contact local emergency services directly. A CHATCO SOS alert does not guarantee an emergency response.",
+      "For immediate danger, contact local emergency services directly.",
     ],
   },
   {

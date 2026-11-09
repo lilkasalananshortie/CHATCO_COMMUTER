@@ -36,7 +36,8 @@ export interface VehicleLocation {
   available_seats?: number | null;
   speed?: number | null;
   bearing?: number | null;
-  capacity_status?: "AVAILABLE" | "FULL" | "LAST_TRIP" | null;
+  capacity_status?: "AVAILABLE" | "STANDING" | "FULL" | "LAST_TRIP" | null;
+  trip_direction?: "FORWARD" | "REVERSE" | null;
   driver_name?: string | null;
   conductor_name?: string | null;
     route_name?: string | null;
@@ -227,15 +228,6 @@ export interface Announcement {
   published_at?: string | null;
   created_at?: string | null;
   createdAt?: string | null;
-}
-
-export interface SosAlert {
-  id: string;
-  status: "TRIGGERED" | "ACKNOWLEDGED" | "RESOLVED" | "ACTIVE";
-  latitude: number;
-  longitude: number;
-  created_at: string;
-  acknowledged_at?: string | null;
 }
 
 export interface ResolvedCrew {

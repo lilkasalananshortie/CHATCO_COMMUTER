@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   Modal,
   useWindowDimensions,
+  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { commuterColors } from "../../core/theme/colors";
@@ -24,7 +25,7 @@ import { Mascot } from "../../shared/ui/Mascot";
 import { RegistrationConsent } from "./RegistrationConsent";
 import { registrationAgreement, type AgreementChoices } from "./registration-agreement";
 import { request } from "../../core/api/api-client";
-import { registrationBirthdateError, registrationUsernameError, REGISTRATION_USERNAME_MAX_LENGTH } from "./registration-validation";
+import { formatRegistrationBirthdate, registrationBirthdateError, registrationUsernameError, REGISTRATION_USERNAME_MAX_LENGTH } from "./registration-validation";
 import { useReducedMotion } from "../../shared/useReducedMotion";
 
 interface RegisterScreenProps {
@@ -42,6 +43,7 @@ const COMMUTER_TYPE_OPTIONS: { label: string; value: AppliedType; description: s
 ];
 
 const SUFFIX_OPTIONS = ["None", "Jr.", "Sr.", "II", "III", "IV"];
+const DEFAULT_SUFFIX = "None";
 const MAX_ID_IMAGE_BYTES = 3 * 1024 * 1024;
 
 const ID_UPLOAD_LABELS: Record<AppliedType, string> = {
@@ -68,58 +70,6 @@ const STEP_COPY: Record<number, { title: string; subtitle: string }> = {
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_PATTERN = /^09\d{9}$/;
 
-// 1x1 clean PNG transparent pixel base64 for sample / fallback testing
-const SAMPLE_PNG_BASE64 =
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
-
-async function createSampleIdFile(): Promise<{ uri: string; name: string; type: string } | File> {
-  const filename = "valid_government_id_sample.png";
-  const mimeType = "image/png";
-
-  if (Platform.OS === "web") {
-    try {
-      const byteCharacters = atob(SAMPLE_PNG_BASE64);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: mimeType });
-      return new File([blob], filename, { type: mimeType });
-    } catch {
-      return {
-        uri: `data:${mimeType};base64,${SAMPLE_PNG_BASE64}`,
-        name: filename,
-        type: mimeType,
-      };
-    }
-  }
-
-  // Native Android and iOS - write to local cache file so uri is a valid file:// URI (OkHttp supported)
-  let baseDir = FileSystem.cacheDirectory || FileSystem.documentDirectory || "";
-  if (baseDir && !baseDir.endsWith("/")) {
-    baseDir = `${baseDir}/`;
-  }
-  let fileUri = `${baseDir}chatco_sample_id.png`;
-  if (!fileUri.startsWith("file://") && !fileUri.startsWith("content://")) {
-    fileUri = `file://${fileUri}`;
-  }
-
-  try {
-    await FileSystem.writeAsStringAsync(fileUri, SAMPLE_PNG_BASE64, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-  } catch (err) {
-    console.warn("[RegisterScreen] Error writing sample ID file:", err);
-  }
-
-  return {
-    uri: fileUri,
-    name: filename,
-    type: mimeType,
-  };
-}
-
 export const RegisterScreen: React.FC<RegisterScreenProps> = ({
   onRegisterSuccess,
   onGoToLogin,
@@ -135,6 +85,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
   const previousStep = useRef(step);
   const stepOpacity = useRef(new Animated.Value(1)).current;
   const stepTranslateX = useRef(new Animated.Value(0)).current;
+  const otpInputRefs = useRef<Array<React.ElementRef<typeof TextInput> | null>>([]);
   const [loading, setLoading] = useState(false);
   const [agreement, setAgreement] = useState<AgreementChoices>({ terms: false, privacy: false, confirmation: false });
   const [showRegistrationTerms, setShowRegistrationTerms] = useState(false);
@@ -147,7 +98,8 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
   const [firstName, setFirstName] = useState("");
   const [middleName, setMiddleName] = useState("");
   const [surname, setSurname] = useState("");
-  const [suffix, setSuffix] = useState("None");
+  const [suffix, setSuffix] = useState(DEFAULT_SUFFIX);
+  const [showSuffixOptions, setShowSuffixOptions] = useState(false);
   const [birthdate, setBirthdate] = useState("");
   const [gender, setGender] = useState<"" | "Male" | "Female" | "Prefer not to say">("");
   const [appliedType, setAppliedType] = useState<AppliedType | "">("");
@@ -176,6 +128,31 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
 
   // Active Focus Field
   const [focusedField, setFocusedField] = useState<string | null>(null);
+
+  const updateVerificationCode = (index: number, value: string) => {
+    const digits = value.replace(/\D/g, "").slice(0, 6);
+    if (!digits) {
+      setCode((current) => `${current.slice(0, index)}${current.slice(index + 1)}`);
+      return;
+    }
+
+    setCode((current) => {
+      const next = current.padEnd(6, " ").split("");
+      digits.split("").forEach((digit, offset) => {
+        if (index + offset < 6) next[index + offset] = digit;
+      });
+      return next.join("").replace(/\s+$/g, "");
+    });
+
+    const nextIndex = Math.min(index + digits.length, 5);
+    otpInputRefs.current[nextIndex]?.focus();
+  };
+
+  const handleVerificationKeyPress = (index: number, key: string) => {
+    if (key === "Backspace" && !code[index] && index > 0) {
+      otpInputRefs.current[index - 1]?.focus();
+    }
+  };
 
   // Field validation errors
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -358,19 +335,12 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
   };
 
   // Handle Pick / Capture ID
-  const handleSelectIdOption = async (option: "CAMERA" | "FILE" | "SAMPLE") => {
+  const handleSelectIdOption = async (option: "CAMERA" | "FILE") => {
     setShowIdChoiceModal(false);
     clearFieldError("id");
     setErrorMessage(null);
 
     try {
-      if (option === "SAMPLE") {
-        const sampleFile = await createSampleIdFile();
-        setIdFileName("valid_government_id_sample.png");
-        setIdFileBlob(sampleFile);
-        return;
-      }
-
       if (Platform.OS === "web") {
         const input = document.createElement("input");
         input.type = "file";
@@ -449,7 +419,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
       }
     } catch (err: any) {
       console.error("[RegisterScreen] ID selection error:", err);
-      setErrorMessage("Could not select image. Please try again or use the Sample ID option.");
+      setErrorMessage("Could not select that image. Please try again with a JPG, PNG, or WebP file.");
     }
   };
 
@@ -633,16 +603,19 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
       <AuthBackgroundGraphic />
 
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior={Platform.OS === "ios" ? "padding" : Platform.OS === "android" ? "height" : undefined}
         style={styles.container}
       >
         <ScrollView
+          style={styles.scrollView}
           contentContainerStyle={[
             styles.scrollContent,
             isCompact && styles.scrollContentCompact,
             isTablet && styles.scrollContentTablet,
           ]}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          nestedScrollEnabled
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.formWrapper}>
@@ -659,11 +632,9 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                 <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
               </TouchableOpacity>
 
-              <View style={styles.brandRow}>
+                  <View style={styles.brandRow}>
+                <Image source={require("../../../assets/logo-transparent.png")} style={{ width: isCompact ? 24 : 28, height: isCompact ? 24 : 28 }} resizeMode="contain" accessibilityLabel="ChatCo logo" />
                 <Text style={styles.brandTitle}>CHATCO.</Text>
-                <View style={styles.brandPill}>
-                  <Text style={styles.brandPillText}>COMMUTER SIGN UP</Text>
-                </View>
               </View>
             </View>
 
@@ -675,17 +646,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                 Register to access digital fares, live tracking, and discount tiers.
               </Text>
 
-              {/* Informational Badges */}
-              <View style={styles.infoChipsRow}>
-                <View style={styles.infoChip}>
-                  <Ionicons name="time-outline" size={13} color="#62A0EA" style={{ marginRight: 5 }} />
-                  <Text style={styles.infoChipText}>24-Hour Review</Text>
-                </View>
-                <View style={styles.infoChip}>
-                  <Ionicons name="shield-checkmark-outline" size={13} color="#34D399" style={{ marginRight: 5 }} />
-                  <Text style={styles.infoChipText}>Valid ID = 20% Off</Text>
-                </View>
-              </View>
             </View>
 
             {/* Stepper Progress Bar (1 to 4) */}
@@ -830,27 +790,15 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
 
                     <View style={[styles.fieldGroup, { flex: isCompact ? undefined : 1.2, width: isCompact ? "100%" : undefined }]}>
                       <Text style={styles.label}>Suffix</Text>
-                      <View style={styles.suffixSelector}>
-                        {SUFFIX_OPTIONS.map((sfx) => (
-                          <TouchableOpacity
-                            key={sfx}
-                            onPress={() => setSuffix(sfx)}
-                            style={[
-                              styles.suffixChip,
-                              suffix === sfx && styles.suffixChipActive,
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.suffixChipText,
-                                suffix === sfx && styles.suffixChipTextActive,
-                              ]}
-                            >
-                              {sfx}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
+                        <TouchableOpacity
+                          accessibilityRole="button"
+                          accessibilityLabel="Select name suffix"
+                          onPress={() => setShowSuffixOptions(true)}
+                          style={styles.suffixSelector}
+                        >
+                          <Text style={styles.suffixSelectorText}>{suffix}</Text>
+                          <Ionicons name="chevron-down" size={16} color="#94A3B8" />
+                        </TouchableOpacity>
                     </View>
                   </View>
 
@@ -869,12 +817,15 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                         style={styles.input}
                         value={birthdate}
                         onChangeText={(t) => {
-                          setBirthdate(t);
+                          setBirthdate(formatRegistrationBirthdate(t));
                           clearFieldError("birthdate");
                         }}
                         onFocus={() => setFocusedField("birthdate")}
                         onBlur={() => setFocusedField(null)}
-                        keyboardType="numbers-and-punctuation"
+                        keyboardType="number-pad"
+                        placeholder="YYYY-MM-DD"
+                        placeholderTextColor="#64748B"
+                        inputMode="numeric"
                         maxLength={10}
                         returnKeyType="next"
                       />
@@ -958,7 +909,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                       <Text style={styles.label}>Email Address *</Text>
                       {isEmailVerified && (
                         <View style={styles.verifiedTag}>
-                          <Ionicons name="checkmark-circle" size={12} color="#10B981" />
+                          <Ionicons name="checkmark-circle" size={12} color="#6B9ED6" />
                           <Text style={styles.verifiedTagText}>Verified</Text>
                         </View>
                       )}
@@ -990,7 +941,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                       <Text style={styles.errorText}>{fieldErrors.email}</Text>
                     ) : (
                       <Text style={styles.helperText}>
-                        We will email a 6-digit code to verify this address.
+                        We'll send a 6-digit verification code to this email.
                       </Text>
                     )}
                   </View>
@@ -1044,7 +995,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                     >
                       {idFileName ? (
                         <View style={styles.idUploadSuccessState}>
-                          <Ionicons name="checkmark-circle" size={32} color="#10B981" />
+                          <Ionicons name="checkmark-circle" size={32} color="#6B9ED6" />
                           <Text style={styles.idFileNameText} numberOfLines={1}>
                             {idFileName}
                           </Text>
@@ -1052,7 +1003,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                         </View>
                       ) : (
                         <View style={styles.idUploadEmptyState}>
-                          <Ionicons name="cloud-upload-outline" size={36} color="#38BDF8" />
+                           <Ionicons name="image-outline" size={34} color="#7FA7D6" />
                           <Text style={styles.idUploadPrompt}>
                             Tap to attach your valid ID
                           </Text>
@@ -1069,7 +1020,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                       <Text style={styles.helperText}>
                         {appliedType === "REGULAR" && !idUploadRequired
                           ? "Optional for regular commuters. Required for Student, Senior Citizen, and PWD applications."
-                          : "Required for identity verification and discount approval."}
+                           : "Used to confirm your identity and discount eligibility."}
                       </Text>
                     )}
                   </View>
@@ -1081,7 +1032,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                 <View style={styles.formSection}>
                   {/* Email Sent Notice Banner */}
                   <View style={styles.otpNoticeBanner}>
-                    <Ionicons name="mail" size={20} color="#38BDF8" style={{ marginTop: 2 }} />
+                    <Ionicons name="mail" size={20} color="#7FA7D6" style={{ marginTop: 2 }} />
                     <View style={{ flex: 1, marginLeft: 10 }}>
                       <Text style={styles.otpNoticeText}>
                         Code sent to <Text style={{ fontWeight: "700", color: "#FFFFFF" }}>{email}</Text>
@@ -1097,15 +1048,22 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                   {/* 6-Digit Code Input */}
                   <View style={styles.fieldGroup}>
                     <Text style={styles.label}>6-Digit Verification Code *</Text>
-                    <View style={styles.codeInputWrapper}>
-                      <TextInput
-                        style={styles.codeInput}
-                        value={code}
-                        onChangeText={setCode}
-                        keyboardType="number-pad"
-                        maxLength={6}
-                        autoFocus
-                      />
+                    <View style={styles.codeInputRow}>
+                      {Array.from({ length: 6 }, (_, index) => (
+                        <TextInput
+                          key={index}
+                          ref={(ref) => { otpInputRefs.current[index] = ref; }}
+                          style={[styles.codeInputBox, code[index] && styles.codeInputBoxFilled]}
+                          value={code[index] ?? ""}
+                          onChangeText={(value) => updateVerificationCode(index, value)}
+                          onKeyPress={({ nativeEvent }) => handleVerificationKeyPress(index, nativeEvent.key)}
+                          keyboardType="number-pad"
+                          inputMode="numeric"
+                          maxLength={1}
+                          autoFocus={index === 0}
+                          accessibilityLabel={`Verification code digit ${index + 1}`}
+                        />
+                      ))}
                     </View>
                   </View>
 
@@ -1123,9 +1081,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                     )}
                   </View>
 
-                  <Text style={styles.helperText}>
-                    Check your spam folder if it has not arrived. Code expires in 15 minutes.
-                  </Text>
                 </View>
               )}
 
@@ -1199,30 +1154,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                     </View>
                     {fieldErrors.password && <Text style={styles.errorText}>{fieldErrors.password}</Text>}
 
-                    {/* Live Password Rules Checklist */}
-                    <View style={styles.passwordRulesList}>
-                      {PASSWORD_RULES.map((rule) => {
-                        const isMet = rule.test(password);
-                        return (
-                          <View key={rule.id} style={styles.passwordRuleItem}>
-                            <Ionicons
-                              name={isMet ? "checkmark-circle" : "ellipse-outline"}
-                              size={15}
-                              color={isMet ? "#10B981" : "#64748B"}
-                              style={{ marginRight: 6 }}
-                            />
-                            <Text
-                              style={[
-                                styles.passwordRuleText,
-                                isMet && styles.passwordRuleTextMet,
-                              ]}
-                            >
-                              {rule.label}
-                            </Text>
-                          </View>
-                        );
-                      })}
-                    </View>
                   </View>
 
                   {/* Confirm Password */}
@@ -1266,6 +1197,17 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                     {fieldErrors.passwordConfirmation && (
                       <Text style={styles.errorText}>{fieldErrors.passwordConfirmation}</Text>
                     )}
+                  </View>
+                  <View style={styles.passwordRulesList}>
+                    {PASSWORD_RULES.map((rule) => {
+                      const isMet = rule.test(password);
+                      return (
+                        <View key={rule.id} style={styles.passwordRuleItem}>
+                          <Ionicons name={isMet ? "checkmark-circle" : "ellipse-outline"} size={15} color={isMet ? "#6B9ED6" : "#64748B"} style={{ marginRight: 6 }} />
+                          <Text style={[styles.passwordRuleText, isMet && styles.passwordRuleTextMet]}>{rule.label}</Text>
+                        </View>
+                      );
+                    })}
                   </View>
                 </View>
               )}
@@ -1372,6 +1314,35 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
           onConfirm={confirmRegistration}
         />
 
+        {/* Suffix selection modal */}
+        <Modal
+          visible={showSuffixOptions}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowSuffixOptions(false)}
+        >
+          <View style={[styles.modalBackdrop, Platform.OS === "web" && styles.modalBackdropWeb]}>
+            <View style={styles.suffixModalCard}>
+              <Text style={styles.choiceModalTitle}>Select Suffix</Text>
+              {SUFFIX_OPTIONS.map((sfx) => (
+                <TouchableOpacity
+                  key={sfx}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: suffix === sfx }}
+                  onPress={() => { setSuffix(sfx); setShowSuffixOptions(false); }}
+                  style={[styles.suffixOption, suffix === sfx && styles.suffixOptionActive]}
+                >
+                  <Text style={[styles.suffixOptionText, suffix === sfx && styles.suffixOptionTextActive]}>{sfx}</Text>
+                  {suffix === sfx && <Ionicons name="checkmark" size={18} color="#62A0EA" />}
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity onPress={() => setShowSuffixOptions(false)} style={styles.modalCancelBtn}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
         {/* ID Upload / Capture Choice Modal */}
         <Modal
           visible={showIdChoiceModal}
@@ -1379,7 +1350,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
           animationType="fade"
           onRequestClose={() => setShowIdChoiceModal(false)}
         >
-          <View style={styles.modalBackdrop}>
+          <View style={[styles.modalBackdrop, Platform.OS === "web" && styles.modalBackdropWeb]}>
             <View style={styles.choiceModalCard}>
               <Text style={styles.choiceModalTitle}>Add Valid ID Document</Text>
               <Text style={styles.choiceModalSub}>
@@ -1404,15 +1375,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                 <Text style={[styles.choiceOptionBtnText, { color: "#62A0EA" }]}>
                   Upload / Choose Image File
                 </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={() => handleSelectIdOption("SAMPLE")}
-                style={[styles.choiceOptionBtn, styles.choiceOptionBtnGhost]}
-              >
-                <Ionicons name="document-text-outline" size={18} color="#94A3B8" style={{ marginRight: 8 }} />
-                <Text style={styles.choiceOptionGhostText}>Use Demo / Testing ID</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -1443,6 +1405,10 @@ const baseStyles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 40,
     flexGrow: 1,
+    minHeight: 0,
+  },
+  scrollView: {
+    flex: 1,
   },
   scrollContentCompact: {
     paddingHorizontal: 12,
@@ -1485,7 +1451,7 @@ const baseStyles = StyleSheet.create({
   brandPill: {
     backgroundColor: "rgba(26, 95, 180, 0.25)",
     borderWidth: 1,
-    borderColor: "rgba(56, 189, 248, 0.3)",
+    borderColor: "rgba(127, 167, 214, 0.3)",
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
@@ -1555,9 +1521,9 @@ const baseStyles = StyleSheet.create({
   },
   stepCircleActive: {
     backgroundColor: "#1A5FB4",
-    borderColor: "#38BDF8",
+    borderColor: "#4B83C4",
     borderWidth: 2,
-    shadowColor: "#38BDF8",
+    shadowColor: "#4B83C4",
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.5,
     shadowRadius: 6,
@@ -1660,9 +1626,9 @@ const baseStyles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "rgba(16, 185, 129, 0.15)",
+    backgroundColor: "rgba(107, 158, 214, 0.12)",
     borderWidth: 1,
-    borderColor: "rgba(16, 185, 129, 0.3)",
+    borderColor: "rgba(107, 158, 214, 0.3)",
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 6,
@@ -1670,7 +1636,7 @@ const baseStyles = StyleSheet.create({
   verifiedTagText: {
     fontSize: 10,
     fontWeight: "700",
-    color: "#34D399",
+    color: "#8DB4DF",
   },
   inputWrapper: {
     flexDirection: "row",
@@ -1726,30 +1692,53 @@ const baseStyles = StyleSheet.create({
     flexDirection: "column",
   },
   suffixSelector: {
-    flexDirection: "row",
-    gap: 4,
     height: 48,
-    alignItems: "center",
-  },
-  suffixChip: {
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
+    borderRadius: 12,
+    borderWidth: 1.5,
     borderColor: "rgba(255, 255, 255, 0.12)",
     backgroundColor: "#0B1E34",
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
-  suffixChipActive: {
-    backgroundColor: "#1A5FB4",
-    borderColor: "#1A5FB4",
-  },
-  suffixChipText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#94A3B8",
-  },
-  suffixChipTextActive: {
+  suffixSelectorText: {
+    fontSize: 14,
+    fontWeight: "600",
     color: "#FFFFFF",
+  },
+  suffixModalCard: {
+    width: 280,
+    maxWidth: "86%",
+    backgroundColor: "#071A2E",
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+  },
+  suffixOption: {
+    minHeight: 40,
+    borderRadius: 9,
+    paddingHorizontal: 12,
+    marginTop: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#0B1E34",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+  },
+  suffixOptionActive: {
+    backgroundColor: "rgba(26, 95, 180, 0.25)",
+    borderColor: "#4B83C4",
+  },
+  suffixOptionText: {
+    fontSize: 14,
+    color: "#CBD5E1",
+  },
+  suffixOptionTextActive: {
+    color: "#FFFFFF",
+    fontWeight: "700",
   },
 
   // Gender Options
@@ -1785,18 +1774,18 @@ const baseStyles = StyleSheet.create({
 
   // Commuter Category Grid
   categoryGrid: {
-    gap: 8,
+    gap: 10,
   },
   categoryCard: {
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1.5,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.12)",
-    backgroundColor: "#0B1E34",
+    backgroundColor: "#0A1A2D",
   },
   categoryCardActive: {
-    borderColor: "#1A5FB4",
-    backgroundColor: "rgba(26, 95, 180, 0.2)",
+    borderColor: "#4B83C4",
+    backgroundColor: "rgba(75, 131, 196, 0.16)",
   },
   categoryCardHeader: {
     flexDirection: "row",
@@ -1809,7 +1798,7 @@ const baseStyles = StyleSheet.create({
     color: "#FFFFFF",
   },
   categoryCardTitleActive: {
-    color: "#62A0EA",
+    color: "#A9C8EB",
   },
   categoryCardDesc: {
     fontSize: 11,
@@ -1819,19 +1808,19 @@ const baseStyles = StyleSheet.create({
 
   // ID Upload Box
   idUploadBox: {
-    height: 135,
+    minHeight: 142,
     borderRadius: 16,
     borderWidth: 2,
     borderStyle: "dashed",
-    borderColor: "rgba(56, 189, 248, 0.35)",
-    backgroundColor: "#0B1E34",
+    borderColor: "rgba(127, 167, 214, 0.45)",
+    backgroundColor: "#0A1A2D",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 16,
   },
   idUploadBoxSuccess: {
-    borderColor: "#10B981",
-    backgroundColor: "rgba(16, 185, 129, 0.1)",
+    borderColor: "#6B9ED6",
+    backgroundColor: "rgba(107, 158, 214, 0.1)",
     borderStyle: "solid",
   },
   idUploadBoxError: {
@@ -1859,12 +1848,12 @@ const baseStyles = StyleSheet.create({
   idFileNameText: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#34D399",
+    color: "#8DB4DF",
     maxWidth: 240,
   },
   idTapChangeText: {
     fontSize: 11,
-    color: "#6EE7B7",
+    color: "#9DBBDE",
     fontWeight: "600",
   },
 
@@ -1876,7 +1865,7 @@ const baseStyles = StyleSheet.create({
     borderRadius: 12,
     padding: 12,
     borderWidth: 1,
-    borderColor: "rgba(56, 189, 248, 0.25)",
+    borderColor: "rgba(127, 167, 214, 0.3)",
   },
   otpNoticeText: {
     fontSize: 13,
@@ -1888,22 +1877,27 @@ const baseStyles = StyleSheet.create({
     color: "#62A0EA",
     marginTop: 3,
   },
-  codeInputWrapper: {
-    borderWidth: 2,
-    borderColor: "#1A5FB4",
+  codeInputRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  codeInputBox: {
+    flex: 1,
+    minWidth: 0,
+    height: 56,
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.14)",
     borderRadius: 12,
     backgroundColor: "#0B1E34",
-    height: 54,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  codeInput: {
-    fontSize: 26,
-    fontWeight: "900",
     color: "#FFFFFF",
-    letterSpacing: 10,
+    fontSize: 24,
+    fontWeight: "900",
     textAlign: "center",
-    width: "100%",
+  },
+  codeInputBoxFilled: {
+    borderColor: "#4B83C4",
+    backgroundColor: "rgba(26, 95, 180, 0.18)",
   },
   resendRow: {
     flexDirection: "row",
@@ -1940,7 +1934,7 @@ const baseStyles = StyleSheet.create({
     color: "#94A3B8",
   },
   passwordRuleTextMet: {
-    color: "#34D399",
+    color: "#8DB4DF",
     fontWeight: "600",
   },
 
@@ -2059,12 +2053,26 @@ const baseStyles = StyleSheet.create({
   // Choice Modal
   modalBackdrop: {
     flex: 1,
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    width: "100%",
+    height: "100%",
     backgroundColor: "rgba(0, 0, 0, 0.75)",
     alignItems: "center",
     justifyContent: "center",
     padding: 24,
   },
+  modalBackdropWeb: {
+    position: "fixed" as any,
+    width: "100vw" as any,
+    height: "100vh" as any,
+    zIndex: 9999,
+  },
   choiceModalCard: {
+    alignSelf: "center",
     backgroundColor: "#071A2E",
     borderRadius: 20,
     padding: 24,
@@ -2108,11 +2116,6 @@ const baseStyles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "700",
-  },
-  choiceOptionGhostText: {
-    color: "#94A3B8",
-    fontSize: 13,
-    fontWeight: "600",
   },
   modalCancelBtn: {
     alignItems: "center",

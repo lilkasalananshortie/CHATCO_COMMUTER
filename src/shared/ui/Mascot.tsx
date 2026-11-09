@@ -35,8 +35,7 @@ export function Mascot({ pose, size = 144, style, accessibilityLabel, responsive
   const targetSize = responsive ? getMascotSize(size, width, height) : size;
   return (
     <View
-      pointerEvents="none"
-      style={[styles.frame, style, { width: targetSize, height: targetSize }]}
+      style={[styles.frame, style, { width: targetSize, height: targetSize }, { pointerEvents: "none" }]}
     >
       <Image
         source={assets[pose]}

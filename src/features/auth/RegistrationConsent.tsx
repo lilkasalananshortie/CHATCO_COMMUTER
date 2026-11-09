@@ -20,15 +20,15 @@ export function RegistrationConsent({ visible, value, onChange, disabled, error,
 
   return <>
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onBack}>
-      <View style={{ flex: 1, justifyContent: "center", backgroundColor: "rgba(2, 8, 23, 0.76)", padding: 18 }}>
-        <View style={{ width: "100%", maxWidth: 620, maxHeight: "92%", alignSelf: "center", borderRadius: 20, overflow: "hidden", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
-          <ScrollView contentContainerStyle={{ padding: 22, gap: 14 }} keyboardShouldPersistTaps="handled">
-          <Text accessibilityRole="header" style={{ color: colors.textPrimary, fontSize: 22, lineHeight: 28, fontWeight: "800" }}>CHATCO Terms and Conditions</Text>
+      <View style={{ flex: 1, justifyContent: "center", backgroundColor: "rgba(2, 8, 23, 0.76)", padding: 12 }}>
+        <View style={{ width: "100%", maxWidth: 620, height: "92%", flexShrink: 1, alignSelf: "center", borderRadius: 20, overflow: "hidden", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: 24 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled showsVerticalScrollIndicator>
+          <Text accessibilityRole="header" style={{ color: colors.textPrimary, fontSize: 22, lineHeight: 28, fontWeight: "800", textAlign: "center" }}>CHATCO Terms and Conditions</Text>
             <Text style={{ color: colors.textSecondary, lineHeight: 21 }}>
               Please review these terms before submitting your commuter registration. They explain your responsibilities and how CHATCO handles registration, rides, payments, rewards, and safety features.
             </Text>
             <Text style={{ color: colors.textSecondary, fontSize: 13 }}>Effective date: {POLICY_EFFECTIVE_DATE}</Text>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 18 }}>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 18 }}>
               {(["terms", "privacy"] as const).map((kind) => <TouchableOpacity key={kind} disabled={disabled} onPress={() => setPolicy(kind)} accessibilityRole="button" style={{ paddingVertical: 5 }}>
                 <Text style={{ color: colors.primaryLight, textDecorationLine: "underline", fontWeight: "600" }}>
                   {kind === "terms" ? "Read Terms of Service" : "Read Privacy Policy"}

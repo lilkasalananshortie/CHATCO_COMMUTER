@@ -7,7 +7,7 @@ test("hail uses the two original web location paths", () => {
   expect(webIconNodes["hail-pin"]).toHaveLength(2);
   expect(webIconNodes["hail-pin"][0][1].d).toBe("M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z");
 });
-test("SOS uses ShieldAlert with the exclamation detail, not an empty shield", () => {
+test("ShieldAlert retains its exclamation detail", () => {
   expect(webIconNodes["shield-alert"]).toHaveLength(3);
   expect(webIconNodes["shield-alert"].some(([, props]) => "d" in props && props.d === "M12 8v4")).toBe(true);
 });

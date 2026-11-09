@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Animated, Easing, PanResponder, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { AccessibilityInfo, Animated, Easing, Image, PanResponder, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -91,23 +91,25 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onFinish }) 
   return (
     <View {...panResponder.panHandlers} style={[styles.screen, { backgroundColor: slide.background, paddingTop: Math.max(insets.top, 16), paddingBottom: Math.max(insets.bottom, 16) }]}>
       <View style={styles.header}>
-        <Text style={styles.brand}>CHATCO</Text>
-        <Text style={styles.stepCount}>{index + 1} / {WALKTHROUGH_SLIDES.length}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Image source={require("../../../assets/logo-transparent.png")} style={{ width: 26, height: 26 }} resizeMode="contain" accessibilityLabel="ChatCo logo" />
+          <Text style={styles.brand}>CHATCO</Text>
+        </View>
       </View>
       <ScrollView ref={scroll} style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.slide}>
           <View style={[styles.stage, { width: mascotSize + 32, height: mascotSize + 32 }]}>
-            <View pointerEvents="none" accessible={false} style={[styles.halo, { backgroundColor: slide.accent + "20", borderColor: slide.accent + "35" }]} />
-            <View pointerEvents="none" accessible={false} style={[styles.orbit, { borderColor: slide.accent + "35" }]} />
-            <View pointerEvents="none" accessible={false} style={[styles.dot, styles.dotTop, { backgroundColor: slide.accent }]} />
-            <View pointerEvents="none" accessible={false} style={[styles.dot, styles.dotBottom, { backgroundColor: slide.accent + "80" }]} />
+            <View accessible={false} style={[styles.halo, { backgroundColor: slide.accent + "20", borderColor: slide.accent + "35" }, { pointerEvents: "none" }]} />
+            <View accessible={false} style={[styles.orbit, { borderColor: slide.accent + "35" }, { pointerEvents: "none" }]} />
+            <View accessible={false} style={[styles.dot, styles.dotTop, { backgroundColor: slide.accent }, { pointerEvents: "none" }]} />
+            <View accessible={false} style={[styles.dot, styles.dotBottom, { backgroundColor: slide.accent + "80" }, { pointerEvents: "none" }]} />
             <Animated.View style={{ width: mascotSize, height: mascotSize, transform: [{ translateY: float }] }}>
               <Mascot pose={slide.pose} size={mascotSize} responsive={false} accessibilityLabel={slide.mascotLabel} />
             </Animated.View>
           </View>
-          <View style={[styles.tag, { backgroundColor: slide.accent + "20" }]}>
+          {!!slide.tag && <View style={[styles.tag, { backgroundColor: slide.accent + "20" }]}>
             <Text style={styles.tagText}>{slide.tag}</Text>
-          </View>
+          </View>}
           <Text accessibilityRole="header" style={styles.title}>{slide.title}</Text>
           <Text style={styles.description}>{slide.description}</Text>
         </View>
@@ -142,7 +144,6 @@ const baseStyles = StyleSheet.create({
   screen: { flex: 1 },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 24, paddingVertical: 10 },
   brand: { fontSize: 17, letterSpacing: 2, fontWeight: "900", color: "#FFFFFF" },
-  stepCount: { fontSize: 13, color: "#AABBD0", fontWeight: "600" },
   scroll: { flex: 1 },
   content: { flexGrow: 1, width: "100%", justifyContent: "center", alignItems: "center", paddingHorizontal: 24, paddingVertical: 16 },
   slide: { width: "100%", maxWidth: 420, alignItems: "center", gap: 14 },
@@ -154,8 +155,8 @@ const baseStyles = StyleSheet.create({
   dotBottom: { left: 12, bottom: 36, width: 6, height: 6 },
   tag: { borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 },
   tagText: { fontSize: 10, letterSpacing: 1.2, fontWeight: "800", color: "#DDEBFA", textAlign: "center" },
-  title: { color: "#FFFFFF", fontSize: 30, fontWeight: "900", textAlign: "center", letterSpacing: -0.6 },
-  description: { color: "#B3C2D4", fontSize: 15, lineHeight: 24, textAlign: "center", maxWidth: 340 },
+  title: { color: "#FFFFFF", fontSize: 32, fontWeight: "900", textAlign: "center", letterSpacing: -0.6 },
+  description: { color: "#B3C2D4", fontSize: 17, lineHeight: 26, textAlign: "center", alignSelf: "center", maxWidth: 340 },
   footer: { width: "100%", maxWidth: 460, alignSelf: "center", paddingHorizontal: 24, paddingTop: 12, gap: 14 },
   pagination: { flexDirection: "row", alignSelf: "center", alignItems: "center", gap: 7 },
   pageDot: { width: 6, height: 6, borderRadius: 4, backgroundColor: "#FFFFFF35" },

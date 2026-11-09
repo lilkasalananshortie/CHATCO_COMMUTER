@@ -392,7 +392,7 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
               />
 
               {/* Scanner Reticle Overlay */}
-              <View style={styles.reticleOverlay} pointerEvents="none">
+              <View style={[styles.reticleOverlay, { pointerEvents: "none" }]} >
                 <View style={styles.reticle}>
                   <View style={[styles.corner, styles.topLeft]} />
                   <View style={[styles.corner, styles.topRight]} />

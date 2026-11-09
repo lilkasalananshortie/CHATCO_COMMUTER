@@ -11,11 +11,11 @@ interface WalkthroughSlide {
   background: string;
 }
 
-// Preserve the existing wording and slide order.
+// Keep all five walkthrough steps, with copy matching available features.
 export const WALKTHROUGH_SLIDES: readonly WalkthroughSlide[] = [
   {
     "id": 0,
-    "tag": "WELCOME",
+    "tag": "",
     "accent": "#1A5FB4",
     "title": "Welcome aboard!",
     "description": "Your everyday commute, made simpler. Let's get you started with ChatCo.",
@@ -28,7 +28,7 @@ export const WALKTHROUGH_SLIDES: readonly WalkthroughSlide[] = [
     "tag": "REAL-TIME FLEET",
     "accent": "#1A5FB4",
     "title": "Fleet Radar",
-    "description": "Track approaching modern jeeps on the map with live arrival countdowns.",
+    "description": "Track approaching modern jeeps on the live map.",
     "pose": "fleet-action",
     "background": "#081B2D",
     "mascotLabel": "ChatCo mascot using its map and pointing toward an approaching jeep"
@@ -38,7 +38,7 @@ export const WALKTHROUGH_SLIDES: readonly WalkthroughSlide[] = [
     "tag": "CASHLESS REWARDS",
     "accent": "#10B981",
     "title": "Cashless Perks",
-    "description": "Scan conductor POS to pay via GCash in seconds. Every 10 rides unlock a free ride.",
+    "description": "Scan to pay with GCash. Earn rewards as you ride.",
     "pose": "scan-action",
     "background": "#08201E",
     "mascotLabel": "ChatCo mascot using its phone to scan and pay"
@@ -48,7 +48,7 @@ export const WALKTHROUGH_SLIDES: readonly WalkthroughSlide[] = [
     "tag": "COMMUTER SAFETY",
     "accent": "#DC2626",
     "title": "Trip Guardian",
-    "description": "Share your live route with family and alert dispatch in a single tap.",
+    "description": "Share your route so commuters can follow your journey.",
     "pose": "guardian-action",
     "background": "#231522",
     "mascotLabel": "ChatCo mascot holding a shield to keep your trip safe"
@@ -58,7 +58,7 @@ export const WALKTHROUGH_SLIDES: readonly WalkthroughSlide[] = [
     "tag": "COOPERATIVE VAULT",
     "accent": "#7C3AED",
     "title": "Coop Vault",
-    "description": "Conductors log recovered belongings one-by-one so you can claim them with proof.",
+    "description": "Find recovered belongings and claim them with proof.",
     "pose": "vault-action",
     "background": "#19152C",
     "mascotLabel": "ChatCo mascot using a magnifying glass to find recovered belongings"

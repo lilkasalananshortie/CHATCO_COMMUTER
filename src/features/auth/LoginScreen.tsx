@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   useWindowDimensions,
+  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { commuterColors } from "../../core/theme/colors";
@@ -120,7 +121,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             <View style={styles.formContentAnim}>
               {/* Top Brand Mark */}
               <View style={styles.brandHeader}>
-              <Text style={styles.brandTitle}>CHATCO.</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Image source={require("../../../assets/logo-transparent.png")} style={{ width: 32, height: 32 }} resizeMode="contain" accessibilityLabel="ChatCo logo" />
+                <Text style={styles.brandTitle}>CHATCO.</Text>
+              </View>
               <Text style={styles.brandSubtitle}>Commuter Portal</Text>
             </View>
 

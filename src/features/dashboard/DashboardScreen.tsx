@@ -9,7 +9,6 @@ import {
   TouchableOpacity,
   Vibration,
   Platform,
-  AppState,
   useWindowDimensions,
   Image,
 } from "react-native";
@@ -29,16 +28,16 @@ import { useHoldToConfirm } from "./useHoldToConfirm";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import { themedStyles } from "../../core/theme/themed-styles";
 import { HailRangeHint } from "./HailRangeHint";
-import { hailDockBottom, isSosDoubleTap, SOS_DOUBLE_TAP_MS } from "./dashboard-ui";
+import { COLLAPSED_TOOLS_HEIGHT, hailDockBottom, newlyNearbyVehicle, toolsSheetCollapsedOffset } from "./dashboard-ui";
 import { WebIcon } from "../../shared/ui/WebIcon";
 import { WebSpinner } from "../../shared/ui/WebSpinner";
 import { useReducedMotion } from "../../shared/useReducedMotion";
+import { foregroundPoll } from "../../shared/foreground-poll";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 
 interface DashboardScreenProps {
   onOpenScan: () => void;
   onOpenShareRide: () => void;
-  onOpenSos: () => void;
   onNavigateToFeedback?: (trip?: Trip) => void;
   onOpenProfile?: () => void;
   onOpenTour?: () => void;
@@ -49,7 +48,6 @@ interface DashboardScreenProps {
 export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   onOpenScan,
   onOpenShareRide,
-  onOpenSos,
   onNavigateToFeedback,
   onOpenProfile,
   onOpenTour,
@@ -77,21 +75,20 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   const [hailTimerSeconds, setHailTimerSeconds] = useState(0);
   const [showSheet, setShowSheet] = useState(true);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
-  const [sosTapHint, setSosTapHint] = useState(false);
   const [hailError, setHailError] = useState<string | null>(null);
   const [hailNotification, setHailNotification] = useState<string | null>(null);
   const [sheetHeight, setSheetHeight] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(windowHeight);
+  const [proximityNotice, setProximityNotice] = useState<{ title: string; message: string } | null>(null);
+  const notifiedVehicles = useRef(new Set<string>());
   const hailBottom = hailDockBottom(viewportHeight, sheetHeight, insets.top, showSheet);
   const reduceMotion = useReducedMotion();
   const sheetTranslateY = useRef(new Animated.Value(0)).current;
   const sheetContentOpacity = useRef(new Animated.Value(1)).current;
   const hailHoldProgress = useRef(new Animated.Value(0)).current;
-  const lastSosTapRef = useRef<number | null>(null);
-  const sosHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const collapsedOffset = Math.max(0, sheetHeight - 128 - Math.max(insets.bottom, 12));
+    const collapsedOffset = toolsSheetCollapsedOffset(sheetHeight);
     if (reduceMotion) {
       sheetTranslateY.setValue(showSheet ? 0 : collapsedOffset);
       sheetContentOpacity.setValue(showSheet ? 1 : 0);
@@ -264,9 +261,8 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
   // Poll vehicle locations every 5s
   useEffect(() => {
-    fetchVehicles();
-    const interval = setInterval(fetchVehicles, 5000);
-    return () => clearInterval(interval);
+    const poll = foregroundPoll(fetchVehicles, 5000);
+    return () => poll.stop();
   }, [fetchVehicles]);
 
   const nearbyHailableVehicles = useMemo(
@@ -274,6 +270,22 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     [userLocation, vehicles],
   );
   const nearestVehicleInfo = nearbyHailableVehicles[0] ?? null;
+
+  useEffect(() => {
+    const nearby = gpsStatus === "available" ? nearbyHailableVehicles : [];
+    const newlyNearby = newlyNearbyVehicle(nearby, notifiedVehicles.current);
+    if (nearby.length === 0) setProximityNotice(null);
+    if (newlyNearby) {
+      const plate = newlyNearby.vehicle.plate_number || newlyNearby.vehicle.unit_number;
+      setProximityNotice({ title: "CHATCO Jeep Nearby!", message: `${plate} is ${newlyNearby.distanceMeters}m away. Get ready to board!` });
+    }
+  }, [gpsStatus, nearbyHailableVehicles]);
+
+  useEffect(() => {
+    if (!proximityNotice) return;
+    const timeout = setTimeout(() => setProximityNotice(null), 5000);
+    return () => clearTimeout(timeout);
+  }, [proximityNotice]);
 
   const isUnitFull =
     nearestVehicleInfo?.vehicle?.capacity_status === "FULL" ||
@@ -292,27 +304,6 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
       setHailNotification("Unit is currently at maximum capacity. Please hail the next approaching unit.");
     }
   }, [activeHail, isUnitFull]);
-
-  // Handle Double Tap SOS (matches web safety convention)
-  const handleSosPress = () => {
-    const now = Date.now();
-    if (isSosDoubleTap(lastSosTapRef.current, now)) {
-      if (sosHintTimerRef.current) clearTimeout(sosHintTimerRef.current);
-      lastSosTapRef.current = null;
-      setSosTapHint(false);
-      onOpenSos();
-      return;
-    }
-
-    lastSosTapRef.current = now;
-    setSosTapHint(true);
-    if (sosHintTimerRef.current) clearTimeout(sosHintTimerRef.current);
-    sosHintTimerRef.current = setTimeout(() => {
-      lastSosTapRef.current = null;
-      setSosTapHint(false);
-    }, SOS_DOUBLE_TAP_MS);
-  };
-  useEffect(() => () => { if (sosHintTimerRef.current) clearTimeout(sosHintTimerRef.current); }, []);
 
   // Handle Hail Toggle with Web-Matching Countdown & Audio/Vibration Loop
   const handleToggleHail = async () => {
@@ -419,10 +410,8 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
       } catch { /* Do not discard a known hail on a network error. */ }
       finally { running = false; }
     };
-    void restore();
-    const timer = setInterval(() => void restore(), 15000);
-    const listener = AppState.addEventListener("change", state => { if (state === "active") void restore(); });
-    return () => { active = false; clearInterval(timer); listener.remove(); };
+    const poll = foregroundPoll(restore, 15000);
+    return () => { active = false; poll.stop(); };
   }, [user?.id]);
 
   const hailHold = useHoldToConfirm(() => { void handleToggleHail(); }, canHail && !activeHail && !hailPending);
@@ -483,12 +472,11 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
       } catch {}
     };
 
-    const poll = setInterval(checkHailStatus, 2000);
-    void checkHailStatus();
+    const poll = foregroundPoll(checkHailStatus, 2000);
 
     return () => {
       cancelled = true;
-      clearInterval(poll);
+      poll.stop();
     };
   }, [activeHail?.id, activeHail?.status, nearestVehicleInfo?.vehicle?.unit_number]);
 
@@ -505,6 +493,16 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           style={StyleSheet.absoluteFill}
         />
       </View>
+
+      {(hailNotification || proximityNotice) && (
+        <View style={{ position: "absolute", top: Math.max(insets.top, 14) + 76, left: isTablet ? Math.max(16, (windowWidth - 640) / 2) : 16, right: isTablet ? Math.max(16, (windowWidth - 640) / 2) : 16, zIndex: 35 }}>
+          <View accessibilityRole="alert" style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, padding: 12, borderRadius: 14, borderWidth: 1, backgroundColor: colors.surface, borderColor: hailNotification ? colors.warningBorder : colors.infoBorder }}>
+            <WebIcon name="info" size={18} color={hailNotification ? colors.warning : colors.info} />
+            <View style={{ flex: 1 }}><Text style={{ color: colors.textPrimary, fontSize: 12, fontWeight: "700" }}>{hailNotification ? "Hail Update" : proximityNotice?.title}</Text><Text style={{ color: colors.textSecondary, fontSize: 11 }}>{hailNotification || proximityNotice?.message}</Text></View>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Dismiss notification" onPress={() => { setHailNotification(null); setProximityNotice(null); }} hitSlop={10}><WebIcon name="x" size={16} color={colors.textMuted} /></TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {/* ======================================================== */}
       {/* --- 2. TOP FLOATING BAR (1:1 Web Mobile UI) --- */}
@@ -619,18 +617,6 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
             {gpsStatus === "available" && <NearbyUnitsCard vehicles={nearbyHailableVehicles} />}
 
-            {hailNotification && (
-              <View style={[styles.statusBox, styles.statusBoxOutside, { borderColor: "#F59E0B" }]}>
-                <WebIcon name="info" size={18} color="#FBBF24" style={{ marginRight: 8 }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.statusBoxOutsideTitle, { color: "#FBBF24" }]}>Hail Update</Text>
-                  <Text style={styles.statusBoxOutsideSub}>{hailNotification}</Text>
-                </View>
-                <TouchableOpacity onPress={() => setHailNotification(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                  <WebIcon name="x" size={16} color="#94A3B8" />
-                </TouchableOpacity>
-              </View>
-            )}
 
             {gpsStatus === "available" && isUnitFull && (
               <View style={[styles.statusBox, styles.statusBoxOutside, { borderColor: "#EF4444" }]}>
@@ -673,10 +659,13 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
               accessibilityLabel="Pay with GCash"
               style={styles.gcashPayCard}
             >
-              <Svg style={[StyleSheet.absoluteFill, { pointerEvents: "none" }]} width="100%" height="100%">
-                <Defs><LinearGradient id="gcash-card" x1="0" y1="0" x2="1" y2="1"><Stop offset="0" stopColor="#1A5FB4" /><Stop offset="1" stopColor="#123B6E" /></LinearGradient></Defs>
-                <Rect width="100%" height="100%" fill="url(#gcash-card)" />
-              </Svg>
+              {Platform.OS === "web" ? React.createElement("div", {
+                "aria-hidden": true,
+                style: { position: "absolute", inset: 0, borderRadius: 16, background: "linear-gradient(135deg, #1A5FB4, #123B6E)", pointerEvents: "none" },
+              }) : <Svg style={[StyleSheet.absoluteFill, { pointerEvents: "none" }]} width="100%" height="100%" accessible={false}>
+                <Defs><LinearGradient id="gcash-card" x1="0%" y1="0%" x2="100%" y2="100%"><Stop offset="0%" stopColor="#1A5FB4" /><Stop offset="100%" stopColor="#123B6E" /></LinearGradient></Defs>
+                <Rect width="100%" height="100%" rx={16} ry={16} fill="url(#gcash-card)" />
+              </Svg>}
               {/* Subtle decorative circle matching web */}
               <View style={styles.gcashDecoCircle} />
 
@@ -709,7 +698,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             </TouchableOpacity>
             </View>
 
-            {/* Quick Actions Grid (Share Ride & Emergency SOS 1:1) */}
+            {/* Share Ride action */}
             <View style={styles.quickActionsGrid}>
               <TouchableOpacity
                 activeOpacity={0.8}
@@ -718,17 +707,6 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
               >
                 <WebIcon name="share-ride" size={16} color={isLight ? "#1A5FB4" : "#93C5FD"} style={{ marginRight: 6 }} />
                 <Text style={[styles.quickActionText, { color: isLight ? "#374151" : "rgba(255,255,255,0.7)" }]}>Share Ride</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={handleSosPress}
-                style={styles.sosActionBtn}
-              >
-                <WebIcon name="sos" size={16} color="#F87171" style={{ marginRight: 6 }} />
-                <Text style={styles.sosActionText}>
-                  {sosTapHint ? "Tap SOS again" : "SOS"}
-                </Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
@@ -838,8 +816,6 @@ function dashboardStyles(colors: { [K in keyof typeof commuterColors]: string })
     hailFloatingContainer: { ...baseStyles.hailFloatingContainer },
     quickActionBtn: { ...baseStyles.quickActionBtn, backgroundColor: colors.surfaceSecondary, borderColor: colors.border, paddingVertical: 10 },
     quickActionText: { ...baseStyles.quickActionText, color: colors.textSecondary, fontWeight: "600" as const },
-    sosActionBtn: { ...baseStyles.sosActionBtn, paddingVertical: 10 },
-    sosActionText: { ...baseStyles.sosActionText, color: colors.danger, fontWeight: "600" as const },
     quickActionsGrid: { ...baseStyles.quickActionsGrid, gap: 12, marginTop: 16 },
     gcashPayCard: { ...baseStyles.gcashPayCard, padding: 20, borderRadius: 16, marginBottom: 0 },
     gcashTitle: { ...baseStyles.gcashTitle, fontSize: 18, fontWeight: "700" as const },
@@ -1022,7 +998,7 @@ const baseStyles = StyleSheet.create({
   },
 
   sheetHandleContainer: {
-    height: 38,
+    height: COLLAPSED_TOOLS_HEIGHT,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1327,23 +1303,5 @@ const baseStyles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     color: "#F1F5F9",
-  },
-  sosActionBtn: {
-    flex: 1,
-    minHeight: 46,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(239, 68, 68, 0.12)",
-    paddingVertical: 11,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(239, 68, 68, 0.3)",
-  },
-  sosActionText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#FCA5A5",
   },
 });

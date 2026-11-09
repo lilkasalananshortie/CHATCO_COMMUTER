@@ -350,7 +350,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailC
         ? { text: `An admin asked for a correction to your ${applicationCategory} discount application. Send corrected documents to continue the review.`, link: "Update your application" }
         : applicationStatus === "REJECTED"
           ? { text: `Your ${applicationCategory} discount application was not approved.`, link: "Apply again" }
-          : { text: discountApplicationState ? "Eligible for a Student, PWD, or Senior Citizen discount? Submit your supporting document for verification." : discountApplicationLoading ? "Loading discount application status…" : "Unable to load your discount application status.", link: discountApplicationState ? "Apply for a discount" : "View application status" };
+          : { text: discountApplicationState ? "Apply for a Student, PWD or Senior discount with proof." : discountApplicationLoading ? "Loading discount application status…" : "Unable to load your discount application status.", link: discountApplicationState ? "Apply for a discount" : "View application status" };
 
   return (
     <View style={styles.container}>
@@ -384,7 +384,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailC
           </View>
         </View>
         <View>
-          <Text style={styles.photoHelp}>Profile photo: JPG, PNG, or WebP. Maximum 3 MB and 4096 × 4096 pixels. Choosing a photo uploads it to your account.</Text>
+          <Text style={styles.photoHelp}>JPG, PNG or WebP · Up to 3 MB, 4096 × 4096 pixels. Uploads when selected.</Text>
           {photoError && <Text accessibilityRole="alert" style={[styles.photoHelp, { color: "#FCA5A5", marginTop: 8 }]}>{photoError}</Text>}
           {onOpenDiscountApplication && ["ACTIVE", "APPROVED"].includes(accountStatus) && commuterType === "REGULAR" && (
             <View style={styles.applicationEntry}><Text style={styles.applicationText}>{applicationCopy.text}</Text>
@@ -425,7 +425,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailC
           <TouchableOpacity onPress={() => setShowPasswordModal(true)} style={styles.securityRow}><ProfileIcon name="key" size={18} color={mutedIcon} /><Text style={styles.securityText}>Change password</Text><ProfileIcon name="chevron" size={16} color={mutedIcon} /></TouchableOpacity>
         </View>
         <View style={{ paddingTop: 4 }}><TouchableOpacity onPress={() => setShowLogoutConfirm(true)} style={styles.logoutButton}><ProfileIcon name="logout" size={17} color={isLight ? "#DC2626" : "#F87171"} /><Text style={styles.logoutButtonText}>Log out</Text></TouchableOpacity></View>
-        <TouchableOpacity accessibilityRole="button" accessibilityState={{ expanded: showSupport }} onPress={() => setShowSupport(previous => !previous)} style={styles.supportLink}><Text style={styles.supportText}>Help & support</Text><ProfileIcon name="chevron" size={14} color={mutedIcon} /></TouchableOpacity>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open help and support" accessibilityState={{ expanded: showSupport }} onPress={() => setShowSupport(true)} style={styles.supportLink}><Text style={styles.supportText}>Help & support</Text><ProfileIcon name="chevron" size={14} color={mutedIcon} /></TouchableOpacity>
         {showSupport && <View>{onOpenTour && <TouchableOpacity onPress={onOpenTour} style={styles.securityRow} accessibilityLabel="Replay App Guide and Walkthrough"><Text style={styles.securityText}>App Features & Guide</Text><ProfileIcon name="chevron" size={16} color={mutedIcon} /></TouchableOpacity>}<LegalSupportCard /></View>}
       </ScrollView>
 

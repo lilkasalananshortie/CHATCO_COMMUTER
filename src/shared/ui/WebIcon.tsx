@@ -13,7 +13,7 @@ function flattenSvgStyle(value: unknown): Record<string, unknown> {
 
 /** Exact web geometry, rendered natively. No icon-font loading or baseline offsets. */
 export function WebIcon({ name, size = 24, color = "#FFFFFF", strokeWidth, style }: WebIconProps) {
-  const width = strokeWidth ?? (name === "hail-pin" || name === "history" || name === "tools-chevron" ? 2.5 : name === "qr-code" || name === "share-ride" || name === "sos" ? 1.5 : 2);
+  const width = strokeWidth ?? (name === "hail-pin" || name === "history" || name === "tools-chevron" ? 2.5 : name === "qr-code" || name === "share-ride" ? 1.5 : 2);
   // Keep styles flat for both the browser SVG renderer and native react-native-svg.
   const svgStyle = { width: size, height: size, flexShrink: 0, ...flattenSvgStyle(style), pointerEvents: "none" as const };
   if (Platform.OS === "web") {

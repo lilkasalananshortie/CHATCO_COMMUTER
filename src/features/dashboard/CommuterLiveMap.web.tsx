@@ -8,6 +8,7 @@ import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import { MAP_RUNTIME } from "./map-runtime";
 import { commuterLocationCss } from "./commuter-map-pin";
 import { UnitDetailsPanel } from "./UnitDetailsPanel";
+import { mapVehicleState } from "./map-vehicle-state";
 
 const CARTO_API_KEY =
   process.env.EXPO_PUBLIC_CARTO_API_KEY ||
@@ -22,12 +23,12 @@ export interface CommuterLiveMapProps {
   style?: StyleProp<ViewStyle>;
 }
 
-export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
+export const CommuterLiveMap = React.memo(function CommuterLiveMap({
   vehicles,
   userLocation,
   isHailing = false,
   style,
-}) => {
+}: CommuterLiveMapProps) {
   const route = usePublishedRoute();
   const { isLight, colors } = useCommuterTheme();
   const frameRef = useRef<HTMLIFrameElement>(null);
@@ -46,12 +47,10 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
     [route.coordinates]
   );
 
-  const mapState = useMemo(() => ({ vehicles: vehicles.map(v => ({
-    id: v.vehicle_id || v.id || v.unit_number, unitNumber: v.unit_number,
-    plateNumber: v.plate_number, lat: Number(v.latitude), lng: Number(v.longitude),
-    availableSeats: v.available_seats, capacityStatus: v.capacity_status, routeName: v.route_name,
-    driverName: v.driver_name, conductorName: v.conductor_name,
-  })), userLocation, isHailing }), [vehicles, userLocation, isHailing]);
+  const mapVehicles = useMemo(() => vehicles.map(v => mapVehicleState(v, route.coordinates)), [vehicles, route.coordinates]);
+  const mapState = useMemo(() => ({
+    vehicles: mapVehicles, userLocation, isHailing,
+  }), [mapVehicles, userLocation, isHailing]);
   useEffect(() => {
     if (selectedVehicleId && !vehicles.some(v => String(v.vehicle_id || v.id) === selectedVehicleId)) setSelectedVehicleId(null);
   }, [vehicles, selectedVehicleId]);
@@ -86,24 +85,6 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
     .leaflet-control-attribution, .leaflet-control-zoom { display: none !important; }
     
     ${commuterLocationCss(isLight)}
-    .vehicle-marker {
-      position: relative;
-      width: 44px;
-      height: 44px;
-      background: #071A2E;
-      border: 2.5px solid #22c55e;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 3px 8px rgba(7, 26, 46, 0.4);
-      color: white;
-      box-shadow: 0 0 12px rgba(0,0,0,.5);
-    }
-    .vehicle-marker-in-range { position:absolute; top:-2px; right:-2px; width:14px; height:14px; border-radius:50%; background:#22c55e; border:2px solid #071A2E; box-shadow:0 0 6px rgba(34,197,94,.6); }
-
-
-
     @keyframes pulse {
       0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(255, 109, 58, 0.7); }
       70% { transform: scale(1.1); box-shadow: 0 0 0 12px rgba(255, 109, 58, 0); }
@@ -185,7 +166,7 @@ export const CommuterLiveMap: React.FC<CommuterLiveMapProps> = ({
       <UnitDetailsPanel vehicleId={selectedVehicleId} onClose={() => setSelectedVehicleId(null)} />
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {

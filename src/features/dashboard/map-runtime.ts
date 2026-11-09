@@ -1,4 +1,5 @@
 import { COMMUTER_ACCOUNT_PATH, COMMUTER_PIN_SIZE } from "./commuter-map-pin";
+import { BUS_ART } from "./bus-map-art";
 
 /** Data stays outside HTML templates so a GPS poll never recreates the map. */
 export function mapUpdateScript(state: unknown): string {
@@ -6,6 +7,7 @@ export function mapUpdateScript(state: unknown): string {
 }
 
 export const MAP_RUNTIME = `
+var busArt = ${JSON.stringify(BUS_ART)};
 var vehicleMarkers = Object.create(null), userMarker = null, hailCircle = null, userPosition = null, userDirection = null;
 function coordinates(lat, lng) { return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180; }
 function updateUserDirection() {
@@ -32,22 +34,27 @@ function updateUserDirection() {
   userDirection.style.display = 'flex';
 }
 map.on('move zoom', updateUserDirection);
-function markerIcon(capacity, isWithinRadius) {
+function markerIcon(capacity, isWithinRadius, heading) {
   var colors = { AVAILABLE: '#22c55e', STANDING: '#eab308', FULL: '#ef4444', LAST_TRIP: '#ef4444' };
   var color = colors[String(capacity || 'AVAILABLE').toUpperCase()] || colors.AVAILABLE;
   var node = document.createElement('div');
-  node.className = 'vehicle-marker';
-  node.style.borderColor = color;
-  var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('width', '24'); svg.setAttribute('height', '24'); svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('fill', color); svg.setAttribute('aria-hidden', 'true');
-  var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  path.setAttribute('d', 'M19,13V7H20V4H4V7H5V13H2C2,13.93 2.5,14.71 3.5,14.93V20A1,1 0 0,0 4.5,21H5.5A1,1 0 0,0 6.5,20V19H17.5V20A1,1 0 0,0 18.5,21H19.5A1,1 0 0,0 20.5,20V14.93C21.5,14.7 22,13.93 22,13H19M8,15A1.5,1.5 0 0,1 6.5,13.5A1.5,1.5 0 0,1 8,12A1.5,1.5 0 0,1 9.5,13.5A1.5,1.5 0 0,1 8,15M16,15A1.5,1.5 0 0,1 14.5,13.5A1.5,1.5 0 0,1 16,12A1.5,1.5 0 0,1 17.5,13.5A1.5,1.5 0 0,1 16,15M17.5,10.5C15.92,10.18 14.03,10 12,10C9.97,10 8,10.18 6.5,10.5V7H17.5V10.5Z');
-  svg.appendChild(path); node.appendChild(svg);
+  node.style.position = 'relative'; node.style.width = '52px'; node.style.height = '46px';
+  var facing = heading && busArt[heading.facing] ? heading.facing : 's';
+  var image = document.createElement('img'); image.src = busArt[facing]; image.alt = ''; image.draggable = false;
+  image.style.width = '52px'; image.style.height = '46px'; image.style.display = 'block'; image.style.pointerEvents = 'none'; node.appendChild(image);
+  var statusDot = document.createElement('span'); statusDot.style.position = 'absolute'; statusDot.style.left = '2px'; statusDot.style.top = '2px'; statusDot.style.width = '12px'; statusDot.style.height = '12px'; statusDot.style.borderRadius = '50%'; statusDot.style.background = color; statusDot.style.border = '2px solid #071A2E'; node.appendChild(statusDot);
   if (isWithinRadius) {
-    var dot = document.createElement('span'); dot.className = 'vehicle-marker-in-range'; node.appendChild(dot);
+    var dot = document.createElement('span'); dot.style.position = 'absolute'; dot.style.right = '0'; dot.style.top = '0'; dot.style.width = '12px'; dot.style.height = '12px'; dot.style.borderRadius = '50%'; dot.style.background = '#22c55e'; dot.style.border = '2px solid #071A2E'; node.appendChild(dot);
   }
-  return L.divIcon({className: '', html: node, iconSize: [44,44], iconAnchor: [22,22], popupAnchor: [0,-25]});
+  if (heading && Number.isFinite(heading.arrow)) {
+    var arrow = ((heading.arrow % 360) + 360) % 360;
+    var radians = arrow * Math.PI / 180;
+    var arrowSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    arrowSvg.setAttribute('width', '18'); arrowSvg.setAttribute('height', '18'); arrowSvg.setAttribute('viewBox', '0 0 24 24'); arrowSvg.setAttribute('aria-hidden', 'true');
+    arrowSvg.style.position = 'absolute'; arrowSvg.style.left = (26 + 34 * Math.sin(radians) - 9).toFixed(1) + 'px'; arrowSvg.style.top = (23 - 31 * Math.cos(radians) - 9).toFixed(1) + 'px'; arrowSvg.style.transform = 'rotate(' + arrow + 'deg)';
+    var arrowPath = document.createElementNS('http://www.w3.org/2000/svg', 'path'); arrowPath.setAttribute('d', 'M12 2.5 20 20 12 15.5 4 20Z'); arrowPath.setAttribute('fill', '#1A5FB4'); arrowPath.setAttribute('stroke', '#ffffff'); arrowPath.setAttribute('stroke-width', '2'); arrowPath.setAttribute('stroke-linejoin', 'round'); arrowSvg.appendChild(arrowPath); node.appendChild(arrowSvg);
+  }
+  return L.divIcon({className: 'custom-bus-icon', html: node, iconSize: [52,46], iconAnchor: [26,23], popupAnchor: [0,-25]});
 }
 function distanceMeters(a, b) {
   var rad = Math.PI / 180, dLat = (b[0] - a[0]) * rad, dLng = (b[1] - a[1]) * rad;
@@ -77,7 +84,8 @@ function currentLocationDetails() {
 function unitDetails(v, userLocation) {
   var node = document.createElement('section'); node.className = 'unit-popup';
   var header = document.createElement('div'); header.className = 'unit-popup-header';
-  var iconDefinition = markerIcon(v.capacityStatus, false); var icon = (iconDefinition.options || iconDefinition).html.children[0]; icon.setAttribute('fill', 'currentColor'); icon.setAttribute('class', 'unit-popup-icon'); header.appendChild(icon);
+  var icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); icon.setAttribute('viewBox', '0 0 24 24'); icon.setAttribute('fill', 'currentColor'); icon.setAttribute('class', 'unit-popup-icon');
+  var iconPath = document.createElementNS('http://www.w3.org/2000/svg', 'path'); iconPath.setAttribute('d', 'M19,13V7H20V4H4V7H5V13H2C2,13.93 2.5,14.71 3.5,14.93V20A1,1 0 0,0 4.5,21H5.5A1,1 0 0,0 6.5,20V19H17.5V20A1,1 0 0,0 18.5,21H19.5A1,1 0 0,0 20.5,20V14.93C21.5,14.7 22,13.93 22,13H19M8,15A1.5,1.5 0 0,1 6.5,13.5A1.5,1.5 0 0,1 8,12A1.5,1.5 0 0,1 9.5,13.5A1.5,1.5 0 0,1 8,15M16,15A1.5,1.5 0 0,1 14.5,13.5A1.5,1.5 0 0,1 16,12A1.5,1.5 0 0,1 17.5,13.5A1.5,1.5 0 0,1 16,15M17.5,10.5C15.92,10.18 14.03,10 12,10C9.97,10 8,10.18 6.5,10.5V7H17.5V10.5Z'); icon.appendChild(iconPath); header.appendChild(icon);
   var heading = document.createElement('div'); var subtitle = document.createElement('div'); subtitle.className = 'unit-popup-subtitle'; subtitle.textContent = 'Unit details'; heading.appendChild(subtitle);
   var title = document.createElement('div'); title.className = 'unit-popup-title'; title.textContent = String(v.plateNumber || v.unitNumber || '—'); heading.appendChild(title); header.appendChild(heading); node.appendChild(header);
   var body = document.createElement('div'); body.className = 'unit-popup-body'; node.appendChild(body);
@@ -111,7 +119,7 @@ window.chatcoUpdate = function(state) {
     if (!marker) {
       var user = state.userLocation;
       var inRange = user && coordinates(user.latitude,user.longitude) && distanceMeters([user.latitude,user.longitude],[v.lat,v.lng]) <= 1000;
-      marker = L.marker([v.lat,v.lng], {icon: markerIcon(v.capacityStatus, inRange)}).addTo(map);
+      marker = L.marker([v.lat,v.lng], {icon: markerIcon(v.capacityStatus, inRange, v.heading), zIndexOffset: 1000}).addTo(map);
       marker.bindPopup(unitDetails(v,state.userLocation), {className:'chatco-unit-popup',closeButton:false,minWidth:0,maxWidth:320});
       marker.on('popupopen', function() {
         var message = {type:'chatco-unit-open', id:key};
@@ -122,7 +130,7 @@ window.chatcoUpdate = function(state) {
     } else {
       var user = state.userLocation;
       var inRange = user && coordinates(user.latitude,user.longitude) && distanceMeters([user.latitude,user.longitude],[v.lat,v.lng]) <= 1000;
-      marker.setIcon(markerIcon(v.capacityStatus, inRange));
+      marker.setIcon(markerIcon(v.capacityStatus, inRange, v.heading));
       marker.setLatLng([v.lat,v.lng]); marker.setPopupContent(unitDetails(v,state.userLocation));
     }
   });

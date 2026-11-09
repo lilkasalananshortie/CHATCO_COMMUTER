@@ -15,7 +15,6 @@ import type {
   ResolvedCrew,
   RewardProgress,
   Voucher,
-  SosAlert,
   Trip,
   User,
   VehicleLocation,
@@ -437,31 +436,6 @@ export const commuterService = {
 
   async getFeedback(): Promise<Feedback[]> {
     return request<Feedback[]>("/mobile/commuter/feedback");
-  },
-
-  // Emergency SOS
-  async triggerSos(data: {
-    lat?: number;
-    lng?: number;
-    latitude?: number;
-    longitude?: number;
-    note?: string;
-  }): Promise<SosAlert> {
-    const lat = Number(data.lat ?? data.latitude ?? 0);
-    const lng = Number(data.lng ?? data.longitude ?? 0);
-    return post("/mobile/commuter/sos", {
-      lat,
-      lng,
-      note: data.note || "Emergency distress triggered from Commuter Mobile App",
-    });
-  },
-
-  async getSosStatus(id: string): Promise<SosAlert> {
-    return request(`/mobile/commuter/sos/${encodeURIComponent(id)}`);
-  },
-
-  async stopSos(id: string): Promise<SosAlert> {
-    return request(`/mobile/commuter/sos/${encodeURIComponent(id)}/stop`, { method: "PATCH" });
   },
 
   // Lost & Found

@@ -19,7 +19,7 @@ jest.mock("react", () => ({
   },
 }));
 jest.mock("react-native", () => ({
-  View: "View", Text: "Text", ScrollView: "ScrollView", Pressable: "Pressable",
+  View: "View", Text: "Text", Image: "Image", ScrollView: "ScrollView", Pressable: "Pressable",
   Animated: { View: "AnimatedView", Value: class { constructor(public value: number) {} } },
   AccessibilityInfo: {}, Easing: {},
   StyleSheet: { create: (styles: unknown) => styles },
@@ -31,6 +31,7 @@ jest.mock("@expo/vector-icons", () => ({ Ionicons: "Icon" }));
 jest.mock("expo-haptics", () => ({ impactAsync: () => Promise.resolve(), ImpactFeedbackStyle: { Light: 1, Medium: 2 } }));
 jest.mock("@react-native-async-storage/async-storage", () => ({ setItem: () => Promise.resolve() }));
 jest.mock("../../../shared/ui/Mascot", () => ({ Mascot: "Mascot" }));
+jest.mock("../../../../assets/logo-transparent.png", () => 1);
 
 type Element = React.ReactElement<Record<string, unknown>>;
 function elements(node: React.ReactNode): Element[] {
@@ -62,6 +63,7 @@ beforeEach(() => { mockStates = []; mockCursor = 0; });
 
 test("every Next transition keeps the mascot, title, and description visible without animation callbacks", () => {
   let nodes = render();
+  expect(nodes.some(node => node.type === "Image" && node.props.accessibilityLabel === "ChatCo logo")).toBe(true);
   expectVisible(nodes, 0);
   for (let index = 1; index < WALKTHROUGH_SLIDES.length; index++) {
     press(nodes, "Go to next slide");
@@ -77,4 +79,13 @@ test("returning from slide two does not leave the content transparent", () => {
   expectVisible(nodes, 1);
   press(nodes, "Go to previous slide");
   expectVisible(render(), 0);
+});
+
+test("walkthrough omits the redundant welcome label and numeric counter", () => {
+  const nodes = render();
+  expect(nodes.some(node => node.props.children === "WELCOME")).toBe(false);
+  expect(nodes.some(node => Array.isArray(node.props.children) && node.props.children.includes(" / "))).toBe(false);
+  const description = nodes.find(node => node.props.children === WALKTHROUGH_SLIDES[0]!.description)!;
+  expect(description.props.style).toMatchObject({ textAlign: "center", fontSize: 17 });
+  expect(nodes.some(node => node.props.accessibilityLabel === "Go to next slide")).toBe(true);
 });

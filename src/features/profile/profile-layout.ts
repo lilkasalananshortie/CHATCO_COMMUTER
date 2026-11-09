@@ -13,7 +13,7 @@ export function profileLayout(isLight: boolean) {
     pageSubtitle: { fontSize: 14, lineHeight: 20, marginTop: 4, color: muted },
     themeToggle: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: isLight ? "#FCD34D" : "rgba(98,160,234,0.25)", backgroundColor: isLight ? "#FFFBEB" : "rgba(98,160,234,0.1)", alignItems: "center", justifyContent: "center" },
     scrollContent: { width: "100%", maxWidth: 672, alignSelf: "center", paddingHorizontal: 16, paddingBottom: 24, gap: 20 },
-    profileHeader: { flexDirection: "row", alignItems: "center", gap: 16, padding: 20, borderWidth: 1, borderColor: isLight ? "rgba(26,95,180,0.2)" : "rgba(98,160,234,0.2)", borderRadius: 16, overflow: "hidden" },
+    profileHeader: { flexDirection: "row", alignItems: "center", gap: 16, padding: 20, borderWidth: 1, borderColor: isLight ? "rgba(26,95,180,0.2)" : "rgba(98,160,234,0.2)", borderRadius: 16, overflow: "hidden", backgroundColor: isLight ? "#FFFFFF" : "#071A2E" },
     photoColumn: { alignItems: "center", flexShrink: 0, gap: 8 },
     avatarCircle: { width: 80, height: 80, borderRadius: 16, borderWidth: 1, borderColor: "rgba(153,193,241,0.3)", backgroundColor: "#1A5FB4", alignItems: "center", justifyContent: "center", shadowColor: "#000000", shadowOpacity: 0.15, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } },
     photoImage: { width: "100%", height: "100%", borderRadius: 16 },

@@ -6,7 +6,7 @@ The standalone React Native / Expo mobile application for **ChatCo Commuters**, 
 
 ## Features
 
-- **Dashboard & Transit HUD:** Active trip monitor, live route status, GPS corridor positioning, and quick SOS / Share Ride actions.
+- **Dashboard & Transit HUD:** Active trip monitor, live route status, GPS corridor positioning, and quick Share Ride action.
 - **Paper Cash Receipt Scanner:** Claim paper cash receipts via camera scan or manual 6-character token entry to earn free ride points.
 - **Rewards & Loyalty Engine:**
   - Ride progress ring and "X Rides to Free Ride" status tracker.
@@ -17,7 +17,6 @@ The standalone React Native / Expo mobile application for **ChatCo Commuters**, 
 - **Dual-Crew Feedback:** End-to-end trip feedback system for both Driver and Conductor with dynamic rating tags and confidential reviews.
 - **Lost & Found Portal:** Search, filter, report, watch, and submit claims for lost belongings across transit units.
 - **Live Ride Sharing:** Real-time GPS location sharing link with automated 30-minute expiration countdown timer.
-- **Emergency SOS:** 6-stage emergency broadcast system with live responder polling and 911 / 160 quick hotlines.
 - **Account & Concession Management:** Profile management, verified concession badges, contact updates, and 2-step password change flow.
 
 ---

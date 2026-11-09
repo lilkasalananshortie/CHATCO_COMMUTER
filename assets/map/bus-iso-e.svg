@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-48 -56 96 84" width="96" height="84">
+<defs><linearGradient id="g" x2="0" y2="1"><stop offset="0" stop-color="#7CC2FF"/><stop offset="1" stop-color="#1F66C9"/></linearGradient></defs>
+<g opacity=".3">
+<path d="M-39.8 -12.0L39.8 -12.0L39.8 12.0L-39.8 12.0Z" fill="#000" stroke="#000" stroke-width="8" stroke-linejoin="round" stroke-linecap="round"/>
+</g>
+<path d="M37.4 -20.6L36.1 -23.6L36.1 -2.4L37.4 0.6Z" fill="#C8D0DA" stroke="#16223A" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M36.1 -23.6L27.6 -35.6L27.6 -14.4L36.1 -2.4Z" fill="#D3D9E1" stroke="#16223A" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M27.6 -35.6L22.7 -36.6L22.7 -15.4L27.6 -14.4Z" fill="#F2F4F6" stroke="#16223A" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M22.7 -36.6L-37.4 -36.6L-37.4 -15.4L22.7 -15.4Z" fill="#F7F8FA" stroke="#16223A" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M-37.4 10.6L32.5 10.6L37.4 6.6L37.4 0.6L36.1 -2.4L27.6 -14.4L22.7 -15.4L-37.4 -15.4Z" fill="#E0E4EA" stroke="#16223A" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M-30.0 -1.4L21.4 -1.4L21.4 -11.4L-30.0 -11.4Z" fill="#2F86E8" stroke="#16223A" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M23.9 -1.4L32.5 -1.4L28.8 -11.4L23.9 -11.4Z" fill="#2F86E8" stroke="#16223A" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M-16.5 -1.4L-16.5 -11.4" fill="none" stroke="#16223A" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M-3.1 -1.4L-3.1 -11.4" fill="none" stroke="#16223A" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M10.4 -1.4L10.4 -11.4" fill="none" stroke="#16223A" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M3.7 3.6L3.5 2.5L2.9 1.5L1.9 0.8L0.7 0.3L-0.6 0.1L-1.9 0.3L-3.1 0.8L-4.1 1.5L-4.7 2.5L-4.9 3.6L-4.7 4.7L-4.1 5.7L-3.1 6.4L-1.9 6.9L-0.6 7.1L0.7 6.9L1.9 6.4L2.9 5.7L3.5 4.7Z" fill="#1E3FA8" stroke="#fff" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M-12.2 5.5L-12.6 3.5L-13.8 1.6L-15.5 0.2L-17.7 -0.7L-20.2 -1.0L-22.7 -0.7L-24.9 0.2L-26.6 1.6L-27.8 3.5L-28.2 5.5L-27.8 7.5L-26.6 9.3L-24.9 10.7L-22.7 11.6L-20.2 12.0L-17.7 11.6L-15.5 10.7L-13.8 9.3L-12.6 7.5Z" fill="#1B1F27" stroke="#16223A" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M-16.8 5.5L-16.9 4.6L-17.4 3.8L-18.2 3.2L-19.1 2.8L-20.2 2.7L-21.3 2.8L-22.2 3.2L-23.0 3.8L-23.5 4.6L-23.6 5.5L-23.5 6.3L-23.0 7.1L-22.2 7.7L-21.3 8.1L-20.2 8.3L-19.1 8.1L-18.2 7.7L-17.4 7.1L-16.9 6.3Z" fill="#B9C3D1" stroke="none" stroke-width="0" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M26.9 5.5L26.6 3.5L25.4 1.6L23.7 0.2L21.4 -0.7L19.0 -1.0L16.5 -0.7L14.3 0.2L12.5 1.6L11.4 3.5L11.0 5.5L11.4 7.5L12.5 9.3L14.3 10.7L16.5 11.6L19.0 12.0L21.4 11.6L23.7 10.7L25.4 9.3L26.6 7.5Z" fill="#1B1F27" stroke="#16223A" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M22.4 5.5L22.2 4.6L21.8 3.8L21.0 3.2L20.0 2.8L19.0 2.7L17.9 2.8L17.0 3.2L16.2 3.8L15.7 4.6L15.6 5.5L15.7 6.3L16.2 7.1L17.0 7.7L17.9 8.1L19.0 8.3L20.0 8.1L21.0 7.7L21.8 7.1L22.2 6.3Z" fill="#B9C3D1" stroke="none" stroke-width="0" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M35.3 -22.7L28.4 -32.3L28.4 -15.3L35.3 -5.7Z" fill="url(#g)" stroke="#16223A" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M30.1 -28.5L31.0 -18.8" fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" opacity=".75"/>
+<path d="M32.7 -24.9L33.1 -20.0" fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" opacity=".75"/>
+<path d="M20.7 -30.9L20.6 -30.4L20.1 -30.0L19.5 -29.6L18.7 -29.3L17.8 -29.3L16.8 -29.3L16.0 -29.6L15.4 -30.0L15.0 -30.4L14.8 -30.9L15.0 -31.5L15.4 -31.9L16.0 -32.3L16.8 -32.6L17.8 -32.6L18.7 -32.6L19.5 -32.3L20.1 -31.9L20.6 -31.5Z" fill="#EF4444" stroke="none" stroke-width="0" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M20.7 -21.1L20.6 -20.5L20.1 -20.1L19.5 -19.7L18.7 -19.4L17.8 -19.4L16.8 -19.4L16.0 -19.7L15.4 -20.1L15.0 -20.5L14.8 -21.1L15.0 -21.6L15.4 -22.0L16.0 -22.4L16.8 -22.7L17.8 -22.7L18.7 -22.7L19.5 -22.4L20.1 -22.0L20.6 -21.6Z" fill="#EF4444" stroke="none" stroke-width="0" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M-29.5 -30.9L-29.7 -30.4L-30.1 -30.0L-30.7 -29.6L-31.5 -29.3L-32.5 -29.3L-33.4 -29.3L-34.2 -29.6L-34.8 -30.0L-35.3 -30.4L-35.4 -30.9L-35.3 -31.5L-34.8 -31.9L-34.2 -32.3L-33.4 -32.6L-32.5 -32.6L-31.5 -32.6L-30.7 -32.3L-30.1 -31.9L-29.7 -31.5Z" fill="#EF4444" stroke="none" stroke-width="0" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M-29.5 -21.1L-29.7 -20.5L-30.1 -20.1L-30.7 -19.7L-31.5 -19.4L-32.5 -19.4L-33.4 -19.4L-34.2 -19.7L-34.8 -20.1L-35.3 -20.5L-35.4 -21.1L-35.3 -21.6L-34.8 -22.0L-34.2 -22.4L-33.4 -22.7L-32.5 -22.7L-31.5 -22.7L-30.7 -22.4L-30.1 -22.0L-29.7 -21.6Z" fill="#EF4444" stroke="none" stroke-width="0" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M-15.3 -20.3L14.1 -20.3L14.1 -24.3L-15.3 -24.3Z" fill="#E0E4EA" stroke="#16223A" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M-15.3 -35.7L14.1 -35.7L14.1 -24.3L-15.3 -24.3Z" fill="#F4F7FB" stroke="#16223A" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M-10.4 -32.8L9.2 -32.8" fill="none" stroke="#8D99AA" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M-10.4 -30.0L9.2 -30.0" fill="none" stroke="#8D99AA" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M-10.4 -27.2L9.2 -27.2" fill="none" stroke="#8D99AA" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M32.5 -11.4L39.8 -10.7" fill="none" stroke="#16223A" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M39.8 -10.7L39.8 -3.7" fill="none" stroke="#16223A" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

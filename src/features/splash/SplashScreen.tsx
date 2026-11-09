@@ -7,6 +7,7 @@ import {
   Dimensions,
   Easing,
   Platform,
+  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -370,6 +371,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
           ]}
         >
           <View style={styles.titleRow}>
+            <Image source={require("../../../assets/logo-transparent.png")} style={{ width: 36, height: 36 }} resizeMode="contain" accessibilityLabel="ChatCo logo" />
             <Text style={styles.brandTitle}>CHATCO</Text>
             <View style={styles.commuterPill}>
               <View style={styles.commuterPillDot} />
@@ -405,7 +407,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
             </View>
 
             <View style={styles.stationLabelRight}>
-              <View style={[styles.stationDot, { backgroundColor: "#10B981" }]} />
+              <View style={[styles.stationDot, { backgroundColor: "#7FA7D6" }]} />
               <Text style={styles.stationText}>Meycauayan</Text>
             </View>
           </View>
@@ -464,7 +466,7 @@ const baseStyles = StyleSheet.create({
     width: 260,
     height: 260,
     borderRadius: 130,
-    backgroundColor: "rgba(16, 185, 129, 0.16)",
+    backgroundColor: "rgba(127, 167, 214, 0.14)",
     ...Platform.select({
       web: { filter: "blur(65px)" },
     }),
@@ -494,8 +496,8 @@ const baseStyles = StyleSheet.create({
     backgroundColor: "rgba(98, 160, 234, 0.14)",
   },
   pulseRingSecondary: {
-    borderColor: "#34D399",
-    backgroundColor: "rgba(52, 211, 153, 0.08)",
+    borderColor: "#7FA7D6",
+    backgroundColor: "rgba(127, 167, 214, 0.08)",
   },
   groundShadow: {
     position: "absolute",
@@ -543,8 +545,8 @@ const baseStyles = StyleSheet.create({
     width: 9,
     height: 9,
     borderRadius: 4.5,
-    backgroundColor: "#34D399",
-    shadowColor: "#34D399",
+    backgroundColor: "#7FA7D6",
+    shadowColor: "#7FA7D6",
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 1,
     shadowRadius: 6,
@@ -710,21 +712,21 @@ const baseStyles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: "rgba(16, 185, 129, 0.14)",
+    backgroundColor: "rgba(127, 167, 214, 0.14)",
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "rgba(16, 185, 129, 0.28)",
+    borderColor: "rgba(127, 167, 214, 0.28)",
   },
   liveDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: "#10B981",
+    backgroundColor: "#7FA7D6",
   },
   liveText: {
-    color: "#34D399",
+    color: "#A9C8EB",
     fontSize: 10,
     fontWeight: "800",
     letterSpacing: 0.6,

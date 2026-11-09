@@ -25,13 +25,12 @@ import { getMascotErrorState } from "../../shared/ui/mascot-error";
 import { loadRewardsAndUpdates } from "./load-rewards";
 import { voucherLabel, voucherWalletStatus } from "../../core/domain/rewards";
 import { subscribeRewardsChanged } from "../../core/domain/rewards-events";
+import { notifyAnnouncementsRead } from "../../core/domain/announcements-events";
 import { announcementLabel } from "../../core/domain/announcement-category";
-import Svg, { Circle } from "react-native-svg";
+import { RewardsProgressRing, REWARD_RING_CIRCUMFERENCE } from "./RewardsProgressRing";
 import type { RenewalState } from "../student-renewal/renewal-types";
 import { useReducedMotion } from "../../shared/useReducedMotion";
 
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
-const REWARD_RING_CIRCUMFERENCE = 2 * Math.PI * 40;
 import type {
   RewardProgress,
   Voucher,
@@ -127,7 +126,17 @@ function voucherDate(value?: string | null): string {
 function AnimatedVoucherStub({ voucher, tab, index }: { voucher: Voucher; tab: "AVAILABLE" | "USED" | "EXPIRED"; index: number }) {
   const { colors: selectedColors, isLight = false } = useCommuterTheme();
   const colors = selectedColors ?? commuterColors;
-  const styles = useMemo(() => themedStyles(baseStyles, colors, isLight), [colors, isLight]);
+  const styles = useMemo(() => {
+    const themed = themedStyles(baseStyles, colors, isLight);
+    return {
+      ...themed,
+      explainerTitle: { ...themed.explainerTitle, color: colors.textPrimary },
+      explainerSub: { ...themed.explainerSub, color: colors.textSecondary },
+      stepTitle: { ...themed.stepTitle, color: colors.textPrimary },
+      stepDesc: { ...themed.stepDesc, color: colors.textSecondary },
+      neutralModalButtonText: { ...themed.neutralModalButtonText, color: colors.textPrimary },
+    };
+  }, [colors, isLight]);
   const opacity = useRef(new Animated.Value(0)).current;
   const expiresAt = voucher.expiresAt ?? voucher.expires_at;
 
@@ -155,9 +164,9 @@ function AnimatedVoucherStub({ voucher, tab, index }: { voucher: Voucher; tab: "
           <Text style={[styles.voucherValue, !available && styles.voucherValueMuted]}>{voucherValueText(voucher)}</Text>
           <Text numberOfLines={1} style={styles.voucherCode}>{voucher.code}</Text>
         </View>
-        <View pointerEvents="none" style={styles.voucherDivider} />
-        <View pointerEvents="none" style={[styles.voucherNotch, styles.voucherNotchTop]} />
-        <View pointerEvents="none" style={[styles.voucherNotch, styles.voucherNotchBottom]} />
+        <View style={[styles.voucherDivider, { pointerEvents: "none" }]} />
+        <View style={[styles.voucherNotch, styles.voucherNotchTop, { pointerEvents: "none" }]} />
+        <View style={[styles.voucherNotch, styles.voucherNotchBottom, { pointerEvents: "none" }]} />
         <View style={styles.voucherStub}>
           <View>
             <Text style={styles.voucherStubLabel}>{label}</Text>
@@ -188,6 +197,10 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
   const [announcementsError, setAnnouncementsError] = useState<unknown>(null);
   const fetching = useRef(false);
   const mounted = useRef(true);
+  const announcementsRevision = useRef(0);
+  const markingRead = useRef(false);
+  const [markingAllRead, setMarkingAllRead] = useState(false);
+  const [readError, setReadError] = useState<string | null>(null);
 
   // Modals
   const [showReceiptScanLocal, setShowReceiptScanLocal] = useState(false);
@@ -213,7 +226,7 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
     : 0;
 
   useEffect(() => {
-    if (reduceMotion) {
+    if (reduceMotion || Platform.OS === "web") {
       progressRingValue.setValue(progressPercent);
       return;
     }
@@ -229,6 +242,7 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
   const fetchData = useCallback(async () => {
     if (fetching.current) return;
     fetching.current = true;
+    const revision = announcementsRevision.current;
     try {
       const { rewards: rewardRes, announcements: announcementRes } = await loadRewardsAndUpdates(commuterService);
       if (!mounted.current) return;
@@ -240,10 +254,10 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
         setError(rewardRes.reason ?? new Error("Rewards unavailable"));
       }
 
-      if (announcementRes.status === "fulfilled") {
+      if (announcementRes.status === "fulfilled" && revision === announcementsRevision.current) {
         setAnnouncements(announcementRes.value || []);
         setAnnouncementsError(null);
-      } else {
+      } else if (announcementRes.status === "rejected") {
         setAnnouncementsError(announcementRes.reason ?? new Error("Updates unavailable"));
       }
     } catch (err) {
@@ -322,11 +336,24 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
   const unreadCount = announcements.filter((a) => !a.is_read).length;
 
   const markAllAsRead = async () => {
+    if (markingRead.current || unreadCount === 0) return;
+    markingRead.current = true;
+    setMarkingAllRead(true);
+    setReadError(null);
+    announcementsRevision.current++;
+    const ids = new Set(announcements.map(item => item.id));
     try {
       await commuterService.markAllAnnouncementsRead();
-      setAnnouncements((prev) => prev.map((a) => ({ ...a, is_read: true })));
+      if (!mounted.current) return;
+      announcementsRevision.current++;
+      setAnnouncements(prev => prev.map(item => ids.has(item.id) ? { ...item, is_read: true, isRead: true } : item));
+      setSelectedAnnouncement(item => item && ids.has(item.id) ? { ...item, is_read: true, isRead: true } : item);
+      notifyAnnouncementsRead();
     } catch {
-      // ignore
+      if (mounted.current) setReadError("Couldn't mark notifications as read. Please try again.");
+    } finally {
+      markingRead.current = false;
+      if (mounted.current) setMarkingAllRead(false);
     }
   };
 
@@ -335,9 +362,13 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
     if (!item.is_read) {
       try {
         await commuterService.markAnnouncementRead(item.id);
+        if (!mounted.current) return;
+        announcementsRevision.current++;
         setAnnouncements((prev) =>
-          prev.map((a) => (a.id === item.id ? { ...a, is_read: true } : a))
+          prev.map((a) => (a.id === item.id ? { ...a, is_read: true, isRead: true } : a))
         );
+        setSelectedAnnouncement(current => current?.id === item.id ? { ...current, is_read: true, isRead: true } : current);
+        notifyAnnouncementsRead();
       } catch {
         // ignore
       }
@@ -401,13 +432,13 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
           <Ionicons name="ticket-outline" size={16} color={section === "rewards" ? (isLight ? colors.primary : "#FFFFFF") : (isLight ? colors.textMuted : "#94A3B8")} />
           <Text style={[styles.sectionTabText, section === "rewards" && styles.sectionTabTextActive, section === "rewards" && isLight && { color: colors.textPrimary }]}>Rewards</Text>
           {availableVoucherCount > 0 && <Text style={[styles.sectionTabCount, section === "rewards" && styles.sectionTabCountActive]}>{availableVoucherCount}</Text>}
-          <View pointerEvents="none" style={[styles.sectionTabUnderline, section === "rewards" && { backgroundColor: isLight ? colors.primary : "#62A0EA" }, section === "rewards" && styles.sectionTabUnderlineActive]} />
+          <View style={[styles.sectionTabUnderline, section === "rewards" && { backgroundColor: isLight ? colors.primary : "#62A0EA" }, section === "rewards" && styles.sectionTabUnderlineActive, { pointerEvents: "none" }]} />
         </TouchableOpacity>
         <TouchableOpacity accessibilityRole="tab" accessibilityState={{ selected: section === "announcements" }} onPress={() => setSection("announcements")} style={[styles.sectionTab, section === "announcements" && styles.sectionTabActive]}>
           <Ionicons name="notifications-outline" size={16} color={section === "announcements" ? (isLight ? colors.primary : "#FFFFFF") : (isLight ? colors.textMuted : "#94A3B8")} />
           <Text style={[styles.sectionTabText, section === "announcements" && styles.sectionTabTextActive, section === "announcements" && isLight && { color: colors.textPrimary }]}>Updates</Text>
           {unreadCount > 0 && <Text style={styles.sectionTabCount}>{unreadCount}</Text>}
-          <View pointerEvents="none" style={[styles.sectionTabUnderline, section === "announcements" && { backgroundColor: isLight ? colors.primary : "#62A0EA" }, section === "announcements" && styles.sectionTabUnderlineActive]} />
+          <View style={[styles.sectionTabUnderline, section === "announcements" && { backgroundColor: isLight ? colors.primary : "#62A0EA" }, section === "announcements" && styles.sectionTabUnderlineActive, { pointerEvents: "none" }]} />
         </TouchableOpacity>
       </View>
 
@@ -440,7 +471,10 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
             <Text style={styles.sectionTitle}>Announcements</Text>
             <TouchableOpacity
               onPress={markAllAsRead}
-              disabled={unreadCount === 0}
+              accessibilityRole="button"
+              accessibilityLabel="Mark all notifications as read"
+              accessibilityState={{ disabled: unreadCount === 0 || markingAllRead, busy: markingAllRead }}
+              disabled={unreadCount === 0 || markingAllRead}
               activeOpacity={0.7}
               style={styles.markAllReadAction}
             >
@@ -451,11 +485,12 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
                   unreadCount === 0 && styles.markAllReadDisabled,
                 ]}
               >
-                Mark all read
+                {markingAllRead ? "Marking…" : "Mark all read"}
               </Text>
             </TouchableOpacity>
           </View>
 
+          {readError && <Text accessibilityRole="alert" style={{ color: colors.danger }}>{readError}</Text>}
           <TouchableOpacity onPress={() => setUnreadOnly((value) => !value)} style={styles.unreadFilter} accessibilityRole="checkbox" accessibilityState={{ checked: unreadOnly }}>
             <View style={[styles.unreadCheckbox, unreadOnly && styles.unreadCheckboxActive]}>{unreadOnly && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}</View>
             <Text style={styles.unreadFilterText}>Unread only</Text>
@@ -523,11 +558,8 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
 
           <View style={styles.progressRingWrapper}>
             <View accessibilityRole="progressbar" accessibilityLabel="Paid rides toward your next free ride" accessibilityValue={{ min: 0, max: 100, now: progressPercent }}>
-              <Svg width={192} height={192} viewBox="0 0 100 100" style={{ transform: [{ rotate: "-90deg" }] }}>
-                <Circle cx="50" cy="50" r="40" fill="none" stroke={isLight ? "#E5E7EB" : "rgba(255,255,255,0.05)"} strokeWidth="8" />
-                <AnimatedCircle cx="50" cy="50" r="40" fill="none" stroke={progressPercent === 100 ? "#10B981" : "#1A5FB4"} strokeWidth="8" strokeLinecap="round" strokeDasharray={`${REWARD_RING_CIRCUMFERENCE}`} strokeDashoffset={progressRingOffset} />
-              </Svg>
-              <View pointerEvents="none" style={styles.ringCenter}>
+              <RewardsProgressRing percent={progressPercent} isLight={isLight} reduceMotion={reduceMotion} nativeOffset={progressRingOffset} />
+              <View style={[styles.ringCenter, { pointerEvents: "none" }]}>
                 <Text style={styles.ringBigNumber}>{currentRides}</Text>
                 <Text style={styles.ringSubNumber}>of {targetRides} rides</Text>
               </View>
@@ -632,7 +664,7 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
             <View style={styles.explainerHeader}>
               <Text style={styles.explainerTitle}>How free rides work</Text>
               <Text style={styles.explainerSub}>
-                Every {targetRides} paid rides earns you one free ride.
+                Every {targetRides} eligible paid rides earns one free ride voucher.
               </Text>
             </View>
 
@@ -642,13 +674,9 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
                   <Text style={styles.stepNumberText}>1</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.stepTitle}>Ride and pay with GCash</Text>
+                    <Text style={styles.stepTitle}>Complete an eligible ride</Text>
                   <Text style={styles.stepDesc}>
-                    Every ride you pay with{" "}
-                    <Text style={{ color: "#FFFFFF", fontWeight: "700" }}>GCash</Text>{" "}
-                    automatically counts as{" "}
-                    <Text style={{ color: "#FFFFFF", fontWeight: "700" }}>+1 reward ride</Text>{" "}
-                    toward your next free ride.
+                      Only paid CASH and GCASH rides count toward the reward cycle.
                   </Text>
                 </View>
               </View>
@@ -658,9 +686,9 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
                   <Text style={styles.stepNumberText}>2</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.stepTitle}>Reach {targetRides} rides</Text>
+                    <Text style={styles.stepTitle}>Record cash rides</Text>
                   <Text style={styles.stepDesc}>
-                    1 GCash ride = 1 reward step. Complete {targetRides} rides to finish the cycle and unlock your reward.
+                      GCash rides are counted automatically. Scan the QR on a cash receipt from the Rewards screen to add that ride.
                   </Text>
                 </View>
               </View>
@@ -670,12 +698,9 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
                   <Text style={styles.stepNumberText}>3</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.stepTitle}>
-                    1 Free Ride Voucher Unlocked
-                  </Text>
+                    <Text style={styles.stepTitle}>Unlock your voucher</Text>
                   <Text style={styles.stepDesc}>
-                    At {targetRides} rides, a free ride voucher (₱0.00 fare) is added to &ldquo;My
-                    Vouchers&rdquo; below, and your counter resets to start your next cycle.
+                      After {targetRides} eligible paid rides, ChatCo adds a free ride voucher to My Vouchers.
                   </Text>
                 </View>
               </View>
@@ -685,24 +710,14 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
                   <Text style={styles.stepNumberText}>4</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.stepTitle}>Redeem it on your next ride</Text>
+                    <Text style={styles.stepTitle}>Use it on a ride</Text>
                   <Text style={styles.stepDesc}>
-                    Tap <Text style={{ color: "#FFFFFF", fontWeight: "700" }}>Use Voucher</Text>
-                    , then show the code to the conductor. They enter it and the ride is free.
+                      Open My Vouchers, tap <Text style={{ color: colors.textPrimary, fontWeight: "700" }}>Use Voucher</Text>,
+                      and show the code to the conductor. They record the voucher fare; that free ride does not add progress to the next cycle.
                   </Text>
                 </View>
               </View>
 
-              <View style={styles.catchNoticeBox}>
-                <Text style={styles.catchNoticeText}>
-                  <Text style={{ color: "rgba(255,255,255,0.7)", fontWeight: "700" }}>
-                    One catch:
-                  </Text>{" "}
-                  a ride you pay for with a voucher is free, so it doesn&apos;t count
-                  toward the next one. Only rides you actually pay for move the
-                  counter.
-                </Text>
-              </View>
             </ScrollView>
 
             <View style={styles.modalFooter}>
@@ -1450,20 +1465,6 @@ const baseStyles = StyleSheet.create({
     fontSize: 12,
     color: "rgba(255, 255, 255, 0.5)",
     lineHeight: 17,
-  },
-  catchNoticeBox: {
-    backgroundColor: "#050F1A",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-    borderRadius: 12,
-    padding: 14,
-    marginTop: 4,
-    marginBottom: 10,
-  },
-  catchNoticeText: {
-    fontSize: 11,
-    color: "rgba(255, 255, 255, 0.5)",
-    lineHeight: 16,
   },
   modalFooter: {
     padding: 16,

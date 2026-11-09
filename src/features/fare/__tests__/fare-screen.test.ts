@@ -55,6 +55,15 @@ test("discount selection shows authoritative-matrix estimate", () => {
   expect(render().some(node => node.props.children === "₱21.25")).toBe(true);
 });
 
+test("collapsed fare panel still shows the selected commuter type and can reopen its choices", () => {
+  press("Student");
+  press("Toggle route panel");
+  const toggle = render().find(node => node.props.accessibilityLabel === "Toggle route panel")!;
+  expect(walk(toggle).some(node => node.props.children === "Student")).toBe(true);
+  press("Toggle route panel");
+  expect(render().some(node => node.props.accessibilityLabel === "Senior Citizen")).toBe(true);
+});
+
 test("open calculator recovers from an outage and reconciles changed stops on the next poll", async () => {
   jest.useFakeTimers();
   const original = mockStates[0];

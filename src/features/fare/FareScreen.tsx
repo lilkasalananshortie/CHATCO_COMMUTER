@@ -17,7 +17,7 @@ const paths = {
   arrow: "M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3",
 };
 function FareIcon({ name, color }: { name: keyof typeof paths; color: string }) {
-  return <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={name === "close" ? 2.5 : 2} pointerEvents="none"><Path d={paths[name]} strokeLinecap="round" strokeLinejoin="round" /></Svg>;
+  return <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={name === "close" ? 2.5 : 2} style={{ pointerEvents: "none" }}><Path d={paths[name]} strokeLinecap="round" strokeLinejoin="round" /></Svg>;
 }
 function AnimatedFareChevron({ expanded, color }: { expanded: boolean; color: string }) {
   const reduceMotion = useReducedMotion();
@@ -57,6 +57,7 @@ export function FareScreen() {
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [routePanelOpen, setRoutePanelOpen] = useState(false);
+  const selectedCategoryLabel = categories.find(([kind]) => kind === category)?.[1] ?? "Regular";
   const active = useRef(true);
   const inFlight = useRef(false);
   const load = async (background = false) => {
@@ -103,7 +104,9 @@ export function FareScreen() {
     <View style={[s.header, { backgroundColor: surface, borderColor: border }]}>
       <Text accessibilityRole="header" style={[s.title, { color: ink }]}>Fare Calculator</Text>
       <Pressable accessibilityRole="button" accessibilityLabel="Toggle route panel" accessibilityState={{ expanded: routePanelOpen }} onPress={() => setRoutePanelOpen(value => !value)} style={[s.row, { justifyContent: "space-between", paddingVertical: 12 }]}>
-        <Text style={[s.small, { color: ink }]}>Pickup, drop-off & commuter type</Text><AnimatedFareChevron expanded={routePanelOpen} color={muted} />
+        <Text style={[s.small, { color: ink, flex: 1 }]}>Pickup, drop-off & commuter type</Text>
+        {!routePanelOpen && <Text style={[s.small, { color: muted }]}>{selectedCategoryLabel}</Text>}
+        <AnimatedFareChevron expanded={routePanelOpen} color={muted} />
       </Pressable>
       {routePanelOpen && <>
       {(["pickup", "destination"] as const).map((key, index) => {

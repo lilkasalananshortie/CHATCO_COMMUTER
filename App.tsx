@@ -29,7 +29,6 @@ import { ProfileScreen } from "./src/features/profile/ProfileScreen";
 // Modals
 import { QrScannerModal } from "./src/features/scanner/QrScannerModal";
 import { ReceiptScanModal } from "./src/features/scanner/ReceiptScanModal";
-import { SosModal } from "./src/features/sos/SosModal";
 import { ShareRideModal } from "./src/features/share/ShareRideModal";
 import { MascotErrorBoundary } from "./src/shared/ui/MascotErrorBoundary";
 import { FareScreen } from "./src/features/fare/FareScreen";
@@ -37,6 +36,8 @@ import { StudentRenewalScreen } from "./src/features/student-renewal/StudentRene
 import { RenewalReminder } from "./src/features/student-renewal/RenewalReminder";
 import { useStudentRenewal } from "./src/features/student-renewal/useStudentRenewal";
 import { subscribeRewardsChanged } from "./src/core/domain/rewards-events";
+import { subscribeAnnouncementsRead } from "./src/core/domain/announcements-events";
+import { foregroundPoll } from "./src/shared/foreground-poll";
 import { DiscountApplicationScreen } from "./src/features/discount-application/DiscountApplicationScreen";
 import { useDiscountApplication } from "./src/features/discount-application/useDiscountApplication";
 
@@ -83,7 +84,6 @@ function MainApp() {
   // Modals & Badges
   const [showScanModal, setShowScanModal] = useState(false);
   const [showReceiptScanModal, setShowReceiptScanModal] = useState(false);
-  const [showSosModal, setShowSosModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showRenewal, setShowRenewal] = useState(false);
   const [showDiscountApplication, setShowDiscountApplication] = useState(false);
@@ -120,7 +120,7 @@ function MainApp() {
     sessionVerified.current = false;
     currentUserId.current = undefined;
     setUnreadAnnouncements(0); setAvailableVouchers(0); setLostFoundBadge(0);
-    setShowScanModal(false); setShowReceiptScanModal(false); setShowSosModal(false); setShowShareModal(false);
+    setShowScanModal(false); setShowReceiptScanModal(false); setShowShareModal(false);
     setShowRenewal(false); setShowDiscountApplication(false); setShowFeedbackModal(false); setFeedbackTargetTrip(null);
     setUser(null); setProfile(null); setActiveTab("home"); setAuthView("LOGIN");
   }, []);
@@ -196,12 +196,11 @@ function MainApp() {
   }, [user]);
 
   useEffect(() => {
-    fetchUnreadCount();
-    const interval = setInterval(fetchUnreadCount, 30000);
-    return () => clearInterval(interval);
+    const poll = foregroundPoll(fetchUnreadCount, 30000);
+    const unsubscribe = subscribeRewardsChanged(() => { void poll.refresh(true).catch(() => {}); });
+    const unsubscribeRead = subscribeAnnouncementsRead(() => { void poll.refresh(true).catch(() => {}); });
+    return () => { unsubscribe(); unsubscribeRead(); poll.stop(); };
   }, [fetchUnreadCount]);
-
-  useEffect(() => subscribeRewardsChanged(() => { void fetchUnreadCount(); }), [fetchUnreadCount]);
 
   const handleLoginSuccess = (loggedInUser: User, token: string) => {
     const epoch = ++sessionEpoch.current;
@@ -360,7 +359,6 @@ function MainApp() {
                 profile={profile}
                 onOpenScan={() => setShowScanModal(true)}
                 onOpenShareRide={() => setShowShareModal(true)}
-                onOpenSos={() => setShowSosModal(true)}
                 onOpenProfile={() => setActiveTab("profile")}
                 onOpenTour={() => setShowOnboarding(true)}
                 onNavigateToFeedback={handleNavigateToFeedback}
@@ -436,17 +434,12 @@ function MainApp() {
                 onOpenRenewal={() => { setShowDiscountApplication(false); setShowRenewal(true); void renewal.refresh(); }} />}
             </View>
           </Modal>
-          <RenewalReminder key={user.id} state={renewal.state} enabled={!showDiscountApplication && !showRenewal && !showScanModal && !showReceiptScanModal && !showSosModal && !showShareModal} onOpen={() => setShowRenewal(true)} onRefresh={renewal.refresh} />
+          <RenewalReminder key={user.id} state={renewal.state} enabled={!showDiscountApplication && !showRenewal && !showScanModal && !showReceiptScanModal && !showShareModal} onOpen={() => setShowRenewal(true)} onRefresh={renewal.refresh} />
 
           <ReceiptScanModal
             visible={showReceiptScanModal}
             onClose={() => setShowReceiptScanModal(false)}
             onClaimed={fetchUnreadCount}
-          />
-
-          <SosModal
-            visible={showSosModal}
-            onClose={() => setShowSosModal(false)}
           />
 
           <ShareRideModal

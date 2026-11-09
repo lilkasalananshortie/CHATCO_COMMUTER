@@ -1,6 +1,12 @@
 export const REGISTRATION_USERNAME_MAX_LENGTH = 16;
 const REGISTRATION_USERNAME_PATTERN = /^[A-Za-z0-9._]+$/;
 
+/** Format partial input without guessing or changing the date itself. */
+export function formatRegistrationBirthdate(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 8);
+  return [digits.slice(0, 4), digits.slice(4, 6), digits.slice(6, 8)].filter(Boolean).join("-");
+}
+
 export function registrationBirthdateError(value: string, now = new Date()): string | null {
   const normalized = value.trim();
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalized);

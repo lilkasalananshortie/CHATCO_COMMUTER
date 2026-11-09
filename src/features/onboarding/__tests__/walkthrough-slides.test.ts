@@ -10,10 +10,10 @@ describe("mascot walkthrough content", () => {
 
   test.each([
     [0, "Your everyday commute, made simpler. Let's get you started with ChatCo.", "greeting"],
-    [1, "Track approaching modern jeeps on the map with live arrival countdowns.", "fleet-action"],
-    [2, "Scan conductor POS to pay via GCash in seconds. Every 10 rides unlock a free ride.", "scan-action"],
-    [3, "Share your live route with family and alert dispatch in a single tap.", "guardian-action"],
-    [4, "Conductors log recovered belongings one-by-one so you can claim them with proof.", "vault-action"],
+    [1, "Track approaching modern jeeps on the live map.", "fleet-action"],
+    [2, "Scan to pay with GCash. Earn rewards as you ride.", "scan-action"],
+    [3, "Share your route so commuters can follow your journey.", "guardian-action"],
+    [4, "Find recovered belongings and claim them with proof.", "vault-action"],
   ])("keeps slide %s's exact description and matching pose", (index, description, pose) => {
     const slide = WALKTHROUGH_SLIDES[Number(index)]!;
     expect(slide.description).toBe(description);

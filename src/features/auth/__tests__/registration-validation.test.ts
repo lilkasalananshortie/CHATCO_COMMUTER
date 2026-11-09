@@ -1,5 +1,14 @@
 /// <reference types="jest" />
-import { registrationBirthdateError, registrationUsernameError } from "../registration-validation";
+import { formatRegistrationBirthdate, registrationBirthdateError, registrationUsernameError } from "../registration-validation";
+
+test.each([
+  ["", ""], ["2", "2"], ["2000", "2000"], ["20000", "2000-0"],
+  ["200002", "2000-02"], ["2000022", "2000-02-2"], ["20000229", "2000-02-29"],
+  ["2000/02/29", "2000-02-29"], ["2000-02-29", "2000-02-29"],
+  ["2000-02-", "2000-02"], ["letters", ""], ["20000229123", "2000-02-29"],
+])("formats typed or pasted birthdate %s as %s", (input, expected) => {
+  expect(formatRegistrationBirthdate(input)).toBe(expected);
+});
 
 test("birthdate validation accepts real past dates and rejects invalid or future dates", () => {
   const today = new Date(2026, 9, 27);

@@ -4,6 +4,8 @@ import { runInNewContext } from "node:vm";
 import { MAP_RUNTIME, mapUpdateScript } from "../map-runtime";
 import { maskedEmail } from "../../profile/profile-privacy";
 import { COMMUTER_ACCOUNT_PATH } from "../commuter-map-pin";
+import { BUS_ART } from "../bus-map-art";
+import { mapVehicleState } from "../map-vehicle-state";
 
 function runtime() {
   const markers: any[] = [];
@@ -24,6 +26,29 @@ function runtime() {
   return { update: window.chatcoUpdate, markers, map, L, window };
 }
 const unit = { id: "unit", unitNumber: "U1", plateNumber: "ABC", lat: 14.8, lng: 120.8, driverName: "Driver", conductorName: "Conductor", availableSeats: 0 };
+test("web jeep art faces along the published route and reverses with the shift", () => {
+  const route: [number, number][] = [[14.85, 120.8], [14.841, 120.809], [14.832, 120.818]];
+  const vehicle = { vehicle_id: "unit", unit_number: "U1", plate_number: "ABC", latitude: 14.841, longitude: 120.809 };
+  const forward = mapVehicleState({ ...vehicle, trip_direction: "FORWARD" }, route);
+  const reverse = mapVehicleState({ ...vehicle, trip_direction: "REVERSE" }, route);
+  expect(forward.heading).toEqual({ facing: "se", arrow: 135 });
+  expect(reverse.heading).toEqual({ facing: "nw", arrow: 315 });
+  expect(mapVehicleState(vehicle, [])?.heading).toBeNull();
+});
+test("marker uses the exact angled SVG data, web dimensions, and separate status dots", () => {
+  const r = runtime();
+  r.update({ vehicles: [{ ...unit, capacityStatus: "FULL", heading: { facing: "nw", arrow: 315 } }], userLocation: fix });
+  const options = (r.L.marker.mock.calls[0] as unknown as any[])[1];
+  expect(options.icon.iconSize).toEqual([52, 46]);
+  expect(options.icon.iconAnchor).toEqual([26, 23]);
+  expect(options.icon.html.children[0].src).toBe(BUS_ART.nw);
+  expect(options.icon.html.children[1].style.background).toBe("#ef4444");
+  expect(options.icon.html.children[2].style.background).toBe("#22c55e");
+  expect(options.icon.html.children[3].style.transform).toBe("rotate(315deg)");
+  r.update({ vehicles: [{ ...unit, heading: null, lat: 14.9 }] });
+  expect(r.markers[0].setIcon.mock.calls[0][0].html.children[0].src).toBe(BUS_ART.s);
+  expect(r.markers[0].setIcon.mock.calls[0][0].html.children).toHaveLength(2);
+});
 test("opening a unit requests its authenticated details without refetching on location polls", () => {
   const r = runtime(); r.update({ vehicles: [unit] });
   const [event, handler] = r.markers[0].on.mock.calls[0];
