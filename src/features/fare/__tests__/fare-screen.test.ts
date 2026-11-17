@@ -12,7 +12,7 @@ jest.mock("../../../shared/ui/BrandText", () => ({ Text: "Text" }));
 jest.mock("../../../core/theme/ThemeProvider", () => ({ useCommuterTheme: () => ({ isLight: false }) }));
 jest.mock("../../../core/api/commuter-service", () => ({ commuterService: { getFareMatrix: jest.fn() } }));
 function walk(node: any): any[] { if (Array.isArray(node)) return node.flatMap(walk); if (!React.isValidElement(node)) return []; return [node, ...walk((node.props as any).children)]; }
-function render() { mockIndex = 0; return walk(FareScreen()); }
+function render(options = {}) { mockIndex = 0; return walk(FareScreen(options)); }
 function press(label: string) { render().find(node => node.props.accessibilityLabel === label)!.props.onPress(); }
 beforeEach(() => {
   mockStates = []; render();
@@ -20,7 +20,16 @@ beforeEach(() => {
     { id: "a", name: "Alpha", code: "ALP", pointNumber: 1, regularFare: 17, discountedFare: 13.6, landmarks: ["Market"] },
     { id: "b", name: "Beta", pointNumber: 8, regularFare: 40, discountedFare: 32 },
   ] }); mockStates[1] = false;
-  press("Toggle route panel");
+});
+test("calculator opens its pickup controls by default with a centered toggle and plain X", () => {
+  const close = jest.fn();
+  const tree = render({ onClose: close });
+  const toggle = tree.find(node => node.props.accessibilityLabel === "Toggle route panel")!;
+  expect(toggle.props.accessibilityState.expanded).toBe(true);
+  expect(toggle.props.style).toMatchObject({ alignItems: "center", justifyContent: "center", width: "100%" });
+  tree.find(node => node.props.accessibilityLabel === "Close Fare Matrix")!.props.onPress();
+  expect(close).toHaveBeenCalledTimes(1);
+  expect(tree.filter(node => node.props.accessibilityRole === "header").map(node => node.props.children)).toEqual(["Fare Calculator"]);
 });
 test("point expands sub-stops and landmark selection advances to drop-off", () => {
   press("Select Alpha"); expect(mockStates[7]).toBe("a");
@@ -38,8 +47,8 @@ test("clear and swap controls update their selections", () => {
   press("Select Alpha"); press("Market"); press("Select Beta"); press("Swap pickup and drop-off");
   expect(mockStates[3].destinationLandmark).toBe("Market"); press("Clear Drop-off"); expect(mockStates[3].destination).toBe(""); expect(mockStates[3].destinationLandmark).toBe("");
 });
-test("same stop displays web violet warning", () => {
-  press("Select Beta"); press("Select Beta"); expect(render().some(node => node.props.children === "Same pickup & drop-off — both locations shown in violet")).toBe(true);
+test("same stop displays neutral base fare note", () => {
+  press("Select Beta"); press("Select Beta"); expect(render().some(node => node.props.children === "Same barangay for pickup and drop-off; base fare applies.")).toBe(true);
 });
 test("search has an empty state and finds published point codes", () => {
   mockStates[6] = "unknown"; expect(render().some(node => node.props.children === "No locations found.")).toBe(true);
@@ -59,7 +68,8 @@ test("collapsed fare panel still shows the selected commuter type and can reopen
   press("Student");
   press("Toggle route panel");
   const toggle = render().find(node => node.props.accessibilityLabel === "Toggle route panel")!;
-  expect(walk(toggle).some(node => node.props.children === "Student")).toBe(true);
+  expect(toggle.props.accessibilityState.expanded).toBe(false);
+  expect(render().some(node => node.props.children === "Student")).toBe(true);
   press("Toggle route panel");
   expect(render().some(node => node.props.accessibilityLabel === "Senior Citizen")).toBe(true);
 });
@@ -76,7 +86,7 @@ test("open calculator recovers from an outage and reconciles changed stops on th
     await Promise.resolve(); await Promise.resolve();
     expect(mockStates[0]).toBeNull();
     expect(mockStates[2]).toBe("Offline");
-    await jest.advanceTimersByTimeAsync(15000);
+    await jest.advanceTimersByTimeAsync(60000);
     expect(mockStates[0].config.succeedingFareRegular).toBe(3);
     expect(mockStates[3]).toMatchObject({ pickup: "", destination: "b", pickupLandmark: "" });
     expect(mockStates[2]).toBe("");

@@ -9,7 +9,7 @@ describe("mascot walkthrough content", () => {
   });
 
   test.each([
-    [0, "Your everyday commute, made simpler. Let's get you started with ChatCo.", "greeting"],
+    [0, "Your everyday commute, made simpler. Let's get you started with E-CHATCO.", "greeting"],
     [1, "Track approaching modern jeeps on the live map.", "fleet-action"],
     [2, "Scan to pay with GCash. Earn rewards as you ride.", "scan-action"],
     [3, "Share your route so commuters can follow your journey.", "guardian-action"],

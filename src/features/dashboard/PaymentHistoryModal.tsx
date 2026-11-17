@@ -1,15 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import {
-  View,
-  StyleSheet,
-  Modal,
-  TouchableOpacity,
-  ScrollView,
-  ActivityIndicator,
-  RefreshControl,
-  TextInput,
-} from "react-native";
-import { Text } from "../../shared/ui/BrandText";
+import { View, StyleSheet, Modal, TouchableOpacity, ScrollView, ActivityIndicator, RefreshControl } from "react-native";
+import { Text, TextInput } from "../../shared/ui/BrandText";
 import { Ionicons } from "@expo/vector-icons";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import { commuterService } from "../../core/api/commuter-service";
@@ -27,17 +18,18 @@ const PER_PAGE = 20;
 
 function getStatusBadge(status: string, isLight: boolean) {
   const normalized = (status || "").toLowerCase();
+  const neutral = { bg: isLight ? "#EFF4FA" : "#112B46", text: isLight ? "#1F4F83" : "#C9D9EC" };
   switch (normalized) {
     case "paid":
-      return { bg: isLight ? "#DCFCE7" : "rgba(16, 185, 129, 0.15)", text: isLight ? "#047857" : "#34D399", label: "Paid" };
+      return { ...neutral, label: "Paid" };
     case "pending":
-      return { bg: isLight ? "#FEF3C7" : "rgba(245, 158, 11, 0.15)", text: isLight ? "#92400E" : "#FBBF24", label: "Pending" };
+      return { ...neutral, label: "Pending" };
     case "processing":
-      return { bg: isLight ? "#DBEAFE" : "rgba(98, 160, 234, 0.15)", text: isLight ? "#1A5FB4" : "#62A0EA", label: "Processing" };
+      return { ...neutral, label: "Processing" };
     case "failed":
-      return { bg: isLight ? "#FEE2E2" : "rgba(248, 113, 113, 0.15)", text: isLight ? "#B91C1C" : "#F87171", label: "Failed" };
+      return { bg: neutral.bg, text: isLight ? "#B91C1C" : "#F28B82", label: "Failed" };
     case "refunded":
-      return { bg: isLight ? "#EDE9FE" : "rgba(167, 139, 250, 0.15)", text: isLight ? "#6D28D9" : "#A78BFA", label: "Refunded" };
+      return { ...neutral, label: "Refunded" };
     default:
       return { bg: isLight ? "#F3F4F6" : "rgba(255, 255, 255, 0.08)", text: isLight ? "#4B5563" : "rgba(255, 255, 255, 0.5)", label: status || "Unknown" };
   }
@@ -609,7 +601,7 @@ const createStyles = (colors: ReturnType<typeof useCommuterTheme>["colors"]) => 
   detailValueMono: {
     fontSize: 10,
     color: colors.textMuted,
-    fontFamily: "monospace",
+
     maxWidth: "70%",
   },
   detailValueHighlight: {

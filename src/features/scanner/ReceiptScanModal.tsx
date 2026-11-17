@@ -1,13 +1,6 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  Modal,
-  TextInput,
-  TouchableOpacity,
-  ActivityIndicator,
-} from "react-native";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { Text, TextInput } from "../../shared/ui/BrandText";
+import { View, StyleSheet, Modal, TouchableOpacity, ActivityIndicator } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from "expo-camera";
 import * as Haptics from "expo-haptics";
@@ -15,6 +8,7 @@ import { commuterColors } from "../../core/theme/colors";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import { themedStyles } from "../../core/theme/themed-styles";
 import { commuterService, type ReceiptClaimResult } from "../../core/api/commuter-service";
+import { extractReceiptToken } from "./receipt-token";
 
 interface ReceiptScanModalProps {
   visible: boolean;
@@ -38,6 +32,10 @@ export const ReceiptScanModal: React.FC<ReceiptScanModalProps> = ({
   const [manualToken, setManualToken] = useState("");
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [scanned, setScanned] = useState(false);
+  const scanPending = useRef(false);
+  const generation = useRef(0);
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
 
   const [permission, requestPermission] = useCameraPermissions();
 
@@ -57,58 +55,42 @@ export const ReceiptScanModal: React.FC<ReceiptScanModalProps> = ({
     setManualToken("");
     setShowManualEntry(false);
     setScanned(false);
+    scanPending.current = false;
   };
 
   const handleClose = () => {
+    generation.current++;
+    visibleRef.current = false;
     resetState();
     onClose();
   };
 
-  const extractReceiptToken = (raw: string): string => {
-    let val = raw.trim();
-    if (val.toUpperCase().startsWith("CLAIM CODE:")) {
-      val = val.substring("CLAIM CODE:".length).trim();
+  useEffect(() => {
+    if (!visible) {
+      generation.current++;
+      resetState();
     }
-    if (val.startsWith("{") && val.endsWith("}")) {
-      try {
-        const p = JSON.parse(val);
-        if (p.qr_token) return String(p.qr_token).trim();
-        if (p.token) return String(p.token).trim();
-        if (p.receipt_token) return String(p.receipt_token).trim();
-        if (p.code) return String(p.code).trim();
-      } catch {}
-    }
-    if (val.includes("token=") || val.includes("code=")) {
-      try {
-        const url = new URL(val);
-        const t =
-          url.searchParams.get("qr_token") ||
-          url.searchParams.get("token") ||
-          url.searchParams.get("code") ||
-          url.searchParams.get("receipt_token");
-        if (t) return t.trim();
-      } catch {
-        const m = val.match(/(?:qr_token|token|code)=([a-zA-Z0-9_\-]+)/);
-        if (m && m[1]) return m[1].trim();
-      }
-    }
-    return val;
-  };
+  }, [visible]);
 
   const submitToken = async (qrToken: string) => {
+    if (!visibleRef.current || scanPending.current) return;
     const cleanToken = extractReceiptToken(qrToken);
     if (!cleanToken.trim()) return;
+    scanPending.current = true;
+    const attempt = generation.current;
     setStep("verifying");
     setError(null);
 
     try {
       const claim = await commuterService.claimReceipt(cleanToken.trim());
+      if (generation.current !== attempt || !visibleRef.current) return;
       setResult(claim);
       setStep("success");
       if (!claim.alreadyClaimed && onClaimed) {
         onClaimed();
       }
     } catch (err: any) {
+      if (generation.current !== attempt || !visibleRef.current) return;
       const status = err?.response?.status || err?.status;
       if (status === 410) {
         setStep("expired");
@@ -124,12 +106,14 @@ export const ReceiptScanModal: React.FC<ReceiptScanModalProps> = ({
           : "This receipt can't be claimed.");
       setError(msg);
       setStep("failed");
+    } finally {
+      if (generation.current === attempt) scanPending.current = false;
     }
   };
 
   const handleBarcodeScanned = useCallback(
     ({ data }: BarcodeScanningResult) => {
-      if (scanned || step !== "scanning") return;
+      if (scanned || scanPending.current || step !== "scanning") return;
       setScanned(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       submitToken(data);
@@ -138,7 +122,16 @@ export const ReceiptScanModal: React.FC<ReceiptScanModalProps> = ({
   );
 
   const retry = () => {
+    const returnToManualEntry = showManualEntry;
     resetState();
+    setShowManualEntry(returnToManualEntry);
+  };
+
+  const enterCodeManually = () => {
+    setError(null);
+    setScanned(false);
+    setStep("scanning");
+    setShowManualEntry(true);
   };
 
   return (
@@ -183,7 +176,7 @@ export const ReceiptScanModal: React.FC<ReceiptScanModalProps> = ({
                     <Ionicons name="camera-outline" size={44} color="#62A0EA" />
                     <Text style={styles.permissionTitle}>Camera Access Required</Text>
                     <Text style={styles.permissionText}>
-                      ChatCo needs camera access to scan your paper receipt QR.
+                      E-CHATCO needs camera access to scan your paper receipt QR.
                     </Text>
                     <TouchableOpacity
                       style={styles.primaryButton}
@@ -220,12 +213,14 @@ export const ReceiptScanModal: React.FC<ReceiptScanModalProps> = ({
                 )}
 
                 <TouchableOpacity
-                  onPress={() => setShowManualEntry(true)}
+                  onPress={enterCodeManually}
                   style={styles.manualEntryLink}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel="Enter receipt code manually"
                 >
                   <Text style={styles.manualEntryLinkText}>
-                    Enter the code manually instead
+                    Enter receipt code manually
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -240,13 +235,16 @@ export const ReceiptScanModal: React.FC<ReceiptScanModalProps> = ({
                   placeholderTextColor={isLight ? "#9CA3AF" : "rgba(255, 255, 255, 0.25)"}
                   value={manualToken}
                   onChangeText={setManualToken}
-                  autoCapitalize="characters"
+                  autoCapitalize="none"
+                  autoCorrect={false}
                   autoFocus
                 />
 
                 <TouchableOpacity
                   onPress={() => submitToken(manualToken)}
                   disabled={!manualToken.trim()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Claim ride with receipt code"
                   style={[
                     styles.primaryButton,
                     !manualToken.trim() && styles.disabledButton,
@@ -304,11 +302,11 @@ export const ReceiptScanModal: React.FC<ReceiptScanModalProps> = ({
                       </Text>
                     </View>
                   )}
-                  {result.transactionId && (
+                  {result.unitNumber && (
                     <View style={styles.summaryRow}>
-                      <Text style={styles.summaryLabel}>Ref ID</Text>
+                      <Text style={styles.summaryLabel}>Unit</Text>
                       <Text style={styles.summaryValueMono}>
-                        {result.transactionId}
+                        {result.unitNumber}
                       </Text>
                     </View>
                   )}
@@ -371,6 +369,15 @@ export const ReceiptScanModal: React.FC<ReceiptScanModalProps> = ({
                     <Text style={styles.primaryButtonText}>Try Again</Text>
                   </TouchableOpacity>
                 </View>
+                <TouchableOpacity
+                  onPress={enterCodeManually}
+                  style={styles.manualEntryLink}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel="Enter receipt code manually"
+                >
+                  <Text style={styles.manualEntryLinkText}>Enter receipt code manually</Text>
+                </TouchableOpacity>
               </View>
             )}
           </View>
@@ -495,52 +502,55 @@ const baseStyles = StyleSheet.create({
     marginBottom: 16,
   },
   reticle: {
-    width: 140,
-    height: 140,
+    width: "100%",
+    height: "100%",
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
   },
   corner: {
     position: "absolute",
-    width: 20,
-    height: 20,
+    width: 24,
+    height: 24,
     borderColor: "#62A0EA",
   },
   topLeft: {
     top: 0,
     left: 0,
-    borderTopWidth: 3,
-    borderLeftWidth: 3,
+    borderTopWidth: 2,
+    borderLeftWidth: 2,
     borderTopLeftRadius: 4,
   },
   topRight: {
     top: 0,
     right: 0,
-    borderTopWidth: 3,
-    borderRightWidth: 3,
+    borderTopWidth: 2,
+    borderRightWidth: 2,
     borderTopRightRadius: 4,
   },
   bottomLeft: {
     bottom: 0,
     left: 0,
-    borderBottomWidth: 3,
-    borderLeftWidth: 3,
+    borderBottomWidth: 2,
+    borderLeftWidth: 2,
     borderBottomLeftRadius: 4,
   },
   bottomRight: {
     bottom: 0,
     right: 0,
-    borderBottomWidth: 3,
-    borderRightWidth: 3,
+    borderBottomWidth: 2,
+    borderRightWidth: 2,
     borderBottomRightRadius: 4,
   },
   manualEntryLink: {
     marginTop: 16,
-    paddingVertical: 6,
+    minHeight: 44,
+    paddingVertical: 10,
+    justifyContent: "center",
+    alignItems: "center",
   },
   manualEntryLinkText: {
-    fontSize: 12,
+    fontSize: 15,
     fontWeight: "600",
     color: "#62A0EA",
   },
@@ -678,7 +688,7 @@ const baseStyles = StyleSheet.create({
   summaryValueMono: {
     fontSize: 11,
     color: "rgba(255, 255, 255, 0.5)",
-    fontFamily: "monospace",
+
   },
   neutralButton: {
     backgroundColor: "rgba(255, 255, 255, 0.05)",

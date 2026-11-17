@@ -1,12 +1,17 @@
-import React, { useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { Animated, Easing, Pressable, StyleSheet, View } from "react-native";
 import { Text } from "../../shared/ui/BrandText";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import { WebIcon } from "../../shared/ui/WebIcon";
 import type { NearbyHailableVehicle } from "./nearby-hailing";
+import { hailHint, type HailHintReason } from "./dashboard-ui";
+import { useReducedMotion } from "../../shared/useReducedMotion";
 
 interface NearbyUnitsCardProps {
   vehicles: NearbyHailableVehicle[];
+  unavailableReason?: HailHintReason;
+  dismissed?: boolean;
+  onDismiss?: () => void;
 }
 
 function formatDistance(meters: number): string {
@@ -19,16 +24,36 @@ function capacityLabel(status: string | null | undefined): string {
   return "Seats available";
 }
 
-export function NearbyUnitsCard({ vehicles }: NearbyUnitsCardProps) {
+function NearbyChevron({ expanded, color }: { expanded: boolean; color: string }) {
+  const reducedMotion = useReducedMotion();
+  const rotation = useRef(new Animated.Value(expanded ? 1 : 0)).current;
+  useEffect(() => {
+    if (reducedMotion) { rotation.setValue(expanded ? 1 : 0); return; }
+    const animation = Animated.timing(rotation, { toValue: expanded ? 1 : 0, duration: 200, easing: Easing.out(Easing.ease), useNativeDriver: true });
+    animation.start();
+    return () => animation.stop();
+  }, [expanded, reducedMotion, rotation]);
+  return <Animated.View style={{ transform: [{ rotate: rotation.interpolate({ inputRange: [0, 1], outputRange: ["180deg", "0deg"] }) }] }}><WebIcon name="chevron-up" size={15} color={color} /></Animated.View>;
+}
+
+export function NearbyUnitsCard({ vehicles, unavailableReason = "no-nearby-units", dismissed: dismissedForSession = false, onDismiss }: NearbyUnitsCardProps) {
   const { colors, isLight } = useCommuterTheme();
   const [showOthers, setShowOthers] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
   const styles = createStyles(colors, isLight);
 
   if (vehicles.length === 0) {
+    if (dismissed || dismissedForSession) return null;
+    const message = hailHint(unavailableReason);
     return (
       <View style={styles.card}>
-        <Text style={styles.emptyTitle}>No units within 1 km</Text>
-        <Text style={styles.emptySubtitle}>Units appear here when one comes nearby. Hailing is available within range.</Text>
+        <View style={{ paddingRight: 44 }}>
+          <Text style={styles.emptyTitle}>{message.title}</Text>
+          <Text style={styles.emptySubtitle}>{message.message}</Text>
+        </View>
+        <Pressable accessibilityRole="button" accessibilityLabel="Dismiss unit status" onPress={() => { setDismissed(true); onDismiss?.(); }} style={{ position: "absolute", top: 0, right: 0, width: 44, height: 44, alignItems: "center", justifyContent: "center" }}>
+          <WebIcon name="x" size={18} color={colors.textSecondary} />
+        </Pressable>
       </View>
     );
   }
@@ -66,7 +91,7 @@ export function NearbyUnitsCard({ vehicles }: NearbyUnitsCardProps) {
           style={styles.toggle}
         >
           <Text style={styles.toggleText}>{expanded ? "Hide other units" : `${others.length} more unit${others.length === 1 ? "" : "s"} nearby`}</Text>
-          <WebIcon name="chevron-up" size={15} color={colors.textSecondary} style={{ transform: [{ rotate: expanded ? "0deg" : "180deg" }] }} />
+          <NearbyChevron expanded={expanded} color={colors.textSecondary} />
         </Pressable>
       )}
     </View>

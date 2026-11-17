@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
-import { Modal, Pressable, ScrollView, View, useWindowDimensions } from "react-native";
+import { Animated, Modal, Pressable, ScrollView, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebIcon } from "../../shared/ui/WebIcon";
 import { Text } from "../../shared/ui/BrandText";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
+import { useWebDialogEntrance } from "../../shared/useWebDialogEntrance";
 
 export function useDashboardDialogStyles() {
   const { colors, isLight } = useCommuterTheme();
@@ -26,21 +27,22 @@ export function useDashboardDialogStyles() {
 }
 
 /** Mirrors web APP_DIALOG: centered solid panel, bare icons, safe scroll area. */
-export function DashboardDialog({ visible, title, onClose, children }: { visible: boolean; title?: string; onClose?: () => void; children: ReactNode }) {
+export function DashboardDialog({ visible, title, onClose, children, animateEntrance = false }: { visible: boolean; title?: string; onClose?: () => void; children: ReactNode; animateEntrance?: boolean }) {
   const { colors, isLight } = useCommuterTheme();
   const styles = useDashboardDialogStyles();
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  return <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose ?? (() => {})}>
+  const { progress: entrance, reducedMotion } = useWebDialogEntrance(visible, animateEntrance);
+  return <Modal visible={visible} transparent animationType={animateEntrance || reducedMotion ? "none" : "fade"} onRequestClose={onClose ?? (() => {})}>
     <View style={{ flex: 1, padding: 16, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.6)" }}>
       {onClose && <Pressable accessibilityLabel="Dismiss dialog" onPress={onClose} style={{ position: "absolute", inset: 0 }} />}
-      <View accessibilityViewIsModal style={{ width: "100%", maxWidth: 448, maxHeight: height - insets.top - insets.bottom - 32, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: isLight ? "#FFFFFF" : "#0B1E33", overflow: "hidden" }}>
+      <Animated.View accessibilityViewIsModal style={{ width: "100%", maxWidth: 448, maxHeight: height - insets.top - insets.bottom - 32, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: isLight ? "#FFFFFF" : "#0B1E33", overflow: "hidden", opacity: entrance, transform: [{ translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [animateEntrance ? 10 : 0, 0] }) }] }}>
         <ScrollView contentContainerStyle={{ padding: 20, gap: 20 }} keyboardShouldPersistTaps="handled">
           {title && <Text style={[styles.title, { fontSize: 18, paddingRight: 36 }]}>{title}</Text>}
           {children}
         </ScrollView>
         {onClose && <Pressable accessibilityRole="button" accessibilityLabel={title ? `Close ${title}` : "Close dialog"} onPress={onClose} style={{ position: "absolute", right: 6, top: 6, width: 44, height: 44, justifyContent: "center", alignItems: "center" }}><WebIcon name="x" size={20} color={colors.textMuted} /></Pressable>}
-      </View>
+      </Animated.View>
     </View>
   </Modal>;
 }

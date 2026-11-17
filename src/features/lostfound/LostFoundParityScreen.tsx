@@ -1,13 +1,16 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Image, Modal, RefreshControl, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from "react-native";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Alert, Animated, Easing, Image, Modal, RefreshControl, ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import { themedStyles } from "../../core/theme/themed-styles";
-import { Text } from "../../shared/ui/BrandText";
+import { Text, TextInput } from "../../shared/ui/BrandText";
 import { Mascot } from "../../shared/ui/Mascot";
 import { commuterService } from "../../core/api/commuter-service";
 import type { ClaimData, ClaimStatus, LostItem } from "../../core/domain/types";
+import { WebIcon } from "../../shared/ui/WebIcon";
+import { LostFoundSkeleton } from "./LostFoundSkeleton";
 import { pickClaimProofImages, type ClaimProofImage } from "./claim-proof-images";
+import { useReducedMotion } from "../../shared/useReducedMotion";
 
 type Tab = "ALL" | "WATCHLIST" | "MY_CLAIMS";
 type Category = "ACCESSORY" | "BAG" | "WALLET" | "GADGET" | "CLOTHING" | "DOCUMENT" | "OTHER";
@@ -73,12 +76,17 @@ export const LostFoundParityScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const requestId = useRef(0);
   const [categories, setCategories] = useState<Category[]>([]);
   const [claimFilter, setClaimFilter] = useState<ClaimFilter>("ALL");
   const [range, setRange] = useState<Range>("ALL");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filterPanelMounted, setFilterPanelMounted] = useState(false);
+  const filterProgress = useRef(new Animated.Value(0)).current;
+  const reduceMotion = useReducedMotion();
   const [page, setPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
   const [detail, setDetail] = useState<LostItem | null>(null);
@@ -91,30 +99,62 @@ export const LostFoundParityScreen: React.FC = () => {
   const [cancelling, setCancelling] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
+  useEffect(() => {
+    if (filtersOpen) setFilterPanelMounted(true);
+    if (reduceMotion) {
+      filterProgress.setValue(filtersOpen ? 1 : 0);
+      if (!filtersOpen) setFilterPanelMounted(false);
+      return;
+    }
+    const animation = Animated.timing(filterProgress, {
+      toValue: filtersOpen ? 1 : 0,
+      duration: 200,
+      easing: Easing.out(Easing.ease),
+      useNativeDriver: true,
+    });
+    animation.start(({ finished }) => {
+      if (finished && !filtersOpen) setFilterPanelMounted(false);
+    });
+    return () => animation.stop();
+  }, [filtersOpen, reduceMotion, filterProgress]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 400);
+    return () => clearTimeout(timer);
+  }, [search]);
+  useEffect(() => () => { requestId.current += 1; }, []);
+
   const load = useCallback(async () => {
+    const id = ++requestId.current;
     setLoading(true); setError("");
-    const params = { page, per_page: 15, search: search || undefined, date_from: dateFrom || undefined, date_to: dateTo || undefined, range: range === "ALL" ? undefined : range, categories };
+    const params = { page, per_page: 15, search: debouncedSearch || undefined, date_from: dateFrom || undefined, date_to: dateTo || undefined, range: range === "ALL" ? undefined : range, categories };
     try {
       if (tab === "MY_CLAIMS") {
         const data = await commuterService.getMyClaims({ ...params, status: claimFilter === "ALL" ? undefined : claimFilter === "VALIDATED" ? "APPROVED" : claimFilter });
+        if (id !== requestId.current) return;
         setClaims(data.claims || []); setLastPage(data.lastPage || 1);
       } else if (tab === "WATCHLIST") {
         const data = await commuterService.getMyWatchlist(params);
+        if (id !== requestId.current) return;
         setItems(data.items || []); setWatchlist(new Set((data.items || []).map((item) => item.id))); setLastPage(data.lastPage || 1);
       } else {
         const data = await commuterService.getLostItems(params);
+        if (id !== requestId.current) return;
         setItems(data.items || []); setLastPage(data.lastPage || 1);
       }
     } catch (cause) {
+      if (id !== requestId.current) return;
       setError(cause instanceof Error ? cause.message : "Unable to load Lost & Found.");
       if (tab === "MY_CLAIMS") setClaims([]); else setItems([]);
-    } finally { setLoading(false); setRefreshing(false); }
-  }, [categories, claimFilter, dateFrom, dateTo, page, range, search, tab]);
+    } finally { if (id === requestId.current) { setLoading(false); setRefreshing(false); } }
+  }, [categories, claimFilter, dateFrom, dateTo, page, range, debouncedSearch, tab]);
 
   useEffect(() => { void load(); }, [load]);
   const claimByItem = useMemo(() => new Map(claims.filter((claim) => claim.item).map((claim) => [claim.item!.id, claim])), [claims]);
   const groups = useMemo(() => groupByTrip(items), [items]);
   const filterCount = categories.length + Number(Boolean(dateFrom || dateTo)) + Number(range !== "ALL") + Number(tab === "MY_CLAIMS" && claimFilter !== "ALL");
+  const filterActionColor = isLight ? (filtersOpen || filterCount > 0 ? colors.primary : colors.textSecondary) : (filtersOpen || filterCount > 0 ? "#FFFFFF" : "rgba(255,255,255,0.7)");
+  const filterChevronRotation = filterProgress.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "180deg"] });
 
   const selectTab = (next: Tab) => { setTab(next); setPage(1); setFiltersOpen(false); };
   const toggleCategory = (value: Category) => { setPage(1); setCategories((current) => current.includes(value) ? current.filter((item) => item !== value) : [...current, value]); };
@@ -140,21 +180,34 @@ export const LostFoundParityScreen: React.FC = () => {
   };
 
   return <View style={styles.container}>
-    <View style={styles.header}><Text style={styles.title}>Lost & Found</Text><Text style={styles.subtitle}>{tab === "ALL" ? `${items.length} items found on board` : tab === "WATCHLIST" ? "Items you bookmarked" : "Track the status of items you claimed"}</Text><View style={styles.tabs}>{([["ALL", "All Items", "cube-outline"], ["WATCHLIST", "Bookmark", "bookmark-outline"], ["MY_CLAIMS", "Claims", "clipboard-outline"]] as const).map(([key, label, icon]) => <TouchableOpacity key={key} accessibilityRole="tab" accessibilityState={{ selected: tab === key }} onPress={() => selectTab(key)} style={[styles.tab, tab === key && styles.tabActive]}><Ionicons name={icon} size={15} color={tab === key ? (isLight ? "#000000" : "#FFFFFF") : inactiveIcon} /><Text style={[styles.tabText, tab === key && styles.tabTextActive]}>{label}</Text>{key === "MY_CLAIMS" && claims.length > 0 ? <Text style={styles.badge}>{claims.length}</Text> : null}</TouchableOpacity>)}</View></View>
+    <View style={styles.header}><Text style={styles.title}>Lost & Found</Text><Text style={styles.subtitle}>{tab === "ALL" ? `${items.length} items found on board` : tab === "WATCHLIST" ? "Items you bookmarked" : "Track the status of items you claimed"}</Text><View style={styles.tabs}>{([["ALL", "All Items", "cube-outline"], ["WATCHLIST", "Bookmark", "bookmark-outline"], ["MY_CLAIMS", "Claims", "clipboard-outline"]] as const).map(([key, label, icon]) => <TouchableOpacity key={key} accessibilityRole="tab" accessibilityState={{ selected: tab === key }} onPress={() => selectTab(key)} style={[styles.tab, tab === key && styles.tabActive]}>{key === "MY_CLAIMS" ? <WebIcon name="clipboard-list" size={16} color={tab === key ? (isLight ? "#000000" : "#FFFFFF") : inactiveIcon} /> : <Ionicons name={icon} size={15} color={tab === key ? (isLight ? "#000000" : "#FFFFFF") : inactiveIcon} />}<Text style={[styles.tabText, tab === key && styles.tabTextActive]}>{label}</Text>{key === "MY_CLAIMS" && claims.length > 0 ? <Text style={styles.badge}>{claims.length}</Text> : null}</TouchableOpacity>)}</View></View>
     <ScrollView style={styles.body} contentContainerStyle={[styles.content, { flexGrow: 1 }]} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} tintColor="#62A0EA" />}>
-      <View style={styles.searchRow}><View style={styles.searchBox}><Ionicons name="search-outline" size={17} color={colors.textMuted} /><TextInput value={search} onChangeText={(value) => { setSearch(value); setPage(1); }} placeholder={tab === "MY_CLAIMS" ? "Search claims" : "Item, plate, driver, conductor"} placeholderTextColor={inputPlaceholder} style={styles.searchInput} />{search ? <TouchableOpacity onPress={() => setSearch("")}><Ionicons name="close-circle" size={17} color={inactiveIcon} /></TouchableOpacity> : null}</View><TouchableOpacity onPress={() => setFiltersOpen((value) => !value)} style={[styles.filterButton, (filtersOpen || filterCount > 0) && styles.filterButtonActive]}><Ionicons name="options-outline" size={16} color="#FFFFFF" /><Text style={styles.filterText}>Filters</Text>{filterCount > 0 ? <Text style={styles.filterBadge}>{filterCount}</Text> : null}<Ionicons name={filtersOpen ? "chevron-up" : "chevron-down"} size={15} color="#FFFFFF" /></TouchableOpacity></View>
-      {filtersOpen ? <View style={styles.filterPanel}><Text style={styles.filterLabel}>{tab === "MY_CLAIMS" ? "Date and status" : "Posted date"}</Text><View style={styles.dateRow}><TextInput value={dateFrom} onChangeText={(value) => { setDateFrom(value); setPage(1); }} placeholder="From (YYYY-MM-DD)" placeholderTextColor={inputPlaceholder} style={styles.dateInput} /><TextInput value={dateTo} onChangeText={(value) => { setDateTo(value); setPage(1); }} placeholder="To (YYYY-MM-DD)" placeholderTextColor={inputPlaceholder} style={styles.dateInput} /></View>{tab === "MY_CLAIMS" ? <Segments items={STATUS_FILTERS} value={claimFilter} onChange={(value) => { setClaimFilter(value); setPage(1); }} /> : null}<Text style={styles.filterLabel}>Posted within</Text><Segments items={RANGES} value={range} onChange={(value) => { setRange(value); setPage(1); }} /><Text style={styles.filterLabel}>Category</Text><View style={styles.categoryGrid}><CategoryOption label="All categories" selected={categories.length === 0} onPress={() => { setCategories([]); setPage(1); }} />{CATEGORIES.map((item) => <CategoryOption key={item.value} label={item.label} selected={categories.includes(item.value)} onPress={() => toggleCategory(item.value)} />)}</View></View> : null}
-      {loading ? <View style={styles.empty}><ActivityIndicator size="small" color="#62A0EA" /><Text style={styles.emptyBody}>Loading items found by staff…</Text></View> : error ? <Empty icon="cloud-offline-outline" title="Unable to load Lost & Found" body={error} action="Try again" onAction={() => void load()} /> : tab === "MY_CLAIMS" ? claims.length === 0 ? <Empty icon="clipboard-outline" title="No claims found" body="When you submit a claim, its review status and handover instructions appear here." mascot /> : claims.map((claim) => <ClaimCard key={claim.claimId} claim={claim} expanded={expanded.has(claim.claimId)} onToggle={() => setExpanded((current) => { const next = new Set(current); next.has(claim.claimId) ? next.delete(claim.claimId) : next.add(claim.claimId); return next; })} onDetails={() => claim.item && setDetail(claim.item)} onCancel={() => setCancelTarget(claim)} onAgain={() => claim.item && openClaim(claim.item)} />) : items.length === 0 ? <Empty icon="cube-outline" title="No matching items" body={tab === "WATCHLIST" ? "You have not bookmarked any items yet." : "Try another keyword, category, or date range. New found items appear here as soon as staff reports them."} mascot /> : groups.map((day) => <View key={day.key} style={styles.day}><View style={styles.dayHeader}><View style={styles.dayTitleRow}><Text style={styles.dayTitle}>{day.label}</Text>{day.date ? <Text style={styles.dayDate}>{day.date}</Text> : null}</View><Text style={styles.dayCount}>{day.count} item{day.count === 1 ? "" : "s"}</Text></View>{day.trips.map((trip) => <View key={trip.key} style={styles.trip}><View style={styles.tripMeta}><View><Text style={styles.foundOn}>FOUND ON</Text><Text style={styles.plate}>{trip.plate}</Text><Text style={styles.crew}>{trip.crew}</Text></View></View><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cards}>{trip.items.map((item) => <ItemCard key={item.id} item={item} claim={claimByItem.get(item.id)} watched={watchlist.has(item.id) || Boolean(item.is_watched)} onOpen={() => setDetail(item)} onClaim={() => openClaim(item)} onCancel={() => { const claim = claimByItem.get(item.id); if (claim) setCancelTarget(claim); }} onWatch={() => void toggleWatch(item)} />)}</ScrollView></View>)}</View>)}
+      <View style={styles.searchRow}><View style={styles.searchBox}><Ionicons name="search-outline" size={17} color={colors.textMuted} /><TextInput value={search} onChangeText={(value) => { requestId.current += 1; setSearch(value); setPage(1); }} placeholder={tab === "MY_CLAIMS" ? "Search claims" : "Item, plate, driver, conductor"} placeholderTextColor={inputPlaceholder} style={styles.searchInput} />{search ? <TouchableOpacity onPress={() => { requestId.current += 1; setSearch(""); }}><Ionicons name="close-circle" size={17} color={inactiveIcon} /></TouchableOpacity> : null}</View><TouchableOpacity accessibilityRole="button" accessibilityLabel="Filters" accessibilityState={{ expanded: filtersOpen }} onPress={() => setFiltersOpen((value) => !value)} style={[styles.filterButton, (filtersOpen || filterCount > 0) && styles.filterButtonActive]}><Ionicons name="options-outline" size={16} color={filterActionColor} /><Text style={[styles.filterText, { color: filterActionColor }]}>Filters</Text>{filterCount > 0 ? <Text style={styles.filterBadge}>{filterCount}</Text> : null}<Animated.View style={{ transform: [{ rotate: filterChevronRotation }] }}><Ionicons name="chevron-down" size={15} color={filterActionColor} /></Animated.View></TouchableOpacity></View>
+      {filterPanelMounted ? <Animated.View pointerEvents={filtersOpen ? "auto" : "none"} style={[styles.filterPanel, { opacity: filterProgress, transform: [{ translateX: filterProgress.interpolate({ inputRange: [0, 1], outputRange: [18, 0] }) }] }]}><Text style={styles.filterLabel}>{tab === "MY_CLAIMS" ? "Date and status" : "Posted date"}</Text><View style={styles.dateRow}><TextInput value={dateFrom} onChangeText={(value) => { setDateFrom(value); setPage(1); }} placeholder="From (YYYY-MM-DD)" placeholderTextColor={inputPlaceholder} style={styles.dateInput} /><TextInput value={dateTo} onChangeText={(value) => { setDateTo(value); setPage(1); }} placeholder="To (YYYY-MM-DD)" placeholderTextColor={inputPlaceholder} style={styles.dateInput} /></View>{tab === "MY_CLAIMS" ? <Segments items={STATUS_FILTERS} value={claimFilter} onChange={(value) => { setClaimFilter(value); setPage(1); }} /> : null}<Text style={styles.filterLabel}>Posted within</Text><Segments items={RANGES} value={range} onChange={(value) => { setRange(value); setPage(1); }} /><Text style={styles.filterLabel}>Category</Text><View style={styles.categoryGrid}><CategoryOption label="All categories" selected={categories.length === 0} onPress={() => { setCategories([]); setPage(1); }} />{CATEGORIES.map((item) => <CategoryOption key={item.value} label={item.label} selected={categories.includes(item.value)} onPress={() => toggleCategory(item.value)} />)}</View></Animated.View> : null}
+      {loading ? <LostFoundSkeleton claims={tab === "MY_CLAIMS"} /> : error ? <Empty icon="cloud-offline-outline" title="Unable to load Lost & Found" body={error} action="Try again" onAction={() => void load()} /> : tab === "MY_CLAIMS" ? claims.length === 0 ? <Empty icon="clipboard-outline" title="No claims found" body="When you submit a claim, its review status and handover instructions appear here." mascot /> : claims.map((claim) => <ClaimCard key={claim.claimId} claim={claim} expanded={expanded.has(claim.claimId)} onToggle={() => setExpanded((current) => { const next = new Set(current); next.has(claim.claimId) ? next.delete(claim.claimId) : next.add(claim.claimId); return next; })} onDetails={() => claim.item && setDetail(claim.item)} onCancel={() => setCancelTarget(claim)} onAgain={() => claim.item && openClaim(claim.item)} />) : items.length === 0 ? <Empty icon="cube-outline" title="No matching items" body={tab === "WATCHLIST" ? "You have not bookmarked any items yet." : "Try another keyword, category, or date range. New found items appear here as soon as staff reports them."} mascot /> : groups.map((day) => <View key={day.key} style={styles.day}><View style={styles.dayHeader}><View style={styles.dayTitleRow}><Text style={styles.dayTitle}>{day.label}</Text>{day.date ? <Text style={styles.dayDate}>{day.date}</Text> : null}</View><Text style={styles.dayCount}>{day.count} item{day.count === 1 ? "" : "s"}</Text></View>{day.trips.map((trip) => <View key={trip.key} style={styles.trip}><View style={styles.tripMeta}><View><Text style={styles.foundOn}>FOUND ON</Text><Text style={styles.plate}>{trip.plate}</Text><Text style={styles.crew}>{trip.crew}</Text></View></View><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cards}>{trip.items.map((item) => <ItemCard key={item.id} item={item} claim={claimByItem.get(item.id)} watched={watchlist.has(item.id) || Boolean(item.is_watched)} onOpen={() => setDetail(item)} onClaim={() => openClaim(item)} onCancel={() => { const claim = claimByItem.get(item.id); if (claim) setCancelTarget(claim); }} onWatch={() => void toggleWatch(item)} />)}</ScrollView></View>)}</View>)}
       {!loading && !error && lastPage > 1 ? <View style={styles.pagination}><TouchableOpacity disabled={page === 1} onPress={() => setPage(Math.max(1, page - 1))} style={[styles.pageButton, page === 1 && styles.disabled]}><Text style={styles.pageButtonText}>‹ Prev</Text></TouchableOpacity><Text style={styles.pageCount}>{page} / {lastPage}</Text><TouchableOpacity disabled={page === lastPage} onPress={() => setPage(Math.min(lastPage, page + 1))} style={[styles.pageButton, page === lastPage && styles.disabled]}><Text style={styles.pageButtonText}>Next ›</Text></TouchableOpacity></View> : null}
     </ScrollView>
-    <DetailModal item={detail} claim={detail ? claimByItem.get(detail.id) : undefined} onClose={() => setDetail(null)} onClaim={() => { if (detail) { const item = detail; setDetail(null); openClaim(item); } }} />
+    <DetailModal key={detail?.id ?? "closed"} item={detail} claim={detail ? claimByItem.get(detail.id) : undefined} onClose={() => setDetail(null)} onClaim={() => { if (detail) { const item = detail; setDetail(null); openClaim(item); } }} />
     <ClaimModal item={claimTarget} proof={proof} contact={contact} photos={proofPhotos} busy={submitting} onClose={() => setClaimTarget(null)} onProof={setProof} onContact={setContact} onAddPhotos={() => void addProofPhotos()} onRemovePhoto={(index) => setProofPhotos(current => current.filter((_, photoIndex) => photoIndex !== index))} onSubmit={() => void submitClaim()} />
     <CancelModal claim={cancelTarget} busy={cancelling} onClose={() => !cancelling && setCancelTarget(null)} onConfirm={() => void cancelClaim()} />
   </View>;
 };
 
 function Segments<T extends string>({ items, value, onChange }: { items: { label: string; value: T }[]; value: T; onChange: (value: T) => void }) { const styles = useLostFoundStyles(); return <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.segments}>{items.map((item) => <TouchableOpacity key={item.value} onPress={() => onChange(item.value)} style={[styles.segment, value === item.value && styles.segmentActive]}><Text style={[styles.segmentText, value === item.value && styles.segmentTextActive]}>{item.label}</Text></TouchableOpacity>)}</ScrollView>; }
-function CategoryOption({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) { const styles = useLostFoundStyles(); return <TouchableOpacity onPress={onPress} style={[styles.categoryOption, selected && styles.categorySelected]}><View style={[styles.checkbox, selected && styles.checkboxSelected]}>{selected ? <Ionicons name="checkmark" size={12} color="#FFFFFF" /> : null}</View><Text style={styles.categoryText} numberOfLines={1}>{label}</Text></TouchableOpacity>; }
+function SelectionMark({ selected, kind }: { selected: boolean; kind: "check" | "bookmark" }) {
+  const reducedMotion = useReducedMotion();
+  const value = React.useRef(new Animated.Value(selected ? 1 : 0)).current;
+  useEffect(() => {
+    if (reducedMotion) { value.setValue(selected ? 1 : 0); return; }
+    const animation = Animated.timing(value, { toValue: selected ? 1 : 0, duration: 200, easing: Easing.out(Easing.ease), useNativeDriver: true });
+    animation.start();
+    return () => animation.stop();
+  }, [selected, reducedMotion, value]);
+  const scale = value.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] });
+  if (kind === "check") return <Animated.View style={{ opacity: value, transform: [{ scale }] }}><Ionicons name="checkmark" size={12} color="#FFFFFF" /></Animated.View>;
+  return <Animated.View style={{ transform: [{ scale: value.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] }) }] }}><Ionicons name={selected ? "bookmark" : "bookmark-outline"} size={17} color={selected ? "#8CB9F0" : "#94A3B8"} /></Animated.View>;
+}
+function CategoryOption({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) { const styles = useLostFoundStyles(); return <TouchableOpacity onPress={onPress} style={[styles.categoryOption, selected && styles.categorySelected]}><View style={[styles.checkbox, selected && styles.checkboxSelected]}><SelectionMark selected={selected} kind="check" /></View><Text style={styles.categoryText} numberOfLines={1}>{label}</Text></TouchableOpacity>; }
 
 function ItemCard({ item, claim, watched, onOpen, onClaim, onCancel, onWatch }: { item: LostItem; claim?: ClaimData; watched: boolean; onOpen: () => void; onClaim: () => void; onCancel: () => void; onWatch: () => void }) {
   const styles = useLostFoundStyles();
@@ -163,7 +216,7 @@ function ItemCard({ item, claim, watched, onOpen, onClaim, onCancel, onWatch }: 
   const image = item.imageUrl || item.image_url;
   const deadline = status === "NONE" && item.claimableUntil ? `Claim by ${new Date(item.claimableUntil).toLocaleDateString("en-PH", { month: "short", day: "numeric" })}` : "";
   const completionColor = status === "RELEASED" ? (isLight ? "#1A5FB4" : "#62A0EA") : (isLight ? "#047857" : "#34D399");
-  return <View style={styles.itemCard}><TouchableOpacity onPress={onOpen} style={styles.itemPhoto}>{image ? <Image source={{ uri: image }} style={styles.photo} /> : <View style={styles.noPhoto}><Ionicons name="cube-outline" size={28} color={colors.textMuted} /><Text style={styles.noPhotoText}>NO PHOTO YET</Text></View>}</TouchableOpacity><View style={styles.itemBody}><View style={styles.itemTop}><Text style={styles.itemCategory}>{item.category}</Text>{deadline ? <Text style={styles.deadline}>{deadline}</Text> : claim ? <Text style={[styles.status, { color: statusColor(status, isLight) }]}>{statusText(status)}</Text> : null}</View><TouchableOpacity onPress={onOpen}><Text style={styles.itemTitle} numberOfLines={2}>{item.itemName || item.title}</Text></TouchableOpacity><View style={styles.itemTime}><Ionicons name="time-outline" size={13} color={colors.textMuted} /><Text style={styles.itemTimeText} numberOfLines={1}>{item.estimatedTimeLost || "Time unavailable"}</Text></View></View><View style={styles.tear} /><View style={styles.itemActions}>{status === "PENDING" ? <TouchableOpacity onPress={onCancel} style={styles.outlineAction}><Text style={styles.outlineText}>Cancel Claim</Text></TouchableOpacity> : status === "NONE" || status === "REJECTED" ? <TouchableOpacity onPress={onClaim} style={styles.claimAction}><Text style={styles.claimText}>{status === "REJECTED" ? "Claim Again" : "Claim Item"}</Text></TouchableOpacity> : <View style={styles.complete}><Ionicons name="shield-checkmark-outline" size={14} color={completionColor} /><Text style={{ color: completionColor, fontSize: 10, fontWeight: "700" }}>{status === "RELEASED" ? "Claim completed" : "Ready for release"}</Text></View>}<TouchableOpacity accessibilityLabel={watched ? "Remove bookmark" : "Bookmark item"} onPress={onWatch} style={[styles.bookmark, watched && styles.bookmarkActive]}><Ionicons name={watched ? "bookmark" : "bookmark-outline"} size={17} color={watched ? "#8CB9F0" : colors.textMuted} /></TouchableOpacity></View></View>;
+  return <View style={styles.itemCard}><TouchableOpacity onPress={onOpen} style={styles.itemPhoto}>{image ? <Image source={{ uri: image }} style={styles.photo} /> : <View style={styles.noPhoto}><Ionicons name="cube-outline" size={28} color={colors.textMuted} /><Text style={styles.noPhotoText}>NO PHOTO YET</Text></View>}</TouchableOpacity><View style={styles.itemBody}><View style={styles.itemTop}><Text style={styles.itemCategory}>{item.category}</Text>{deadline ? <Text style={[styles.deadline, { color: isLight ? "#1A5FB4" : "#C4D9F2", backgroundColor: isLight ? "#EAF2FC" : "#122A44", borderColor: isLight ? "#B9D3F2" : "#2A4D72", borderWidth: 1, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 3 }]}>{deadline}</Text> : claim ? <Text style={[styles.status, { color: statusColor(status, isLight) }]}>{statusText(status)}</Text> : null}</View><TouchableOpacity onPress={onOpen}><Text style={styles.itemTitle} numberOfLines={2}>{item.itemName || item.title}</Text></TouchableOpacity><View style={styles.itemTime}><Ionicons name="time-outline" size={13} color={colors.textMuted} /><Text style={styles.itemTimeText} numberOfLines={1}>{item.estimatedTimeLost || "Time unavailable"}</Text></View></View><View style={styles.tear} /><View style={styles.itemActions}>{status === "PENDING" ? <TouchableOpacity onPress={onCancel} style={styles.outlineAction}><Text style={styles.outlineText}>Cancel Claim</Text></TouchableOpacity> : status === "NONE" || status === "REJECTED" ? <TouchableOpacity onPress={onClaim} style={styles.claimAction}><Text style={styles.claimText}>{status === "REJECTED" ? "Claim Again" : "Claim Item"}</Text></TouchableOpacity> : <View style={styles.complete}><Ionicons name="shield-checkmark-outline" size={14} color={completionColor} /><Text style={{ color: completionColor, fontSize: 10, fontWeight: "700" }}>{status === "RELEASED" ? "Claim completed" : "Ready for release"}</Text></View>}<TouchableOpacity accessibilityLabel={watched ? "Remove bookmark" : "Bookmark item"} onPress={onWatch} style={[styles.bookmark, watched && styles.bookmarkActive]}><SelectionMark selected={watched} kind="bookmark" /></TouchableOpacity></View></View>;
 }
 
 function ClaimCard({ claim, expanded, onToggle, onDetails, onCancel, onAgain }: { claim: ClaimData; expanded: boolean; onToggle: () => void; onDetails: () => void; onCancel: () => void; onAgain: () => void }) {
@@ -179,9 +232,44 @@ function ClaimCard({ claim, expanded, onToggle, onDetails, onCancel, onAgain }: 
   </View>;
 }
 
-function Empty({ icon, title, body, action, onAction, mascot = false }: { icon: React.ComponentProps<typeof Ionicons>["name"]; title: string; body: string; action?: string; onAction?: () => void; mascot?: boolean }) { const styles = useLostFoundStyles(); const { colors } = useCommuterTheme(); return <View style={mascot ? [styles.empty, { flexGrow: 1, justifyContent: "center", paddingHorizontal: 24, paddingVertical: 24 }] : styles.empty}>{mascot ? <Mascot pose="vault-action" size={204} responsive={false} accessibilityLabel="ChatCo mascot looking for recovered belongings" /> : <View style={styles.emptyIcon}><Ionicons name={icon} size={28} color={colors.textMuted} /></View>}<Text style={styles.emptyTitle}>{title}</Text><Text style={styles.emptyBody}>{body}</Text>{action && onAction ? <TouchableOpacity onPress={onAction} style={styles.retry}><Text style={styles.retryText}>{action}</Text></TouchableOpacity> : null}</View>; }
+function Empty({ icon, title, body, action, onAction, mascot = false }: { icon: React.ComponentProps<typeof Ionicons>["name"]; title: string; body: string; action?: string; onAction?: () => void; mascot?: boolean }) { const styles = useLostFoundStyles(); const { colors } = useCommuterTheme(); return <View style={mascot ? [styles.empty, { flexGrow: 1, justifyContent: "center", paddingHorizontal: 24, paddingVertical: 24 }] : styles.empty}>{mascot ? <Mascot pose="vault-action" size={204} responsive={false} accessibilityLabel="E-CHATCO mascot looking for recovered belongings" /> : <View style={styles.emptyIcon}><Ionicons name={icon} size={28} color={colors.textMuted} /></View>}<Text style={styles.emptyTitle}>{title}</Text><Text style={styles.emptyBody}>{body}</Text>{action && onAction ? <TouchableOpacity onPress={onAction} style={styles.retry}><Text style={styles.retryText}>{action}</Text></TouchableOpacity> : null}</View>; }
 
-function DetailModal({ item, claim, onClose, onClaim }: { item: LostItem | null; claim?: ClaimData; onClose: () => void; onClaim: () => void }) { const styles = useLostFoundStyles(); const { colors } = useCommuterTheme(); if (!item) return null; const image = item.photos?.[0]?.url || item.imageUrl || item.image_url; return <Modal visible transparent animationType="fade" onRequestClose={onClose}><View style={styles.backdrop}><View style={styles.modal}><View style={styles.modalTop}><Text style={styles.categoryTag}>{item.category}</Text><TouchableOpacity onPress={onClose} style={styles.close}><Ionicons name="close" size={19} color="#FFFFFF" /></TouchableOpacity></View><ScrollView contentContainerStyle={styles.modalBody}>{image ? <Image source={{ uri: image }} style={styles.detailImage} /> : <View style={styles.detailNoImage}><Ionicons name="cube-outline" size={45} color={colors.textMuted} /></View>}<Text style={styles.detailTitle}>{item.itemName || item.title}</Text><Text style={styles.detailDescription}>{item.description}</Text><View style={styles.detailGrid}><DetailValue label="PLATE NUMBER" value={item.plateNumber || "Unavailable"} /><DetailValue label="ESTIMATED TIME" value={item.estimatedTimeLost || "Unavailable"} /><DetailValue label="DRIVER" value={item.driverName || "Unavailable"} /><DetailValue label="CONDUCTOR" value={item.conductorName || "Unavailable"} /></View></ScrollView>{(!claim || claim.status === "REJECTED") ? <View style={styles.modalFooter}><TouchableOpacity onPress={onClaim} style={styles.primary}><Text style={styles.primaryText}>{claim ? "Claim This Item Again" : "Claim This Item"}</Text></TouchableOpacity></View> : null}</View></View></Modal>; }
+function DetailModal({ item, claim, onClose, onClaim }: { item: LostItem | null; claim?: ClaimData; onClose: () => void; onClaim: () => void }) {
+  const styles = useLostFoundStyles();
+  const { colors } = useCommuterTheme();
+  const [photoIndex, setPhotoIndex] = useState(0);
+  if (!item) return null;
+
+  const photos = item.photos?.length
+    ? item.photos
+    : item.imageUrl || item.image_url
+      ? [{ id: "cover", url: (item.imageUrl || item.image_url)! }]
+      : [];
+  const selectedPhoto = photos[photoIndex] ?? photos[0];
+  const stepPhoto = (step: number) => setPhotoIndex((index) => (index + step + photos.length) % photos.length);
+
+  return <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+    <View style={styles.backdrop}><View style={styles.modal}>
+      <View style={styles.modalTop}><Text style={styles.categoryTag}>{item.category}</Text><TouchableOpacity onPress={onClose} style={styles.close}><Ionicons name="close" size={19} color="#FFFFFF" /></TouchableOpacity></View>
+      <ScrollView contentContainerStyle={styles.modalBody}>
+        {selectedPhoto ? <View style={{ marginBottom: 16 }}>
+          <Image source={{ uri: selectedPhoto.url }} accessibilityLabel={`${item.itemName || item.title}, photo ${photoIndex + 1} of ${photos.length}`} style={[styles.detailImage, { marginBottom: 0 }]} />
+          {photos.length > 1 && <>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Previous photo" onPress={() => stepPhoto(-1)} style={{ position: "absolute", left: 10, top: "38%", width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", backgroundColor: "#071A2E" }}><Ionicons name="chevron-back" size={22} color="#FFFFFF" /></TouchableOpacity>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Next photo" onPress={() => stepPhoto(1)} style={{ position: "absolute", right: 10, top: "38%", width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", backgroundColor: "#071A2E" }}><Ionicons name="chevron-forward" size={22} color="#FFFFFF" /></TouchableOpacity>
+            <Text style={{ color: colors.textSecondary, fontSize: 11, textAlign: "center", marginTop: 8 }}>Photo {photoIndex + 1} of {photos.length}</Text>
+            <View style={{ flexDirection: "row", justifyContent: "center", gap: 8, marginTop: 8 }}>
+              {photos.map((photo, index) => <TouchableOpacity key={photo.id} accessibilityRole="button" accessibilityLabel={`View photo ${index + 1} of ${photos.length}`} accessibilityState={{ selected: index === photoIndex }} onPress={() => setPhotoIndex(index)} style={{ width: 54, height: 54, borderRadius: 7, overflow: "hidden", borderWidth: 2, borderColor: index === photoIndex ? colors.primary : colors.border, backgroundColor: colors.surfaceSecondary }}><Image source={{ uri: photo.url }} style={styles.photo} /></TouchableOpacity>)}
+            </View>
+          </>}
+        </View> : <View style={styles.detailNoImage}><Ionicons name="cube-outline" size={45} color={colors.textMuted} /></View>}
+        <Text style={styles.detailTitle}>{item.itemName || item.title}</Text><Text style={styles.detailDescription}>{item.description}</Text>
+        <View style={styles.detailGrid}><DetailValue label="PLATE NUMBER" value={item.plateNumber || "Unavailable"} /><DetailValue label="ESTIMATED TIME" value={item.estimatedTimeLost || "Unavailable"} /><DetailValue label="DRIVER" value={item.driverName || "Unavailable"} /><DetailValue label="CONDUCTOR" value={item.conductorName || "Unavailable"} /></View>
+      </ScrollView>
+      {(!claim || claim.status === "REJECTED") ? <View style={styles.modalFooter}><TouchableOpacity onPress={onClaim} style={styles.primary}><Text style={styles.primaryText}>{claim ? "Claim This Item Again" : "Claim This Item"}</Text></TouchableOpacity></View> : null}
+    </View></View>
+  </Modal>;
+}
 function DetailValue({ label, value }: { label: string; value: string }) { const styles = useLostFoundStyles(); return <View style={styles.detailValue}><Text style={styles.detailLabel}>{label}</Text><Text style={styles.detailText}>{value}</Text></View>; }
 function ClaimModal({ item, proof, photos, busy, onClose, onProof, onAddPhotos, onRemovePhoto, onSubmit }: { item: LostItem | null; proof: string; contact: string; photos: ClaimProofImage[]; busy: boolean; onClose: () => void; onProof: (value: string) => void; onContact: (value: string) => void; onAddPhotos: () => void; onRemovePhoto: (index: number) => void; onSubmit: () => void }) {
   const styles = useLostFoundStyles();
@@ -197,7 +285,7 @@ function ClaimModal({ item, proof, photos, busy, onClose, onProof, onAddPhotos, 
         <View style={{ flexDirection: "row", gap: 8 }}>{Array.from({ length: 3 }, (_, index) => { const photo = photos[index]; return photo ? <View key={index} style={{ flex: 1, aspectRatio: 1, borderRadius: 8, overflow: "hidden", borderWidth: 1, borderColor: colors.border }}><Image source={{ uri: photo.uri }} style={{ width: "100%", height: "100%" }} /><TouchableOpacity accessibilityRole="button" accessibilityLabel={`Remove proof photo ${index + 1}`} disabled={busy} onPress={() => onRemovePhoto(index)} style={{ position: "absolute", top: 4, right: 4, width: 28, height: 28, borderRadius: 6, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.72)" }}><Ionicons name="close" size={15} color="#FFFFFF" /></TouchableOpacity></View> : <TouchableOpacity key={index} accessibilityRole="button" accessibilityLabel={`Add photo ${index + 1}`} disabled={busy} onPress={onAddPhotos} style={{ flex: 1, aspectRatio: 1, borderRadius: 8, borderWidth: 1, borderStyle: "dashed", borderColor: colors.border, backgroundColor: colors.surfaceSecondary, alignItems: "center", justifyContent: "center", gap: 6 }}><Ionicons name="image-outline" size={20} color={colors.textMuted} /><Text style={{ color: colors.textMuted, fontSize: 10, fontWeight: "600" }}>Add photo</Text></TouchableOpacity>; })}</View>
         <Text style={{ color: colors.textMuted, fontSize: 11, lineHeight: 17 }}>Up to 3 photos, such as a receipt or a picture of you with the item. JPG, PNG, or WEBP, 5 MB each.</Text>
       </View>
-      <View style={{ flexDirection: "row", gap: 12, borderWidth: 1, borderColor: isLight ? "#FCD34D" : "rgba(251,191,36,0.2)", backgroundColor: isLight ? "#FFFBEB" : "rgba(251,191,36,0.1)", borderRadius: 12, padding: 12 }}><Ionicons name="warning-outline" size={16} color={isLight ? "#D97706" : "#FCD34D"} /><View style={{ flex: 1, gap: 4 }}><Text style={{ color: isLight ? "#78350F" : "#FEF3C7", fontSize: 12, fontWeight: "700" }}>Reminder</Text><Text style={{ color: isLight ? "#92400E" : "#FDE68A", fontSize: 12, lineHeight: 20 }}>Bring a valid ID during handover. Staff may reject claims that do not match the item details.</Text></View></View>
+      <View style={{ flexDirection: "row", gap: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary, borderRadius: 12, padding: 12 }}><Ionicons name="information-circle-outline" size={16} color={isLight ? "#1A5FB4" : "#99C1F1"} /><View style={{ flex: 1, gap: 4 }}><Text style={{ color: colors.textPrimary, fontSize: 12, fontWeight: "700" }}>Reminder</Text><Text style={{ color: colors.textSecondary, fontSize: 12, lineHeight: 20 }}>Bring a valid ID during handover. Staff may reject claims that do not match the item details.</Text></View></View>
     </ScrollView>
     <View style={styles.modalFooter}><TouchableOpacity onPress={onClose} disabled={busy} style={[styles.secondary, { backgroundColor: colors.surfaceHover }]}><Text style={styles.secondaryText}>Cancel</Text></TouchableOpacity><TouchableOpacity disabled={!proof.trim() || busy} onPress={onSubmit} style={[styles.primary, { backgroundColor: !proof.trim() || busy ? colors.surfaceHover : "#FF6D3A" }]}>{busy ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={[styles.primaryText, (!proof.trim() || busy) && { color: colors.textMuted }]}>Submit Claim</Text>}</TouchableOpacity></View>
   </View></View></Modal>;

@@ -20,7 +20,7 @@ jest.mock("react-native", () => ({
   View: "View", ScrollView: "Scroll", TouchableOpacity: "Button", Modal: "Modal", ActivityIndicator: "Spinner", RefreshControl: "Refresh",
   StyleSheet: { create: (styles: unknown) => styles }, Platform: { OS: "web" },
   AppState: { currentState: "active", addEventListener: () => ({ remove() {} }) },
-  Animated: { View: "AnimatedView", Value: class { interpolate() {} } },
+  Animated: { View: "AnimatedView", Value: class { setValue() {} interpolate() {} } },
 }));
 jest.mock("@expo/vector-icons", () => ({ Ionicons: "Icon" }));
 jest.mock("expo-clipboard", () => ({}));
@@ -43,7 +43,7 @@ function walk(node: any): Element[] {
   const element = node as Element;
   return [element, ...walk(element.props.children)];
 }
-function render() { mockStateIndex = mockRefIndex = 0; mockEffects = []; return walk(RewardsScreen({})); }
+function render(props: React.ComponentProps<typeof RewardsScreen> = {}) { mockStateIndex = mockRefIndex = 0; mockEffects = []; return walk(RewardsScreen(props)); }
 function markButton() { return render().find(node => node.props.accessibilityLabel === "Mark all notifications as read")!; }
 async function flush() { for (let i = 0; i < 12; i++) await Promise.resolve(); }
 const notice = { id: "notice", title: "Notice", content: "Update", type: "SYSTEM", is_read: false, isRead: false };
@@ -62,6 +62,25 @@ test("mark all persists read state, updates the list, and signals badge refresh"
     expect(markButton().props.disabled).toBe(true);
     expect(badgeRefresh).toHaveBeenCalledTimes(1);
   } finally { unsubscribe(); }
+});
+
+test("updates remain accessible when rewards fail, including from the home bell", () => {
+  mockStates = []; mockRefs = [];
+  let tree = render({ initialSection: "announcements" });
+  expect(tree.some(node => node.props.accessibilityLabel === "Loading updates")).toBe(true);
+
+  mockStates[0] = null;
+  mockStates[1] = [{ ...notice }];
+  mockStates[2] = false;
+  mockStates[4] = new Error("Rewards unavailable");
+  tree = render({ initialSection: "announcements" });
+  expect(tree.some(node => node.props.children === "Notice")).toBe(true);
+  expect(tree.some(node => node.props.children === "Update")).toBe(true);
+  const rewardsTab = tree.find(node => node.props.accessibilityRole === "tab" && walk(node).some(child => child.props.children === "Rewards"))!;
+  rewardsTab.props.onPress();
+  tree = render({ initialSection: "announcements" });
+  expect(tree.some(node => node.type === "MascotMessage")).toBe(true);
+  expect(tree.some(node => node.props.accessibilityRole === "tab" && walk(node).some(child => child.props.children === "Updates"))).toBe(true);
 });
 
 test("failure leaves notices unread, shows an error, and allows retry", async () => {
@@ -88,10 +107,25 @@ test("a refresh started before mark all cannot restore stale unread notices", as
   let finish!: (value: any) => void;
   (commuterService.getRewards as jest.Mock).mockResolvedValue({ vouchers: [] });
   (commuterService.getAnnouncements as jest.Mock).mockReturnValue(new Promise(resolve => { finish = resolve; }));
-  render(); const cleanup = mockEffects[1]!();
+  render(); const cleanup = mockEffects[3]!();
   try {
     await markButton().props.onPress();
     finish([{ ...notice }]); await flush();
     expect(mockStates[1][0].is_read).toBe(true);
   } finally { cleanup(); jest.useRealTimers(); }
+});
+
+test("rewards help matches the three web steps, uses the live reward target and keeps Got it", () => {
+  mockStates[0] = { vouchers: [], ridesNeeded: 12 }; mockStates[9] = true;
+  const nodes = render();
+  expect(nodes.some(node => node.props.children === "How rewards work")).toBe(true);
+  for (const title of ["1. Complete paid rides", "2. Earn a free ride", "3. Use it with GCash"]) expect(nodes.some(node => node.props.children === title)).toBe(true);
+  expect(nodes.some(node => typeof node.props.children === "string" && node.props.children.startsWith("Every 12 paid rides"))).toBe(true);
+  expect(nodes.some(node => typeof node.props.children === "string" && node.props.children.includes("Each receipt can be claimed once"))).toBe(true);
+  expect(nodes.some(node => typeof node.props.children === "string" && node.props.children.includes("remaining fare is paid by GCash"))).toBe(true);
+  expect(nodes.some(node => node.props.children === "4. Use it on a ride")).toBe(false);
+  const modal = nodes.find(node => node.type === "Modal" && walk(node).some(child => child.props.children === "How rewards work"))!;
+  expect(modal.props.visible).toBe(true);
+  walk(modal).find(node => node.type === "Button" && walk(node).some(child => child.props.children === "Got it"))!.props.onPress();
+  expect(render().find(node => node.type === "Modal" && walk(node).some(child => child.props.children === "How rewards work"))!.props.visible).toBe(false);
 });

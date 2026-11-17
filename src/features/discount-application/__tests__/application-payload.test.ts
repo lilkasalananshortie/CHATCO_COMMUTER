@@ -1,11 +1,11 @@
 /// <reference types="jest" />
 import { applicationPayload, canCancelApplication, type ApplicationState } from "../application-types";
-import { EMPTY_SCHOOL_FIELDS } from "../../student-renewal/SchoolProofFields";
+import type { RenewalFields } from "../../student-renewal/renewal-types";
 jest.mock("react-native", () => ({ StyleSheet: { create: (value: unknown) => value } }));
 jest.mock("../../../core/theme/ThemeProvider", () => ({ useCommuterTheme: () => ({ colors: {}, isLight: false }) }));
 const state: ApplicationState = { commuter_type: "REGULAR", effective_fare_type: "REGULAR", discount_expires_at: null,
   document_required: true, can_submit: true, status: "NOT_APPLIED", application: null };
-const fields = { ...EMPTY_SCHOOL_FIELDS, school_name: " School ", school_year: "2026-2027", grade_level: "10" };
+const fields: RenewalFields = { school_name: " School ", education_level: "HIGH_SCHOOL", grade_level: "10", school_year: "2026-2027", enrollment_term: "" };
 const proof = () => new File(["proof"], "proof.pdf", { type: "application/pdf" });
 
 test.each(["PWD", "SENIOR"] as const)("%s sends proof and category, never leftover school fields", (category) => {

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Modal, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { Text } from "../../shared/ui/BrandText";
+import { Modal, ScrollView, TouchableOpacity, View } from "react-native";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import { PolicyReader } from "../../shared/legal/PolicyReader";
 import { POLICY_EFFECTIVE_DATE, REGISTRATION_TERMS } from "./registration-policies";
@@ -23,9 +24,9 @@ export function RegistrationConsent({ visible, value, onChange, disabled, error,
       <View style={{ flex: 1, justifyContent: "center", backgroundColor: "rgba(2, 8, 23, 0.76)", padding: 12 }}>
         <View style={{ width: "100%", maxWidth: 620, height: "92%", flexShrink: 1, alignSelf: "center", borderRadius: 20, overflow: "hidden", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: 24 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled showsVerticalScrollIndicator>
-          <Text accessibilityRole="header" style={{ color: colors.textPrimary, fontSize: 22, lineHeight: 28, fontWeight: "800", textAlign: "center" }}>CHATCO Terms and Conditions</Text>
+          <Text accessibilityRole="header" style={{ color: colors.textPrimary, fontSize: 22, lineHeight: 28, fontWeight: "800", textAlign: "center" }}>E-CHATCO Terms and Conditions</Text>
             <Text style={{ color: colors.textSecondary, lineHeight: 21 }}>
-              Please review these terms before submitting your commuter registration. They explain your responsibilities and how CHATCO handles registration, rides, payments, rewards, and safety features.
+              Please review these terms before submitting your commuter registration. They explain your responsibilities and how E-CHATCO handles registration, rides, payments, rewards, and safety features.
             </Text>
             <Text style={{ color: colors.textSecondary, fontSize: 13 }}>Effective date: {POLICY_EFFECTIVE_DATE}</Text>
             <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 18 }}>
@@ -43,8 +44,8 @@ export function RegistrationConsent({ visible, value, onChange, disabled, error,
             </View>
             <Text style={{ color: colors.textPrimary, fontWeight: "700", marginTop: 4 }}>Confirm your agreements</Text>
             {([
-              ["terms", "I have read and agree to CHATCO’s Terms of Service."],
-              ["privacy", "I acknowledge CHATCO’s Privacy Policy, which explains how my information is used."],
+              ["terms", "I have read and agree to E-CHATCO’s Terms of Service."],
+              ["privacy", "I acknowledge E-CHATCO’s Privacy Policy, which explains how my information is used."],
               ["confirmation", "I confirm that my registration details are accurate and any documents I submit are genuine and belong to me. I understand that my account requires admin approval before I can log in."],
             ] as const).map(([key, label]) => <TouchableOpacity key={key} disabled={disabled} accessibilityRole="checkbox" accessibilityState={{ checked: value[key], disabled }} onPress={() => onChange({ ...value, [key]: !value[key] })} style={{ flexDirection: "row", alignItems: "flex-start", gap: 11, paddingVertical: 5 }}>
               <View style={{ width: 22, height: 22, borderRadius: 5, borderWidth: 1.5, borderColor: value[key] ? colors.primary : colors.border, backgroundColor: value[key] ? colors.primary : "transparent", alignItems: "center", justifyContent: "center" }}>

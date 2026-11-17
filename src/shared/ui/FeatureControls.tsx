@@ -1,7 +1,7 @@
 import React from "react";
 import { useMemo } from "react";
-import { TextInput, TouchableOpacity, View, StyleSheet, type TextInputProps } from "react-native";
-import { Text } from "./BrandText";
+import { TouchableOpacity, View, StyleSheet, type TextInputProps } from "react-native";
+import { Text, TextInput } from "./BrandText";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import { themedStyles } from "../../core/theme/themed-styles";
 

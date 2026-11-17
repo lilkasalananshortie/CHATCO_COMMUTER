@@ -24,7 +24,7 @@ jest.mock("@expo/vector-icons", () => ({ Ionicons: "Icon" }));
 jest.mock("../../profile/ProfileIcon", () => ({ ProfileIcon: "ProfileIcon" }));
 jest.mock("../../../core/theme/ThemeProvider", () => ({ useCommuterTheme: () => ({ colors: { background: "#fff", surface: "#fff", surfaceSecondary: "#f9fafb", surfaceHover: "#f3f4f6", border: "#e5e7eb", borderSubtle: "#e5e7eb", textPrimary: "#111827", textSecondary: "#4b5563", textMuted: "#6b7280", primary: "#1a5fb4", danger: "#ef4444" }, isLight: true }) }));
 jest.mock("../../../shared/ui/FeatureControls", () => ({ FeatureButton: "Button", FeatureInput: "Input", featureStyles: {}, useFeatureStyles: () => ({ screen: {}, content: {}, title: {}, heading: {}, text: {}, muted: {}, error: {}, card: {} }) }));
-jest.mock("../../student-renewal/SchoolProofFields", () => ({ SchoolProofFields: "SchoolProofFields" }));
+jest.mock("../DiscountSchoolProofFields", () => ({ DiscountSchoolProofFields: "DiscountSchoolProofFields", EMPTY_APPLICATION_SCHOOL_FIELDS: { school_name: "", education_level: "", grade_level: "", school_year: "", enrollment_term: "" } }));
 jest.mock("../../student-renewal/SupportingDocumentField", () => {
   const React = jest.requireActual("react");
   return { SupportingDocumentField: ({ label, onChoose }: { label: string; onChoose: () => void }) => React.createElement("DocumentButton", { label, onChoose }) };
@@ -43,7 +43,7 @@ function walk(node: React.ReactNode): Element[] {
 }
 function render(loadError = "") {
   mockStateCursor = mockRefCursor = mockEffectCursor = 0;
-  const nodes = walk(DiscountApplicationScreen({ state: current, loading: false, loadError, onRefresh: refresh, onClose: close, onGoHome: close, onOpenRenewal: renewal }));
+  const nodes = walk(DiscountApplicationScreen({ state: current, loading: false, loadError, onRefresh: refresh, onGoHome: close, onOpenRenewal: renewal }));
   mockEffects.splice(0).forEach((effect) => effect());
   return nodes;
 }
@@ -75,6 +75,20 @@ test("offline submission remains retryable and never displays success", async ()
   expect(render().some((node) => node.props.children === "Offline")).toBe(true);
   expect(refresh).not.toHaveBeenCalled();
   expect(button("Submit application").props.disabled).toBe(false);
+});
+
+test("student selection uses web card styling and keeps school details across category changes", () => {
+  button("Student").props.onPress();
+  let nodes = render();
+  const selected = nodes.find(node => node.props.accessibilityLabel === "Student")!;
+  expect(selected.props.style.backgroundColor).toBe("#1A5FB4");
+  const student = nodes.find(node => node.type === "DiscountSchoolProofFields")!;
+  expect(student.props.fields).toMatchObject({ education_level: "", grade_level: "", enrollment_term: "" });
+  student.props.onChange({ ...student.props.fields, school_name: "Current school" });
+  button("PWD").props.onPress();
+  button("Student").props.onPress();
+  nodes = render();
+  expect(nodes.find(node => node.type === "DiscountSchoolProofFields")!.props.fields.school_name).toBe("Current school");
 });
 test("stale revision conflict refreshes status instead of retrying a write", async () => {
   await choosePwd();

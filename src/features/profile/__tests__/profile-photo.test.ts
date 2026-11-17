@@ -5,7 +5,7 @@ import { pickProfilePhoto, profilePhotoForm } from "../profile-photo";
 
 jest.mock("react-native", () => ({ Platform: { OS: "android" } }));
 jest.mock("expo-image-picker", () => ({ requestMediaLibraryPermissionsAsync: jest.fn(), launchImageLibraryAsync: jest.fn() }));
-jest.mock("expo-file-system", () => ({ File: class { bytes() { return Promise.resolve(new Uint8Array([1, 2, 3])); } } }));
+jest.mock("expo-file-system", () => ({ File: class { constructor(public uri: string) {} async bytes() { return new Uint8Array([4, 5]); } } }));
 beforeEach(() => {
   jest.resetAllMocks();
   (Platform as { OS: string }).OS = "android";
@@ -21,6 +21,12 @@ test("denied photo permission gives an actionable error without launching picker
 test("cancelled picker is not a failed upload", async () => {
   (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValue({ canceled: true });
   expect(await pickProfilePhoto()).toBeNull();
+});
+
+test("selection keeps the uncropped dimensions for the in-app adjustment step", async () => {
+  (ImagePicker.launchImageLibraryAsync as jest.Mock).mockResolvedValue({ canceled: false, assets: [{ uri: "file:///photo.jpg", mimeType: "image/jpeg", width: 600, height: 400, fileSize: 1000 }] });
+  expect(await pickProfilePhoto()).toMatchObject({ width: 600, height: 400 });
+  expect(ImagePicker.launchImageLibraryAsync).toHaveBeenCalledWith(expect.objectContaining({ allowsEditing: false }));
 });
 
 test.each(["image/gif", "image/svg+xml", "application/pdf", ""])('rejects unsupported type %s', async type => {
@@ -40,14 +46,14 @@ test("browser photo uses the actual File rather than a local URI string", async 
   expect((await profilePhotoForm(photo!)).get("photo")).toBe(file);
 });
 
-test("native multipart sends file bytes with the original name and MIME type", async () => {
+test("native multipart provides file bytes with the original name and MIME type", async () => {
   const Original = globalThis.FormData;
   const append = jest.fn();
   globalThis.FormData = class { append = append; } as unknown as typeof FormData;
   try {
     await profilePhotoForm({ uri: "file:///photo.webp", name: "photo.webp", type: "image/webp" });
-    expect(append).toHaveBeenCalledWith("photo", expect.any(Blob), "photo.webp");
-    expect(append.mock.calls[0][1]).toMatchObject({ type: "image/webp", size: 3 });
+    expect(append).toHaveBeenCalledWith("photo", expect.objectContaining({ name: "photo.webp", type: "image/webp", bytes: expect.any(Function) }));
+    expect(await append.mock.calls[0][1].bytes()).toEqual(new Uint8Array([4, 5]));
   } finally { globalThis.FormData = Original; }
 });
 

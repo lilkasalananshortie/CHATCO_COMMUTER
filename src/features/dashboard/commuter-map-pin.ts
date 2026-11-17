@@ -7,10 +7,10 @@ export function commuterLocationCss(isLight: boolean): string {
   return `
     .commuter-location-marker { width:30px;height:30px;background:#1A5FB4;border:2px solid #FFFFFF;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.5);cursor:pointer; }
     .chatco-location-popup .leaflet-popup-content-wrapper { padding:0;border:1px solid ${isLight ? '#e5e7eb' : '#2a3a55'};border-radius:14px;background:${isLight ? '#FFFFFF' : '#0d192a'};overflow:hidden; }
-    .chatco-location-popup .leaflet-popup-content { margin:0;font-family:Poppins,system-ui,sans-serif;font-size:12px;line-height:1.5;color:${isLight ? '#374151' : '#e2e8f0'}; }
+    .chatco-location-popup .leaflet-popup-content { margin:0;font-family:Poppins;font-size:12px;line-height:1.5;color:${isLight ? '#374151' : '#e2e8f0'}; }
     .chatco-location-popup .leaflet-popup-tip { background:${isLight ? '#FFFFFF' : '#0d192a'}; }
     .chatco-unit-popup .leaflet-popup-content-wrapper { padding:0;border:1px solid ${isLight ? '#e5e7eb' : '#2a3a55'};border-radius:14px;background:${isLight ? '#fff' : '#0d192a'};overflow:hidden;box-shadow:0 12px 32px rgba(0,0,0,.3); }
-    .chatco-unit-popup .leaflet-popup-content { margin:0;max-width:calc(100vw - 48px);font-family:Poppins,system-ui,sans-serif;font-size:12px;line-height:1.5;color:${isLight ? '#374151' : '#e2e8f0'}; }
+    .chatco-unit-popup .leaflet-popup-content { margin:0;max-width:calc(100vw - 48px);font-family:Poppins;font-size:12px;line-height:1.5;color:${isLight ? '#374151' : '#e2e8f0'}; }
     .chatco-unit-popup .leaflet-popup-tip { background:${isLight ? '#fff' : '#0d192a'}; }
     .unit-popup { width:290px;max-width:calc(100vw - 48px); }
     .unit-popup-header { display:flex;align-items:center;gap:10px;padding:16px 16px 14px;border-bottom:1px solid ${isLight ? '#e5e7eb' : '#23344f'}; }

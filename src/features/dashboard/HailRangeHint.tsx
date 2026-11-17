@@ -34,11 +34,11 @@ export function HailRangeHint({ reason, onRetry }: { reason: HailHintReason; onR
       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingRight: 24 }}><WebIcon name="map-pin-off" size={16} color={isLight ? "#D97706" : "#FBBF24"} /><Text style={{ flex: 1, fontSize: 14, fontWeight: "600", color: colors.textPrimary }}>{copy.title}</Text></View>
       <Pressable accessibilityRole="button" accessibilityLabel="Close hail information" hitSlop={10} onPress={() => setOpen(false)} style={{ position: "absolute", top: 12, right: 12 }}><WebIcon name="x" size={18} color={colors.textMuted} /></Pressable>
       <Text style={{ marginTop: 6, fontSize: 12, lineHeight: 18, color: colors.textSecondary }}>{copy.message}</Text>
-      {reason !== "out-of-range" && <Pressable accessibilityRole="button" onPress={() => {
+      {(reason === "denied" || reason === "unavailable") && <Pressable accessibilityRole="button" onPress={() => {
         if (reason === "denied") void Linking.openSettings().catch(() => setSettingsError(true));
         else { onRetry(); setOpen(false); }
       }} style={{ paddingVertical: 12 }}><Text style={{ color: colors.primaryLight, fontSize: 12, fontWeight: "600" }}>{reason === "denied" ? "Open device settings" : "Retry location"}</Text></Pressable>}
-      {settingsError && <Text style={{ color: colors.danger, fontSize: 12 }}>Open your device settings and allow location for CHATCO.</Text>}
+      {settingsError && <Text style={{ color: colors.danger, fontSize: 12 }}>Open your device settings and allow location for E-CHATCO.</Text>}
       </View>
       </View>
     </Modal>

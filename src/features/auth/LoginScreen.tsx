@@ -1,17 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-  TouchableOpacity,
-  ActivityIndicator,
-  useWindowDimensions,
-  Image,
-} from "react-native";
+import { Text, TextInput } from "../../shared/ui/BrandText";
+import { Animated, Easing, View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity, ActivityIndicator, useWindowDimensions, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { commuterColors } from "../../core/theme/colors";
 import { authService } from "../../core/api/auth-service";
@@ -20,16 +9,19 @@ import { Mascot } from "../../shared/ui/Mascot";
 import { MascotMessage } from "../../shared/ui/MascotMessage";
 import { getMascotErrorState, shouldIllustrateError } from "../../shared/ui/mascot-error";
 import { ForgotPasswordScreen } from "./ForgotPasswordScreen";
+import { useReducedMotion } from "../../shared/useReducedMotion";
 
 interface LoginScreenProps {
   onLoginSuccess: (user: User, token: string) => void;
-  onGoToRegister: () => void;
+  onGoToRegister: (animateEntrance: boolean) => void;
+  animateEntranceFromRight?: boolean;
   onResetOnboarding?: () => void;
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({
   onLoginSuccess,
   onGoToRegister,
+  animateEntranceFromRight = false,
   onResetOnboarding,
 }) => {
   const colors = commuterColors;
@@ -45,6 +37,20 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [illustratedError, setIllustratedError] = useState<ReturnType<typeof getMascotErrorState> | null>(null);
   const [showRecovery, setShowRecovery] = useState(false);
+  const reducedMotion = useReducedMotion();
+  const entrance = useRef(new Animated.Value(animateEntranceFromRight ? 0 : 1)).current;
+
+  useEffect(() => {
+    if (!animateEntranceFromRight) { entrance.setValue(1); return; }
+    const animation = Animated.timing(entrance, {
+      toValue: 1,
+      duration: 280,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: Platform.OS !== "web",
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [animateEntranceFromRight, entrance]);
 
   const submitting = useRef(false);
   const mounted = useRef(true);
@@ -94,12 +100,15 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   };
 
   if (showRecovery) {
-    return <ForgotPasswordScreen onBack={() => setShowRecovery(false)} />;
+    return <ForgotPasswordScreen onBack={() => setShowRecovery(false)} reducedMotion={reducedMotion} />;
   }
 
   return (
     <View style={styles.outerContainer}>
-
+      <Animated.View style={[styles.container, {
+        opacity: entrance,
+        transform: [{ translateX: entrance.interpolate({ inputRange: [0, 1], outputRange: [28, 0] }) }],
+      }]}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.container}
@@ -114,7 +123,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         >
           <View style={styles.formWrapper}>
             <View style={styles.jeepneyHeroContainer}>
-              <Mascot pose="phone" size={168} accessibilityLabel="ChatCo mascot welcoming you to sign in" />
+              <Mascot pose="phone" size={168} accessibilityLabel="E-CHATCO mascot welcoming you to sign in" />
             </View>
 
             {/* Form Content that smoothly slides out as the jeep takes off */}
@@ -122,19 +131,29 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               {/* Top Brand Mark */}
               <View style={styles.brandHeader}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <Image source={require("../../../assets/logo-transparent.png")} style={{ width: 32, height: 32 }} resizeMode="contain" accessibilityLabel="ChatCo logo" />
-                <Text style={styles.brandTitle}>CHATCO.</Text>
+                <Image source={require("../../../assets/logo-e-chatco.png")} style={{ width: 32, height: 32 }} resizeMode="contain" accessibilityLabel="E-CHATCO logo" />
+                <Text style={styles.brandTitle}>E-CHATCO.</Text>
               </View>
               <Text style={styles.brandSubtitle}>Commuter Portal</Text>
+              {onResetOnboarding && (
+                <TouchableOpacity
+                  onPress={onResetOnboarding}
+                  disabled={loading}
+                  style={styles.tourIconButton}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel="App Walkthrough"
+                  accessibilityHint="Open the app features guide"
+                >
+                  <Ionicons name="help-circle-outline" size={23} color="#94A3B8" />
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* Section Heading */}
             <View style={styles.headingBlock}>
               <View style={styles.headingCopy}>
-              <Text style={styles.headingTitle}>Welcome back</Text>
-              <Text style={styles.headingSubtitle}>
-                Sign in with your existing commuter account.
-              </Text>
+                <Text style={styles.headingTitle}>Welcome back</Text>
               </View>
             </View>
 
@@ -180,7 +199,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           </View>
 
           {/* Password Field */}
-          <View style={styles.fieldGroup}>
+          <View style={[styles.fieldGroup, styles.passwordFieldGroup]}>
             <Text style={styles.label}>Password</Text>
             <View
               style={[
@@ -250,26 +269,16 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           {/* Register Prompt */}
           <View style={styles.registerRow}>
             <Text style={styles.registerPrompt}>Don&apos;t have an account? </Text>
-            <TouchableOpacity onPress={onGoToRegister} disabled={loading} activeOpacity={0.7}>
+            <TouchableOpacity onPress={() => onGoToRegister(!reducedMotion)} disabled={loading} activeOpacity={0.7}>
               <Text style={styles.registerLink}>Create one</Text>
             </TouchableOpacity>
           </View>
 
-            {/* Optional Onboarding Tour Reset */}
-            {onResetOnboarding && (
-              <TouchableOpacity
-                onPress={onResetOnboarding}
-                disabled={loading}
-                style={styles.tourLink}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.tourLinkText}>App Walkthrough</Text>
-              </TouchableOpacity>
-            )}
             </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      </Animated.View>
     </View>
   );
 };
@@ -310,8 +319,9 @@ const baseStyles = StyleSheet.create({
   },
   brandHeader: {
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: 16,
   },
+  tourIconButton: { position: "absolute", right: 0, top: 0, width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   brandTitle: {
     fontSize: 28,
     fontWeight: "900",
@@ -330,20 +340,15 @@ const baseStyles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    marginBottom: 20,
+    marginBottom: 16,
   },
   headingCopy: { flex: 1, minWidth: 0 },
   headingTitle: {
+    textAlign: "center",
     fontSize: 22,
     fontWeight: "800",
     color: "#FFFFFF",
     letterSpacing: -0.3,
-  },
-  headingSubtitle: {
-    fontSize: 14,
-    color: "#94A3B8",
-    marginTop: 4,
-    lineHeight: 20,
   },
   errorBanner: {
     flexDirection: "row",
@@ -363,15 +368,16 @@ const baseStyles = StyleSheet.create({
     lineHeight: 17,
   },
   fieldGroup: {
-    marginBottom: 18,
+    marginBottom: 12,
   },
+  passwordFieldGroup: { marginBottom: 0 },
   label: {
     fontSize: 11,
     fontWeight: "700",
     color: "#94A3B8",
     textTransform: "uppercase",
     letterSpacing: 0.5,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   inputWrapper: {
     flexDirection: "row",
@@ -406,7 +412,7 @@ const baseStyles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 8,
+    marginTop: 2,
     shadowColor: "#1A5FB4",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -438,7 +444,7 @@ const baseStyles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    marginTop: 24,
+    marginTop: 16,
   },
   registerPrompt: {
     fontSize: 13,
@@ -448,16 +454,5 @@ const baseStyles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     color: "#62A0EA",
-  },
-  tourLink: {
-    alignSelf: "center",
-    marginTop: 18,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-  },
-  tourLinkText: {
-    fontSize: 12,
-    color: "rgba(255, 255, 255, 0.4)",
-    fontWeight: "600",
   },
 });

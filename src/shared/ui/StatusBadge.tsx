@@ -1,5 +1,6 @@
 import React from "react";
-import { View, Text, StyleSheet, ViewStyle, StyleProp } from "react-native";
+import { Text } from "./BrandText";
+import { View, StyleSheet, ViewStyle, StyleProp } from "react-native";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 
 export type BadgeStatus =

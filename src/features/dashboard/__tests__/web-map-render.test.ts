@@ -16,7 +16,8 @@ test("web map renders through React Native Web without render errors", () => {
   try {
     const html = renderToStaticMarkup(React.createElement(CommuterLiveMap, { vehicles: [] }));
     expect(html).toContain('<iframe');
-    expect(html).toContain('Fallback route');
+    expect(html).not.toContain('Fallback route');
+    expect(html).not.toContain('Saved route');
     expect(errors).not.toHaveBeenCalled();
   } finally { errors.mockRestore(); }
 });

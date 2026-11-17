@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useRef } from "react";
-import { ActivityIndicator, Animated, AppState, Easing, KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { ActivityIndicator, Animated, AppState, Easing, KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { commuterService } from "../../core/api/commuter-service";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
-import { Text } from "../../shared/ui/BrandText";
+import { Text, TextInput } from "../../shared/ui/BrandText";
 import { estimateFare, normalizeFareMatrix, type FareCategory, type PublishedFareMatrix } from "./fare-estimate";
 import { emptySelection, matchesFarePoint, reconcileSelection, selectStop, subStops, swapStops, type FareField } from "./fare-selection";
 import { useReducedMotion } from "../../shared/useReducedMotion";
@@ -38,10 +38,23 @@ function AnimatedFareChevron({ expanded, color }: { expanded: boolean; color: st
   }, [expanded, reduceMotion, rotation]);
   return <Animated.View style={{ transform: [{ rotate: rotation.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "180deg"] }) }] }}><FareIcon name="chevron" color={color} /></Animated.View>;
 }
+function AnimatedRoutePanel({ expanded, children }: { expanded: boolean; children: React.ReactNode }) {
+  const reduced = useReducedMotion();
+  const [height, setHeight] = useState(0);
+  const progress = useRef(new Animated.Value(expanded ? 1 : 0)).current;
+  useEffect(() => {
+    if (reduced) { progress.setValue(expanded ? 1 : 0); return; }
+    const animation = Animated.timing(progress, { toValue: expanded ? 1 : 0, duration: 300, easing: Easing.inOut(Easing.ease), useNativeDriver: false });
+    animation.start(); return () => animation.stop();
+  }, [expanded, reduced, progress]);
+  return <Animated.View pointerEvents={expanded ? "auto" : "none"} accessibilityElementsHidden={!expanded} importantForAccessibility={expanded ? "auto" : "no-hide-descendants"} style={{ overflow: "hidden", height: height ? progress.interpolate({ inputRange: [0, 1], outputRange: [0, height] }) : expanded ? undefined : 0 }}>
+    <View onLayout={event => setHeight(event.nativeEvent.layout.height)}>{children}</View>
+  </Animated.View>;
+}
 const categories: [FareCategory, string][] = [["REGULAR", "Regular"], ["STUDENT", "Student"], ["SENIOR", "Senior Citizen"], ["PWD", "PWD"]];
 const money = (value: number) => "₱" + value.toFixed(2);
 
-export function FareScreen() {
+export function FareScreen({ onClose }: { onClose?: () => void } = {}) {
   const { isLight } = useCommuterTheme();
   const ink = isLight ? "#111827" : "#FFFFFF";
   const muted = isLight ? "#64748B" : "#94A3B8";
@@ -56,7 +69,7 @@ export function FareScreen() {
   const [field, setField] = useState<FareField>("pickup");
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [routePanelOpen, setRoutePanelOpen] = useState(false);
+  const [routePanelOpen, setRoutePanelOpen] = useState(true);
   const selectedCategoryLabel = categories.find(([kind]) => kind === category)?.[1] ?? "Regular";
   const active = useRef(true);
   const inFlight = useRef(false);
@@ -78,7 +91,7 @@ export function FareScreen() {
   useEffect(() => {
     active.current = true; void load();
     const subscription = AppState.addEventListener("change", state => { if (state === "active") void load(); });
-    const timer = setInterval(() => { if (AppState.currentState !== "background") void load(true); }, 15000);
+    const timer = setInterval(() => { if (AppState.currentState === "active") void load(true); }, 60000);
     const reconnect = () => void load(true);
     if (Platform.OS === "web") globalThis.addEventListener?.("online", reconnect);
     return () => {
@@ -90,8 +103,8 @@ export function FareScreen() {
   const to = matrix?.points.find(point => point.id === selection.destination);
   const estimate = matrix && from && to ? estimateFare(matrix, from.id, to.id, category) : null;
   const same = !!from && !!to && from.pointNumber === to.pointNumber;
-  const accent = same ? (isLight ? "#7C3AED" : "#A78BFA") : (isLight ? "#047857" : "#34D399");
-  const tint = same ? "#8B5CF61A" : "#10B9811A";
+  const accent = isLight ? "#1A5FB4" : "#99C1F1";
+  const tint = isLight ? "#EAF2FC" : "#123252";
   const filtered = matrix?.points.filter(point => matchesFarePoint(point, query)) ?? [];
   const traversed = from && to ? Math.abs(from.pointNumber - to.pointNumber) + 1 : 0;
   const baseCount = matrix?.config.baseBarangayCount ?? 4;
@@ -102,13 +115,13 @@ export function FareScreen() {
   };
   return <KeyboardAvoidingView style={[s.screen, { backgroundColor: background }]} behavior={Platform.OS === "ios" ? "padding" : undefined}>
     <View style={[s.header, { backgroundColor: surface, borderColor: border }]}>
-      <Text accessibilityRole="header" style={[s.title, { color: ink }]}>Fare Calculator</Text>
-      <Pressable accessibilityRole="button" accessibilityLabel="Toggle route panel" accessibilityState={{ expanded: routePanelOpen }} onPress={() => setRoutePanelOpen(value => !value)} style={[s.row, { justifyContent: "space-between", paddingVertical: 12 }]}>
-        <Text style={[s.small, { color: ink, flex: 1 }]}>Pickup, drop-off & commuter type</Text>
-        {!routePanelOpen && <Text style={[s.small, { color: muted }]}>{selectedCategoryLabel}</Text>}
-        <AnimatedFareChevron expanded={routePanelOpen} color={muted} />
-      </Pressable>
-      {routePanelOpen && <>
+      <View style={[s.row, { justifyContent: "space-between" }]}>
+        <Text accessibilityRole="header" style={[s.title, { color: ink, flex: 1 }]}>Fare Calculator</Text>
+        {onClose && <Pressable accessibilityRole="button" accessibilityLabel="Close Fare Matrix" onPress={onClose} style={{ width: 44, height: 44, flexShrink: 0, alignItems: "center", justifyContent: "center" }}><FareIcon name="close" color={muted} /></Pressable>}
+      </View>
+      {!routePanelOpen && <Text style={[s.small, { color: muted, paddingVertical: 8 }]}>{selectedCategoryLabel}</Text>}
+      <AnimatedRoutePanel expanded={routePanelOpen}>
+      <Text style={[s.small, { color: muted, paddingBottom: 10 }]}>Pickup, drop-off & commuter type</Text>
       {(["pickup", "destination"] as const).map((key, index) => {
         const point = key === "pickup" ? from : to;
         const label = key === "pickup" ? "Pickup" : "Drop-off";
@@ -124,12 +137,15 @@ export function FareScreen() {
           </View>
         </React.Fragment>;
       })}
-      {same && <Text style={[s.same, { color: accent, backgroundColor: tint }]}>Same pickup & drop-off — both locations shown in violet</Text>}
+      {same && <Text style={[s.same, { color: muted, backgroundColor: tint }]}>Same barangay for pickup and drop-off; base fare applies.</Text>}
       <Text style={[s.label, { color: muted, marginTop: 10 }]}>COMMUTER TYPE</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.categories}>
         {categories.map(([kind, label]) => <Pressable key={kind} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected: category === kind }} onPress={() => setCategory(kind)} style={[s.category, { backgroundColor: category === kind ? "#1A5FB4" : isLight ? "#F1F5F9" : "#FFFFFF0D" }]}><Text style={[s.small, { color: category === kind ? "white" : muted }]}>{label}</Text></Pressable>)}
       </ScrollView>
-      </>}
+      </AnimatedRoutePanel>
+      <Pressable accessibilityRole="button" accessibilityLabel="Toggle route panel" accessibilityState={{ expanded: routePanelOpen }} onPress={() => setRoutePanelOpen(value => !value)} style={{ width: "100%", minHeight: 36, alignItems: "center", justifyContent: "center", borderTopWidth: 1, borderColor: border, marginTop: 8 }}>
+        <AnimatedFareChevron expanded={routePanelOpen} color={muted} />
+      </Pressable>
     </View>
     <View style={s.searchArea}><View style={[s.search, { borderColor: border, backgroundColor: surface }]}><FareIcon name="search" color={muted} /><TextInput accessibilityLabel="Search barangay or landmark" placeholder="Search barangay or landmark..." placeholderTextColor={muted} value={query} onChangeText={setQuery} style={[s.input, { color: ink }]} /></View><Text style={[s.hint, { color: muted }]}>Tap your {field === "pickup" ? "boarding" : "destination"} Point Area — then select a sub {field === "pickup" ? "pickup" : "drop-off"} point · Auto-opens after selection</Text></View>
     <ScrollView testID="fare-location-list" style={s.list} contentContainerStyle={s.listContent} keyboardShouldPersistTaps="handled" refreshControl={<RefreshControl refreshing={loading} onRefresh={() => void load()} tintColor={accent} />}>
@@ -148,7 +164,7 @@ export function FareScreen() {
             <Pressable accessibilityRole="button" accessibilityLabel={"Expand " + point.name} accessibilityState={{ expanded: expanded === point.id }} onPress={() => setExpanded(expanded === point.id ? null : point.id)} style={s.iconButton}><AnimatedFareChevron expanded={expanded === point.id} color={muted} /></Pressable>
           </View>
           {expanded === point.id && <View style={s.stops}><Text style={[s.hint, { color: muted }]}>SUB PICKUP/DROP-OFF POINTS IN {point.name.toUpperCase()} · tap to select</Text>
-            {["", ...stops].map(stop => <Pressable key={stop} accessibilityRole="button" accessibilityLabel={stop || "Use " + point.name + " Point Area only"} onPress={() => { setSelection(previous => selectStop(previous, field, point.id, stop)); setExpanded(null); setQuery(""); if (field === "pickup") setField("destination"); }} style={s.stop}><View style={[s.dot, { width: 6, height: 6, backgroundColor: stop ? accent : "#F59E0B" }]} /><Text style={[s.small, { color: stop ? ink : isLight ? "#92400E" : "#FBBF24", flex: 1 }]}>{stop || "Use Point Area only"}</Text>{stop && ((pickup && selection.pickupLandmark === stop) || (dropoff && selection.destinationLandmark === stop)) ? <Text style={[s.label, { color: accent }]}>{pickup && selection.pickupLandmark === stop ? dropoff && selection.destinationLandmark === stop ? "BOTH" : "PICKUP" : "DROP-OFF"}</Text> : null}</Pressable>)}
+            {["", ...stops].map(stop => <Pressable key={stop} accessibilityRole="button" accessibilityLabel={stop || "Use " + point.name + " Point Area only"} onPress={() => { setSelection(previous => selectStop(previous, field, point.id, stop)); setExpanded(null); setQuery(""); if (field === "pickup") setField("destination"); }} style={s.stop}><View style={[s.dot, { width: 6, height: 6, backgroundColor: stop ? accent : muted }]} /><Text style={[s.small, { color: stop ? ink : muted, flex: 1 }]}>{stop || "Use Point Area only"}</Text>{stop && ((pickup && selection.pickupLandmark === stop) || (dropoff && selection.destinationLandmark === stop)) ? <Text style={[s.label, { color: accent }]}>{pickup && selection.pickupLandmark === stop ? dropoff && selection.destinationLandmark === stop ? "BOTH" : "PICKUP" : "DROP-OFF"}</Text> : null}</Pressable>)}
           </View>}
         </View>;
       })}

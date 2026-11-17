@@ -42,7 +42,7 @@ export function ProfileIcon({ name, size = 22, color = "#99C1F1" }: { name: Prof
   </Svg>;
 }
 
-export function ProfileIdentityBackground({ isLight }: { isLight: boolean }) {
+export function ProfileIdentityBackground({ isLight, width = 0, height = 0 }: { isLight: boolean; width?: number; height?: number }) {
   if (Platform.OS === "web") {
     return React.createElement("div", {
       "aria-hidden": true,
@@ -53,11 +53,12 @@ export function ProfileIdentityBackground({ isLight }: { isLight: boolean }) {
       } as CSSProperties,
     });
   }
-  return <Svg width="100%" height="100%" style={{ pointerEvents: "none", position: "absolute", top: 0, left: 0 }} preserveAspectRatio="none"  accessible={false}>
+  if (width <= 0 || height <= 0) return null;
+  return <Svg width={width} height={height} style={{ pointerEvents: "none", position: "absolute", top: 0, left: 0 }} accessible={false}>
     <Defs><LinearGradient id="profileIdentity" x1="0%" y1="0%" x2="100%" y2="100%">
       <Stop offset="0%" stopColor={isLight ? "#F0F7FF" : "#102E50"} />
       <Stop offset="100%" stopColor={isLight ? "#FFFFFF" : "#071A2E"} />
     </LinearGradient></Defs>
-    <Rect width="100%" height="100%" rx={16} ry={16} fill="url(#profileIdentity)" />
+    <Rect width={width} height={height} rx={16} ry={16} fill="url(#profileIdentity)" />
   </Svg>;
 }

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Animated, Easing, Image, PanResponder, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Text } from "../../shared/ui/BrandText";
+import { AccessibilityInfo, Animated, Easing, Image, PanResponder, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -23,6 +24,11 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onFinish }) 
   const [finishing, setFinishing] = useState(false);
   const [finishError, setFinishError] = useState(false);
   const float = useRef(new Animated.Value(0)).current;
+  const slideProgress = useRef(new Animated.Value(1)).current;
+  const exitProgress = useRef(new Animated.Value(1)).current;
+  const slideAnimation = useRef<Animated.CompositeAnimation | null>(null);
+  const exitAnimation = useRef<Animated.CompositeAnimation | null>(null);
+  const slideDirection = useRef(1);
   const scroll = useRef<ScrollView>(null);
   const busy = useRef(false);
   const mounted = useRef(true);
@@ -42,6 +48,8 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onFinish }) 
     }).catch(() => {});
     return () => {
       mounted.current = false;
+      slideAnimation.current?.stop();
+      exitAnimation.current?.stop();
       subscription.remove();
     };
   }, []);
@@ -56,11 +64,31 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onFinish }) 
     return () => animation.stop();
   }, [reducedMotion, float]);
 
+  useEffect(() => {
+    if (reducedMotion) {
+      slideAnimation.current?.stop();
+      slideProgress.setValue(1);
+    }
+  }, [reducedMotion, slideProgress]);
+
   const move = (nextIndex: number) => {
     if (busy.current || nextIndex < 0 || nextIndex >= WALKTHROUGH_SLIDES.length) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    slideAnimation.current?.stop();
+    slideDirection.current = nextIndex > index ? 1 : -1;
+    slideProgress.setValue(reducedMotion ? 1 : 0);
     setIndex(nextIndex);
     scroll.current?.scrollTo({ y: 0, animated: false });
+    if (!reducedMotion) {
+      const animation = Animated.timing(slideProgress, {
+        toValue: 1,
+        duration: 340,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      });
+      slideAnimation.current = animation;
+      animation.start();
+    }
   };
 
   const finish = async (view: "LOGIN" | "REGISTER") => {
@@ -76,7 +104,20 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onFinish }) 
       busy.current = false;
       return;
     }
-    if (mounted.current) onFinish(view);
+    if (!mounted.current) return;
+    if (view === "REGISTER" && !reducedMotion) {
+      slideAnimation.current?.stop();
+      const animation = Animated.timing(exitProgress, {
+        toValue: 0,
+        duration: 280,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      });
+      exitAnimation.current = animation;
+      const completed = await new Promise<boolean>((resolve) => animation.start(({ finished }) => resolve(finished)));
+      if (!completed || !mounted.current) return;
+    }
+    onFinish(view);
   };
 
   const panResponder = useMemo(() => PanResponder.create({
@@ -89,15 +130,24 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onFinish }) 
   }), [index]);
 
   return (
-    <View {...panResponder.panHandlers} style={[styles.screen, { backgroundColor: slide.background, paddingTop: Math.max(insets.top, 16), paddingBottom: Math.max(insets.bottom, 16) }]}>
+    <View {...panResponder.panHandlers} style={[styles.screen, { backgroundColor: slide.background }]}>
+      <Animated.View style={[styles.screen, {
+        paddingTop: Math.max(insets.top, 16),
+        paddingBottom: Math.max(insets.bottom, 16),
+        opacity: exitProgress,
+        transform: [{ translateY: exitProgress.interpolate({ inputRange: [0, 1], outputRange: [-18, 0] }) }],
+      }]}>
       <View style={styles.header}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <Image source={require("../../../assets/logo-transparent.png")} style={{ width: 26, height: 26 }} resizeMode="contain" accessibilityLabel="ChatCo logo" />
-          <Text style={styles.brand}>CHATCO</Text>
+          <Image source={require("../../../assets/logo-e-chatco.png")} style={{ width: 26, height: 26 }} resizeMode="contain" accessibilityLabel="E-CHATCO logo" />
+          <Text style={styles.brand}>E-CHATCO</Text>
         </View>
       </View>
       <ScrollView ref={scroll} style={styles.scroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.slide}>
+        <Animated.View style={[styles.slide, {
+          opacity: slideProgress.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] }),
+          transform: [{ translateX: slideProgress.interpolate({ inputRange: [0, 1], outputRange: [slideDirection.current * 28, 0] }) }],
+        }]}>
           <View style={[styles.stage, { width: mascotSize + 32, height: mascotSize + 32 }]}>
             <View accessible={false} style={[styles.halo, { backgroundColor: slide.accent + "20", borderColor: slide.accent + "35" }, { pointerEvents: "none" }]} />
             <View accessible={false} style={[styles.orbit, { borderColor: slide.accent + "35" }, { pointerEvents: "none" }]} />
@@ -112,7 +162,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onFinish }) 
           </View>}
           <Text accessibilityRole="header" style={styles.title}>{slide.title}</Text>
           <Text style={styles.description}>{slide.description}</Text>
-        </View>
+        </Animated.View>
       </ScrollView>
       <View style={styles.footer}>
         <View style={styles.pagination} accessibilityLabel={"Walkthrough step " + (index + 1) + " of " + WALKTHROUGH_SLIDES.length}>
@@ -122,11 +172,11 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onFinish }) 
         </View>
         {finishError && <Text accessibilityRole="alert" style={styles.error}>Couldn't save your progress. Please try again.</Text>}
         <View style={styles.actions}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Go to previous slide" accessibilityState={{ disabled: index === 0 || finishing }} disabled={index === 0 || finishing} onPress={() => move(index - 1)} style={({ pressed }) => [styles.backButton, (index === 0 || finishing) && styles.disabled, pressed && styles.pressed]}>
+          {index > 0 && <Pressable accessibilityRole="button" accessibilityLabel="Go to previous slide" accessibilityState={{ disabled: finishing }} disabled={finishing} onPress={() => move(index - 1)} style={({ pressed }) => [styles.backButton, finishing && styles.disabled, pressed && styles.pressed]}>
             <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
-          </Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel={last ? "Create Account" : "Go to next slide"} accessibilityState={{ disabled: finishing, busy: finishing }} disabled={finishing} onPress={() => last ? finish("REGISTER") : move(index + 1)} style={({ pressed }) => [styles.primaryButton, { backgroundColor: slide.accent }, pressed && styles.pressed, finishing && styles.disabled]}>
-            <Text style={styles.buttonText}>{finishing ? "Please wait..." : last ? "Create Account" : "Next"}</Text>
+          </Pressable>}
+          <Pressable accessibilityRole="button" accessibilityLabel={last ? "Create Account" : index === 0 ? "Get Started" : "Go to next slide"} accessibilityState={{ disabled: finishing, busy: finishing }} disabled={finishing} onPress={() => last ? finish("REGISTER") : move(index + 1)} style={({ pressed }) => [styles.primaryButton, { backgroundColor: slide.accent }, pressed && styles.pressed, finishing && styles.disabled]}>
+            <Text style={styles.buttonText}>{finishing ? "Please wait..." : last ? "Create Account" : index === 0 ? "Get Started" : "Next"}</Text>
             <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
           </Pressable>
         </View>
@@ -136,6 +186,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onFinish }) 
           </Pressable>
         )}
       </View>
+      </Animated.View>
     </View>
   );
 };

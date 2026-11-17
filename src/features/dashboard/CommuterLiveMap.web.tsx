@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Text, View, StyleSheet, StyleProp, ViewStyle } from "react-native";
+import { View, StyleSheet, StyleProp, ViewStyle } from "react-native";
 import Constants from "expo-constants";
 import { commuterColors } from "../../core/theme/colors";
 import type { VehicleLocation } from "../../core/domain/types";
@@ -9,6 +9,7 @@ import { MAP_RUNTIME } from "./map-runtime";
 import { commuterLocationCss } from "./commuter-map-pin";
 import { UnitDetailsPanel } from "./UnitDetailsPanel";
 import { mapVehicleState } from "./map-vehicle-state";
+import { useMapFontCss } from "./useMapFontCss";
 
 const CARTO_API_KEY =
   process.env.EXPO_PUBLIC_CARTO_API_KEY ||
@@ -18,6 +19,7 @@ const CARTO_API_KEY =
 
 export interface CommuterLiveMapProps {
   vehicles: VehicleLocation[];
+  route?: ReturnType<typeof usePublishedRoute>;
   userLocation?: { latitude: number; longitude: number } | null;
   isHailing?: boolean;
   style?: StyleProp<ViewStyle>;
@@ -25,11 +27,14 @@ export interface CommuterLiveMapProps {
 
 export const CommuterLiveMap = React.memo(function CommuterLiveMap({
   vehicles,
+  route: providedRoute,
   userLocation,
   isHailing = false,
   style,
 }: CommuterLiveMapProps) {
-  const route = usePublishedRoute();
+  const loadedRoute = usePublishedRoute(!providedRoute);
+  const route = providedRoute ?? loadedRoute;
+  const mapFontCss = useMapFontCss();
   const { isLight, colors } = useCommuterTheme();
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
@@ -74,6 +79,8 @@ export const CommuterLiveMap = React.memo(function CommuterLiveMap({
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
+    ${mapFontCss}
+    body, .leaflet-container { font-family: Poppins; }
     html, body, #map {
       width: 100%;
       height: 100%;
@@ -144,13 +151,10 @@ export const CommuterLiveMap = React.memo(function CommuterLiveMap({
   </script>
 </body>
 </html>
-  `, [routePointsJs, routeCenter.latitude, routeCenter.longitude, isLight]);
+  `, [routePointsJs, routeCenter.latitude, routeCenter.longitude, isLight, mapFontCss]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.surfaceSecondary }, style]}>
-      {route.source !== "backend" && <Text style={{ position: "absolute", top: 8, left: 8, zIndex: 5, color: "white", backgroundColor: "#071A2E", padding: 8, borderRadius: 8 }}>
-        {route.source === "cached" ? "Saved route — reconnect to refresh" : "Fallback route — awaiting published route"}
-      </Text>}
       {React.createElement("iframe", {
         ref: frameRef,
         srcDoc: htmlContent,

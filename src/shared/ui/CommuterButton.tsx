@@ -1,14 +1,6 @@
 import React from "react";
-import {
-  View,
-  TouchableOpacity,
-  Text,
-  StyleSheet,
-  ActivityIndicator,
-  ViewStyle,
-  TextStyle,
-  StyleProp,
-} from "react-native";
+import { Text } from "./BrandText";
+import { View, TouchableOpacity, StyleSheet, ActivityIndicator, ViewStyle, TextStyle, StyleProp } from "react-native";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 
 export type ButtonVariant = "primary" | "signal" | "secondary" | "danger" | "ghost";

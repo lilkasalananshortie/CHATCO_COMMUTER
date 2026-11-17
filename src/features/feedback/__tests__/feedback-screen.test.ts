@@ -34,6 +34,14 @@ test("rapid submit taps send one feedback request", async () => {
   ratings(); const action = submit().props.onPress;
   void action(); void action(); expect(commuterService.submitFeedback).toHaveBeenCalledTimes(1);
 });
+test("an active shift can be rated without optional tags", async () => {
+  ratings(); mockStates[7] = []; mockStates[10] = [];
+  expect(submit().props.disabled).toBe(false);
+  await submit().props.onPress();
+  expect(commuterService.submitFeedback).toHaveBeenCalledWith(expect.objectContaining({
+    shift_id: "shift", rating: 5, conductor_rating: 2,
+  }));
+});
 test("existing feedback is displayed read-only without submit controls", () => {
   const tree = render({ ...trip, has_feedback: true, can_leave_feedback: false, feedback: { id: "f", shift_id: "shift", rating: 5, conductor_rating: 2, created_at: "2026-10-15" } });
   expect(tree.some(e => e.props.children === "Feedback Submitted")).toBe(true);
@@ -50,13 +58,13 @@ test("scanner no longer provides an invented recent ride shortcut", () => {
   expect(render(null).some(e => typeof e.props.children === "string" && e.props.children.includes("Rate Recent Ride"))).toBe(false);
 });
 
-test("scanner copies the web modal header padding and 192px scan frame", () => {
+test("scanner copies the web modal header padding and full-preview scan frame", () => {
   const tree = render(null);
   const camera = tree.find(e => e.type === "Camera")!;
   expect(camera).toBeDefined();
   const styles = tree.map(e => Object.assign({}, ...[e.props.style].flat().filter(Boolean)));
   expect(styles.some(s => s.padding === 20 && s.borderBottomWidth === 1)).toBe(true);
-  expect(styles.some(s => s.width === 192 && s.height === 192)).toBe(true);
+  expect(styles.some(s => s.width === "100%" && s.height === "100%" && s.position === "relative")).toBe(true);
   expect(styles.some(s => s.width === 24 && s.borderTopWidth === 2)).toBe(true);
   expect(tree.some(e => e.props.accessibilityLabel === "Turn on flashlight")).toBe(false);
 });

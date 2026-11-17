@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Text, TouchableOpacity, View } from "react-native";
+import { Text } from "../ui/BrandText";
+import { TouchableOpacity, View } from "react-native";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import { PolicyReader } from "./PolicyReader";
 import { openLegalLink } from "./legal-links";

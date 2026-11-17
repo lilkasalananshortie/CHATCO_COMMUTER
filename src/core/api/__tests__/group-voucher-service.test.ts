@@ -1,4 +1,5 @@
 jest.mock("../api-client", () => ({ post: jest.fn(), request: jest.fn(), put: jest.fn() }));
+jest.mock("../../storage/app-storage", () => ({ appStorage: { getItem: jest.fn(), setItem: jest.fn(), removeItem: jest.fn() } }));
 import { post } from "../api-client";
 import { commuterService } from "../commuter-service";
 beforeEach(() => jest.resetAllMocks());

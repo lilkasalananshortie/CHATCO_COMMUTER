@@ -22,7 +22,7 @@ interface HeaderBarProps {
 }
 
 export const HeaderBar: React.FC<HeaderBarProps> = ({
-  title = "CHATCO",
+  title = "E-CHATCO",
   userName,
   unreadAnnouncements = 0,
   onOpenAnnouncements,

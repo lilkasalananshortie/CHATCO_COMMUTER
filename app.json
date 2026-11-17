@@ -1,32 +1,41 @@
 {
   "expo": {
-    "name": "ChatCo Commuter",
+    "name": "E-CHATCO Commuter",
     "slug": "chatco-commuter-mobile",
     "scheme": "chatco-commuter",
     "version": "1.0.12",
+    "icon": "./assets/logo-e-chatco.png",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "plugins": [
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "ChatCo uses your location to show approaching jeepneys and allow you to signal Pick Me Up."
+          "locationWhenInUsePermission": "E-CHATCO uses your location to show approaching jeepneys and allow you to signal Pick Me Up."
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "ChatCo needs camera access to scan conductor fare QR codes and ride receipts."
+          "cameraPermission": "E-CHATCO needs camera access to scan conductor fare QR codes and ride receipts."
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "ChatCo needs access to your photos to upload your ID document.",
-          "cameraPermission": "ChatCo needs camera access to capture your ID document."
+          "photosPermission": "E-CHATCO needs access to your photos to upload your ID document.",
+          "cameraPermission": "E-CHATCO needs camera access to capture your ID document."
         }
       ],
       "expo-maps",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#050F1A",
+          "image": "./assets/splash-transparent.png",
+          "imageWidth": 1
+        }
+      ],
       "expo-font"
     ],
     "android": {
@@ -53,8 +62,8 @@
       "bundleIdentifier": "com.chatco.commuter",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSCameraUsageDescription": "ChatCo needs camera access to scan fare receipt QR codes.",
-        "NSLocationWhenInUseUsageDescription": "ChatCo uses your location to show approaching jeepneys and allow you to signal Pick Me Up."
+        "NSCameraUsageDescription": "E-CHATCO needs camera access to scan fare receipt QR codes.",
+        "NSLocationWhenInUseUsageDescription": "E-CHATCO uses your location to show approaching jeepneys and allow you to signal Pick Me Up."
       }
     },
     "extra": {

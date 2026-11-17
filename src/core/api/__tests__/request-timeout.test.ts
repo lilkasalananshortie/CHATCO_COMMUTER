@@ -14,7 +14,7 @@ test("a request aborted by the timeout reports a timeout without logging an unex
   try {
     const pending = request("/mobile/routes/active");
     await Promise.resolve();
-    const result = expect(pending).rejects.toThrow(new NetworkError("The ChatCo server did not respond within 15s. Check your connection and try again."));
+    const result = expect(pending).rejects.toThrow(new NetworkError("The E-CHATCO server did not respond within 15s. Check your connection and try again."));
     await jest.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS);
     await result;
     expect(errorLog).not.toHaveBeenCalled();

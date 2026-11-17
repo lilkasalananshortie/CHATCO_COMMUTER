@@ -5,7 +5,7 @@ export function getMascotErrorState(error: unknown) {
     return {
       pose: "offline" as const,
       title: "Connection interrupted",
-      message: "We couldn't reach ChatCo. Check your connection and try again.",
+      message: "We couldn't reach E-CHATCO. Check your connection and try again.",
     };
   }
   if (status === 404) {

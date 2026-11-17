@@ -239,5 +239,5 @@ export interface ResolvedCrew {
   routeTitle?: string | null;
 }
 
-export type CommuterTab = "home" | "fare" | "lostfound" | "rewards" | "feedback" | "profile";
+export type CommuterTab = "home" | "lostfound" | "rewards" | "feedback" | "profile";
 

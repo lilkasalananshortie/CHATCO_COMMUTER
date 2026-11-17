@@ -38,7 +38,7 @@ export const REGISTRATION_TERMS: PolicySection[] = [
     title: "Rejected registrations",
     paragraphs: [
       "If your application is rejected, review the reason and follow the instructions provided before applying again.",
-      "Repeated rejected applications may temporarily prevent another registration. Follow any retry date or instructions shown by CHATCO.",
+      "Repeated rejected applications may temporarily prevent another registration. Follow any retry date or instructions shown by E-CHATCO.",
     ],
   },
   {
@@ -55,7 +55,7 @@ export const REGISTRATION_TERMS: PolicySection[] = [
     paragraphs: [
       "For GCash payments, follow the payment instructions and check the final transaction status before assuming your fare has been paid. Payment provider terms also apply.",
       "For cash payments, keep the receipt issued for your ride.",
-      "If a payment fails or a charge appears incorrect, report the concern through CHATCO’s available support or feedback options. Include your receipt or transaction reference. Reporting a concern does not automatically confirm a refund.",
+      "If a payment fails or a charge appears incorrect, report the concern through E-CHATCO’s available support or feedback options. Include your receipt or transaction reference. Reporting a concern does not automatically confirm a refund.",
     ],
   },
   {
@@ -64,7 +64,7 @@ export const REGISTRATION_TERMS: PolicySection[] = [
     paragraphs: [
       "Claim rewards only for eligible rides you personally paid for.",
       "Eligible GCash payments through your account count automatically. For cash rides, use the receipt QR or manual claim code when available. Do not claim another person’s receipt or attempt to claim the same receipt more than once.",
-      "Check the reward target, voucher validity, and redemption conditions displayed in CHATCO before using a voucher.",
+      "Check the reward target, voucher validity, and redemption conditions displayed in E-CHATCO before using a voucher.",
     ],
   },
   {
@@ -88,7 +88,7 @@ export const REGISTRATION_TERMS: PolicySection[] = [
     id: "privacy-and-permissions",
     title: "Privacy and device permissions",
     paragraphs: [
-      "CHATCO uses your registration details and submitted documents to review your account and eligibility. Account, ride, location, payment, and receipt information also supports the features you use, transaction records, rewards, and assistance requests.",
+      "E-CHATCO uses your registration details and submitted documents to review your account and eligibility. Account, ride, location, payment, and receipt information also supports the features you use, transaction records, rewards, and assistance requests.",
       "Read the Privacy Policy for details about how your information is handled and how to request corrections or account deletion.",
       "Accepting these terms does not automatically enable location, camera, or notifications. These permissions are requested separately when needed. Declining a permission may limit the related feature.",
     ],
@@ -98,7 +98,7 @@ export const REGISTRATION_TERMS: PolicySection[] = [
     title: "Account misuse and restrictions",
     paragraphs: [
       "False documents, impersonation, fraudulent reward claims, and misuse of safety or reporting features may lead to account review.",
-      "CHATCO may restrict or suspend access following review of misuse. Contact support if you believe an account restriction is incorrect.",
+      "E-CHATCO may restrict or suspend access following review of misuse. Contact support if you believe an account restriction is incorrect.",
     ],
   },
   {
@@ -116,7 +116,7 @@ export const PRIVACY_SECTIONS: PolicySection[] = [
     id: "account-information",
     title: "Your account information",
     paragraphs: [
-      "CHATCO uses the information you provide when creating and using your account, including your name, birthdate, gender, email address, contact number, username, and commuter category. This information helps identify your account and connect your rides, receipts, and rewards to you.",
+      "E-CHATCO uses the information you provide when creating and using your account, including your name, birthdate, gender, email address, contact number, username, and commuter category. This information helps identify your account and connect your rides, receipts, and rewards to you.",
       "Information you submit through feedback, support requests, or lost-and-found reports helps the team respond to your concern.",
     ],
   },
@@ -126,7 +126,7 @@ export const PRIVACY_SECTIONS: PolicySection[] = [
     paragraphs: [
       "Your email verification confirms access to your email address. Authorized administrators review your registration details and any submitted identification to verify your account and eligibility for your selected commuter category.",
       "Student, Senior Citizen, and PWD applicants provide supporting documents. Regular commuters provide identification when required by the registration form. Camera access is requested only if you choose to take an ID photo; you can upload an existing image instead.",
-      "When you confirm registration, CHATCO records the versions of the Terms of Service and Privacy Policy presented to you, along with the times of your agreement, privacy acknowledgment, and registration declaration.",
+      "When you confirm registration, E-CHATCO records the versions of the Terms of Service and Privacy Policy presented to you, along with the times of your agreement, privacy acknowledgment, and registration declaration.",
     ],
   },
   {
@@ -141,7 +141,7 @@ export const PRIVACY_SECTIONS: PolicySection[] = [
     id: "payments-and-rewards",
     title: "Payments, receipts, and rewards",
     paragraphs: [
-      "CHATCO keeps transaction and receipt information so you can check your fare, payment status, and ride records. GCash payments are completed through the payment provider, whose own privacy terms also apply.",
+      "E-CHATCO keeps transaction and receipt information so you can check your fare, payment status, and ride records. GCash payments are completed through the payment provider, whose own privacy terms also apply.",
       "Eligible GCash payments through your account count toward ride rewards automatically. For cash payments, claiming your receipt QR or manual code from your signed-in account links the eligible paid ride to your reward progress.",
     ],
   },

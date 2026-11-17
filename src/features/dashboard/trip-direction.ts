@@ -60,7 +60,7 @@ function indexRoute(coords: LatLng[]): RouteIndex {
 }
 
 /** Distance along the route of the point on it closest to (lat, lng). */
-function project(route: RouteIndex, lat: number, lng: number): number {
+function project(route: RouteIndex, lat: number, lng: number): { along: number; distance: number } {
   const px = lng * EARTH_M_PER_DEG * Math.cos((route.lat0 * Math.PI) / 180);
   const py = lat * EARTH_M_PER_DEG;
   let best = Infinity;
@@ -76,7 +76,13 @@ function project(route: RouteIndex, lat: number, lng: number): number {
       bestAlong = route.along[i - 1]! + t * Math.sqrt(len2);
     }
   }
-  return bestAlong;
+  return { along: bestAlong, distance: Math.sqrt(best) };
+}
+
+/** Distance to the drawn road segments, including the space between route points. */
+export function distanceToRouteMeters(coords: LatLng[], lat: number, lng: number): number {
+  if (coords.length < 2 || !Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return Infinity;
+  return project(indexRoute(coords), lat, lng).distance;
 }
 
 /** Planar point at a distance along the route (clamped to its ends). */
@@ -127,7 +133,7 @@ export function unitHeading(coords: LatLng[], lat: number, lng: number, directio
   if (coords.length < 2 || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
   const route = indexRoute(coords);
   if (route.along[route.along.length - 1]! <= 0) return null;
-  const at = project(route, lat, lng);
+  const at = project(route, lat, lng).along;
   const sign = direction === "REVERSE" ? -1 : 1;
   return {
     facing: facingFor(travelBearing(route, at, sign, BUS_LOOKAHEAD_M)),

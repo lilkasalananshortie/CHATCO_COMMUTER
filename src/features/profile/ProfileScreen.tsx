@@ -1,16 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Text } from "../../shared/ui/BrandText";
-import {
-  View,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  Modal,
-  ActivityIndicator,
-  Alert,
-  Image,
-} from "react-native";
+import { Text, TextInput } from "../../shared/ui/BrandText";
+import { Animated, View, StyleSheet, ScrollView, TouchableOpacity, Modal, ActivityIndicator, Alert, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { commuterColors } from "../../core/theme/colors";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
@@ -18,13 +8,21 @@ import { maskedEmail } from "./profile-privacy";
 import { commuterService } from "../../core/api/commuter-service";
 import { authService } from "../../core/api/auth-service";
 import type { User, CommuterProfile } from "../../core/domain/types";
-import { APPLICATION_LABELS, type ApplicationState } from "../discount-application/application-types";
-import { pickProfilePhoto, profilePhotoForm } from "./profile-photo";
+import type { ApplicationState } from "../discount-application/application-types";
+import { pickProfilePhoto, profilePhotoForm, type ProfilePhoto } from "./profile-photo";
+import { ProfilePhotoAdjuster } from "./ProfilePhotoAdjuster";
 import { ChangeEmailModal } from "./ChangeEmailModal";
 import { LegalSupportCard } from "../../shared/legal/LegalSupportCard";
 import { ProfileIcon } from "./ProfileIcon";
 import { ProfileIdentityBackground } from "./ProfileIcon";
+import { VerificationCodeInput } from "../../shared/ui/VerificationCodeInput";
+import { ProfileIdentityDetails } from "./ProfileIdentityDetails";
+import { useWebDialogEntrance } from "../../shared/useWebDialogEntrance";
 import { profileLayout } from "./profile-layout";
+import { ThemeToggleIcons } from "./ThemeToggleIcons";
+import { StudentRenewalEntry } from "./StudentRenewalEntry";
+import { DiscountApplicationEntry } from "./DiscountApplicationEntry";
+import type { RenewalState } from "../student-renewal/renewal-types";
 
 interface ProfileScreenProps {
   onLogout: () => void;
@@ -36,9 +34,11 @@ interface ProfileScreenProps {
   discountApplicationLoading?: boolean;
   discountApplicationError?: string;
   onOpenDiscountApplication?: () => void;
+  renewalState?: RenewalState | null;
+  onOpenRenewal?: () => void;
 }
 
-export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailChanged, onProfileSaved, onOpenTour, serverProfile, discountApplicationState = null, discountApplicationLoading = false, discountApplicationError = "", onOpenDiscountApplication }) => {
+export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailChanged, onProfileSaved, onOpenTour, serverProfile, discountApplicationState = null, discountApplicationLoading = false, discountApplicationError = "", onOpenDiscountApplication, renewalState = null, onOpenRenewal }) => {
   const { appearance, setAppearance, isLight = appearance === "light", colors = commuterColors } = useCommuterTheme();
   const styles = createProfileStyles(colors, isLight);
   const mounted = useRef(true);
@@ -75,21 +75,51 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailC
   const [failedPhotoUrl, setFailedPhotoUrl] = useState<string | null>(null);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
+  const [pendingPhoto, setPendingPhoto] = useState<ProfilePhoto | null>(null);
+  const [photoSelecting, setPhotoSelecting] = useState(false);
+  const [photoSaved, setPhotoSaved] = useState(false);
+  const [profileHeaderSize, setProfileHeaderSize] = useState({ width: 0, height: 0 });
+  const [photoToAdjust, setPhotoToAdjust] = useState<ProfilePhoto | null>(null);
+  const photoPreparing = useRef(false);
 
   const handlePhoto = async () => {
     if (mutation.current) return;
     mutation.current = true;
-    setPhotoUploading(true); setPhotoError(null);
+    setPhotoSelecting(true); setPhotoError(null);
+    setPhotoSaved(false);
     try {
       const photo = await pickProfilePhoto();
       if (!photo || !mounted.current) return;
-      const form = await profilePhotoForm(photo);
+      setPhotoToAdjust(photo);
+    } catch (reason) {
+      if (mounted.current) setPhotoError(reason instanceof Error ? reason.message : "Couldn't choose your photo. Please try again.");
+    } finally {
+      mutation.current = false;
+      if (mounted.current) setPhotoSelecting(false);
+    }
+  };
+
+  const cancelPhoto = () => {
+    if (mutation.current || photoPreparing.current) return;
+    setPhotoToAdjust(null);
+    setPendingPhoto(null);
+    setPhotoSaved(false);
+    setPhotoError(null);
+  };
+
+  const savePhoto = async () => {
+    if (!pendingPhoto || mutation.current) return;
+    mutation.current = true;
+    setPhotoUploading(true); setPhotoError(null);
+    try {
+      const form = await profilePhotoForm(pendingPhoto);
       if (!mounted.current) return;
       const updated = await commuterService.uploadProfilePhoto(form);
       if (!mounted.current) return;
       setProfile(previous => previous ? { ...previous, profile_image_url: updated.profile_image_url } : updated);
       onProfileSaved?.(updated);
-      setSuccessMessage("Profile photo updated.");
+      setPendingPhoto(null);
+      setPhotoSaved(true);
     } catch (reason) {
       if (mounted.current) setPhotoError(reason instanceof Error ? reason.message : "Couldn't upload your photo. Please try again.");
     } finally {
@@ -138,6 +168,8 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailC
     const timer = setTimeout(() => setSuccessMessage(null), 3000);
     return () => clearTimeout(timer);
   }, [successMessage]);
+
+  const { progress: logoutEntrance, mounted: logoutMounted } = useWebDialogEntrance(showLogoutConfirm);
 
   const handleSaveProfile = async () => {
     if (mutation.current) return;
@@ -209,7 +241,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailC
 
   const handleConfirmPassword = async () => {
     if (mutation.current) return;
-    if (verificationCode.trim().length !== 6) {
+    if (!/^\d{6}$/.test(verificationCode)) {
       setPasswordError("Please enter the 6-digit verification code.");
       return;
     }
@@ -336,65 +368,43 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailC
   const commuterTypeLabel = commuterType === "SENIOR" || commuterType === "SENIOR_CITIZEN" ? "Senior Citizen" : commuterType === "PWD" ? "PWD" : commuterType === "STUDENT" ? "Student" : "Regular";
   const iconColor = isLight ? "#1A5FB4" : "#99C1F1";
   const mutedIcon = isLight ? "#9CA3AF" : "rgba(255,255,255,0.4)";
-  const application = discountApplicationState?.application;
-  const appStatus = discountApplicationState?.status ?? "NOT_APPLIED";
-  const openApplication = application && !["CANCELLED", "EXPIRED"].includes(appStatus) ? application : null;
-  const applicationStatus = openApplication ? appStatus : "NOT_APPLIED";
-  const applicationCategory = openApplication?.requested_type === "STUDENT" ? "Student"
-    : openApplication?.requested_type === "PWD" ? "PWD" : "Senior Citizen";
-  const applicationCopy = openApplication?.request_type === "RENEWAL"
-    ? { text: `Student renewal: ${applicationStatus === "NOT_RENEWED" ? "Not applied" : (APPLICATION_LABELS[applicationStatus] ?? applicationStatus)}`, link: "View Student renewal" }
-    : applicationStatus === "PENDING"
-      ? { text: "Your discount application is currently under review. Check here for updates on your application status.", link: "View application status" }
-      : applicationStatus === "NEEDS_CORRECTION"
-        ? { text: `An admin asked for a correction to your ${applicationCategory} discount application. Send corrected documents to continue the review.`, link: "Update your application" }
-        : applicationStatus === "REJECTED"
-          ? { text: `Your ${applicationCategory} discount application was not approved.`, link: "Apply again" }
-          : { text: discountApplicationState ? "Apply for a Student, PWD or Senior discount with proof." : discountApplicationLoading ? "Loading discount application status…" : "Unable to load your discount application status.", link: discountApplicationState ? "Apply for a discount" : "View application status" };
-
   return (
     <View style={styles.container}>
       <View style={styles.pageHeading}>
         <View style={{ flex: 1 }}><Text style={styles.pageTitle}>My profile</Text><Text style={styles.pageSubtitle}>Your details and account settings.</Text></View>
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Toggle dark and light mode" accessibilityState={{ selected: isLight }} style={styles.themeToggle} onPress={() => { void setAppearance(isLight ? "dark" : "light").catch(() => setSaveError("Could not save appearance. Please retry.")); }}>
-          <ProfileIcon name={isLight ? "sun" : "moon"} size={20} color={isLight ? "#D97706" : "#99C1F1"} />
+          <ThemeToggleIcons isLight={isLight} />
         </TouchableOpacity>
       </View>
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        <View style={styles.profileHeader}>
-          <ProfileIdentityBackground isLight={isLight} />
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Change profile photo" disabled={photoUploading} onPress={() => void handlePhoto()} style={styles.photoColumn}>
+        <View style={styles.profileHeader} onLayout={({ nativeEvent: { layout } }) => setProfileHeaderSize(current =>
+          current.width === layout.width && current.height === layout.height
+            ? current : { width: layout.width, height: layout.height })}>
+          <ProfileIdentityBackground isLight={isLight} width={profileHeaderSize.width} height={profileHeaderSize.height} />
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Change profile photo" disabled={photoUploading || photoSelecting} onPress={() => void handlePhoto()} style={styles.photoColumn}>
             <View style={styles.avatarCircle}>
               {profile.profile_image_url && failedPhotoUrl !== profile.profile_image_url
                 ? <Image source={{ uri: profile.profile_image_url }} accessibilityLabel="Your profile photo" style={styles.photoImage} onError={() => setFailedPhotoUrl(profile.profile_image_url ?? null)} />
                 : <ProfileIcon name="user-round" size={40} color="#FFFFFF" />}
               <View style={styles.photoBadge}><ProfileIcon name="camera" size={15} color={isLight ? "#FFFFFF" : "#071A2E"} /></View>
             </View>
-            <Text style={styles.photoLabel}>{photoUploading ? "Uploading…" : "Change photo"}</Text>
+            <Text style={styles.photoLabel}>{photoUploading ? "Uploading…" : photoSelecting ? "Choosing…" : "Change photo"}</Text>
           </TouchableOpacity>
-          <View style={styles.profileMeta}>
-            <Text style={styles.fullName}>{firstName} {surname}</Text><Text style={styles.username}>@{profile.username || "commuter"}</Text>
-            <View style={styles.pillsRow}>
-              <View style={[styles.statusPill, { backgroundColor: statusBadge.bg, borderColor: statusBadge.border }]}>
-                <ProfileIcon name={accountStatus.includes("PENDING") ? "clock" : accountStatus.includes("REJECTED") ? "shield-alert" : "shield-check"} size={13} color="#FFFFFF" />
-                <Text style={styles.statusPillText}>{statusBadge.text}</Text>
-              </View>
-              <View style={styles.discountPill}><Text style={styles.discountPillText}>{commuterTypeLabel}</Text>{discountPercentage > 0 && <Text style={styles.discountValue}>{discountPercentage}% off</Text>}</View>
-            </View>
-          </View>
+          <ProfileIdentityDetails
+            name={`${firstName} ${surname}`.trim()} username={profile.username || "commuter"}
+            verified={["ACTIVE", "APPROVED"].includes(accountStatus)} statusLabel={statusBadge.text}
+            roleLabel={commuterTypeLabel} discountPercentage={discountPercentage} student={commuterType === "STUDENT"}
+            expiresAt={discountApplicationState ? discountApplicationState.discount_expires_at : profile.student_discount_expires_at}
+          />
+          {onOpenDiscountApplication && ["ACTIVE", "APPROVED"].includes(accountStatus) && commuterType === "REGULAR" &&
+            <DiscountApplicationEntry state={discountApplicationState} loading={discountApplicationLoading} failed={!!discountApplicationError} isLight={isLight} onOpen={onOpenDiscountApplication} />}
+          {onOpenRenewal && ["ACTIVE", "APPROVED"].includes(accountStatus) && commuterType === "STUDENT" &&
+            <StudentRenewalEntry state={renewalState} discountPercentage={20} isLight={isLight} onOpen={onOpenRenewal} />}
         </View>
-        <View>
-          <Text style={styles.photoHelp}>JPG, PNG or WebP · Up to 3 MB, 4096 × 4096 pixels. Uploads when selected.</Text>
+        <>
           {photoError && <Text accessibilityRole="alert" style={[styles.photoHelp, { color: "#FCA5A5", marginTop: 8 }]}>{photoError}</Text>}
-          {onOpenDiscountApplication && ["ACTIVE", "APPROVED"].includes(accountStatus) && commuterType === "REGULAR" && (
-            <View style={styles.applicationEntry}><Text style={styles.applicationText}>{applicationCopy.text}</Text>
-              {(applicationStatus === "REJECTED" || applicationStatus === "NEEDS_CORRECTION") && !!openApplication?.reason && <Text style={[styles.applicationText, { marginTop: 4 }]}>Reason: {openApplication.reason}</Text>}
-              {!!discountApplicationError && <Text style={[styles.photoHelp, { marginTop: 4 }]}>Open your application to check its latest status.</Text>}
-              {!discountApplicationLoading && <TouchableOpacity onPress={onOpenDiscountApplication} style={styles.applicationLink}><Text style={styles.applicationLinkText}>{applicationCopy.link}</Text></TouchableOpacity>}
-            </View>
-          )}
-        </View>
-        {successMessage && <View style={styles.successBanner}><ProfileIcon name="check" size={20} color="#34D399" /><Text style={styles.successBannerText}>{successMessage}</Text></View>}
+        </>
+        {successMessage && <View style={[styles.successBanner, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}><ProfileIcon name="check" size={20} color={isLight ? "#1A5FB4" : "#99C1F1"} /><Text style={[styles.successBannerText, { color: colors.textPrimary }]}>{successMessage}</Text></View>}
         {accountStatus.includes("PENDING") && <View style={styles.warningBanner}><ProfileIcon name="shield-alert" size={20} color="#FBBF24" /><View style={{ flex: 1 }}><Text style={styles.warningBannerTitle}>Verification Pending</Text><Text style={styles.warningBannerDesc}>Your discount is on hold until an admin verifies your uploaded ID.</Text></View></View>}
         {accountStatus.includes("REJECTED") && <View style={styles.dangerBanner}><ProfileIcon name="shield-alert" size={20} color="#F87171" /><View style={{ flex: 1 }}><Text style={styles.dangerBannerTitle}>Discount Application Rejected</Text><Text style={styles.dangerBannerDesc}>The ID you uploaded was not approved. You are currently classified as a Regular commuter.</Text></View></View>}
         <View style={styles.infoCard}>
@@ -424,15 +434,40 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailC
           <TouchableOpacity onPress={() => setShowEmailModal(true)} style={styles.securityRow}><ProfileIcon name="mail" size={18} color={mutedIcon} /><Text style={styles.securityText}>Change email</Text><ProfileIcon name="chevron" size={16} color={mutedIcon} /></TouchableOpacity>
           <TouchableOpacity onPress={() => setShowPasswordModal(true)} style={styles.securityRow}><ProfileIcon name="key" size={18} color={mutedIcon} /><Text style={styles.securityText}>Change password</Text><ProfileIcon name="chevron" size={16} color={mutedIcon} /></TouchableOpacity>
         </View>
-        <View style={{ paddingTop: 4 }}><TouchableOpacity onPress={() => setShowLogoutConfirm(true)} style={styles.logoutButton}><ProfileIcon name="logout" size={17} color={isLight ? "#DC2626" : "#F87171"} /><Text style={styles.logoutButtonText}>Log out</Text></TouchableOpacity></View>
+        <View><TouchableOpacity onPress={() => setShowLogoutConfirm(true)} style={styles.logoutButton}><ProfileIcon name="logout" size={17} color={isLight ? "#DC2626" : "#F87171"} /><Text style={styles.logoutButtonText}>Log out</Text></TouchableOpacity></View>
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open help and support" accessibilityState={{ expanded: showSupport }} onPress={() => setShowSupport(true)} style={styles.supportLink}><Text style={styles.supportText}>Help & support</Text><ProfileIcon name="chevron" size={14} color={mutedIcon} /></TouchableOpacity>
         {showSupport && <View>{onOpenTour && <TouchableOpacity onPress={onOpenTour} style={styles.securityRow} accessibilityLabel="Replay App Guide and Walkthrough"><Text style={styles.securityText}>App Features & Guide</Text><ProfileIcon name="chevron" size={16} color={mutedIcon} /></TouchableOpacity>}<LegalSupportCard /></View>}
       </ScrollView>
 
+      <Modal visible={photoToAdjust !== null || pendingPhoto !== null || photoSaved} animationType="fade" transparent onRequestClose={cancelPhoto}>
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 24, backgroundColor: "rgba(0,0,0,0.6)" }}>
+          <View accessibilityViewIsModal style={{ width: "100%", maxWidth: 380, maxHeight: "90%", backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, borderRadius: 16 }}>
+            <ScrollView contentContainerStyle={{ padding: 24, alignItems: "center", gap: 16 }}>
+              {photoToAdjust ? <ProfilePhotoAdjuster photo={photoToAdjust} onCancel={cancelPhoto} onPreparingChange={(value) => { photoPreparing.current = value; }} onUsePhoto={(cropped) => { photoPreparing.current = false; setPhotoToAdjust(null); setPendingPhoto(cropped); }} /> : photoSaved ? <>
+                <Ionicons name="checkmark-circle-outline" size={44} color={colors.primary} />
+                <Text accessibilityRole="header" accessibilityLiveRegion="polite" style={{ color: colors.textPrimary, fontSize: 20, fontWeight: "700", textAlign: "center" }}>Profile photo updated</Text>
+                <Text style={{ color: colors.textSecondary, textAlign: "center", lineHeight: 21 }}>Your new photo has been saved.</Text>
+                <TouchableOpacity accessibilityRole="button" onPress={cancelPhoto} style={{ width: "100%", minHeight: 48, justifyContent: "center", alignItems: "center", borderRadius: 10, backgroundColor: colors.primary }}><Text style={{ color: "#FFFFFF", fontWeight: "600" }}>Done</Text></TouchableOpacity>
+              </> : <>
+              <Text accessibilityRole="header" style={{ color: colors.textPrimary, fontSize: 20, fontWeight: "700", textAlign: "center" }}>Save profile photo?</Text>
+              {pendingPhoto && <Image source={{ uri: pendingPhoto.uri }} accessibilityLabel="Selected profile photo preview" style={{ width: 144, height: 144, borderRadius: 72 }} />}
+              <Text style={{ color: colors.textSecondary, textAlign: "center", lineHeight: 21 }}>Do you want to save this as your profile photo?</Text>
+              <Text style={{ color: colors.textMuted, fontSize: 12, lineHeight: 18, textAlign: "center" }}>JPG, PNG or WebP only. Max 3 MB.</Text>
+              {photoError && <Text accessibilityRole="alert" style={{ color: colors.danger, textAlign: "center" }}>{photoError}</Text>}
+              <View style={{ flexDirection: "row", gap: 12, width: "100%" }}>
+                <TouchableOpacity accessibilityRole="button" onPress={cancelPhoto} disabled={photoUploading} style={{ flex: 1, minHeight: 48, justifyContent: "center", alignItems: "center", borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceSecondary, opacity: photoUploading ? 0.5 : 1 }}><Text style={{ color: colors.textPrimary, fontWeight: "600" }}>Cancel</Text></TouchableOpacity>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Save profile photo" onPress={() => void savePhoto()} disabled={photoUploading} style={{ flex: 1, minHeight: 48, justifyContent: "center", alignItems: "center", borderRadius: 10, backgroundColor: colors.primary, opacity: photoUploading ? 0.5 : 1 }}>{photoUploading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={{ color: "#FFFFFF", fontWeight: "600" }}>Save photo</Text>}</TouchableOpacity>
+              </View>
+              </>}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       {/* --- LOG OUT CONFIRMATION MODAL --- */}
-      <Modal visible={showLogoutConfirm} animationType="fade" transparent>
+      <Modal visible={showLogoutConfirm || Boolean(logoutMounted)} animationType="none" transparent onRequestClose={() => setShowLogoutConfirm(false)}>
         <View style={styles.modalBackdrop}>
-          <View style={styles.confirmModalCard}>
+          <Animated.View accessibilityViewIsModal style={[styles.confirmModalCard, { opacity: logoutEntrance, transform: [{ translateY: logoutEntrance.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }] }]}>
             <View style={styles.dangerIconCircle}>
               <Ionicons name="log-out-outline" size={28} color="#F87171" />
             </View>
@@ -461,7 +496,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailC
                 <Text style={styles.dangerModalButtonText}>Log Out</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </Animated.View>
         </View>
       </Modal>
 
@@ -515,13 +550,13 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailC
                 </View>
               </> : <>
                 <View style={styles.inboxCard}><View style={styles.inboxIcon}><ProfileIcon name="mail" size={20} color={isLight ? "#1A5FB4" : "#99C1F1"} /></View><View style={{ flex: 1 }}><Text style={styles.inboxTitle}>Check your inbox</Text><Text style={styles.inboxSubtitle}>We sent a six-digit code to your registered email. Enter it below to confirm your new password.</Text></View></View>
-                <Text style={styles.passwordFieldLabel}>Verification code</Text><TextInput accessibilityLabel="Verification code" style={styles.verificationInput} keyboardType="number-pad" maxLength={6} value={verificationCode} onChangeText={value => setVerificationCode(value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" placeholderTextColor={isLight ? "#9CA3AF" : "rgba(255,255,255,0.3)"} editable={!isChangingPassword} />
+                <Text style={styles.passwordFieldLabel}>Verification code</Text><VerificationCodeInput value={verificationCode} onChange={setVerificationCode} disabled={isChangingPassword} />
                 <View style={styles.passwordCodeActions}><TouchableOpacity accessibilityRole="button" onPress={() => setPasswordStep("form")} disabled={isChangingPassword} style={styles.passwordTextAction}><Text style={styles.passwordBackText}>← Edit passwords</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" onPress={handleRequestPasswordCode} disabled={resendSecondsLeft > 0 || isChangingPassword} style={styles.passwordTextAction}><Text style={[styles.passwordResendText, resendSecondsLeft > 0 && styles.passwordResendDisabled]}>{resendSecondsLeft > 0 ? `Resend in ${resendSecondsLeft}s` : "Resend code"}</Text></TouchableOpacity></View>
               </>}
             </ScrollView>
             <View style={styles.passwordFooter}>
               <TouchableOpacity accessibilityRole="button" onPress={closePasswordModal} disabled={isChangingPassword} style={styles.passwordCancel}><Text style={styles.passwordCancelText}>Cancel</Text></TouchableOpacity>
-              <TouchableOpacity accessibilityRole="button" onPress={passwordStep === "form" ? handleRequestPasswordCode : handleConfirmPassword} disabled={isChangingPassword || (passwordStep === "form" ? !currentPassword || !newPassword || !confirmNewPassword : verificationCode.length !== 6)} style={[styles.passwordSubmit, (isChangingPassword || (passwordStep === "form" ? !currentPassword || !newPassword || !confirmNewPassword : verificationCode.length !== 6)) && styles.disabledButton]}>{isChangingPassword && <ActivityIndicator size="small" color="#FFFFFF" />}<Text style={styles.passwordSubmitText}>{isChangingPassword ? passwordStep === "form" ? "Sending..." : "Updating..." : passwordStep === "form" ? "Send code" : "Update password"}</Text></TouchableOpacity>
+              <TouchableOpacity accessibilityRole="button" onPress={passwordStep === "form" ? handleRequestPasswordCode : handleConfirmPassword} disabled={isChangingPassword || (passwordStep === "form" ? !currentPassword || !newPassword || !confirmNewPassword : !/^\d{6}$/.test(verificationCode))} style={[styles.passwordSubmit, (isChangingPassword || (passwordStep === "form" ? !currentPassword || !newPassword || !confirmNewPassword : !/^\d{6}$/.test(verificationCode))) && styles.disabledButton]}>{isChangingPassword && <ActivityIndicator size="small" color="#FFFFFF" />}<Text style={styles.passwordSubmitText}>{isChangingPassword ? passwordStep === "form" ? "Sending..." : "Updating..." : passwordStep === "form" ? "Send code" : "Update password"}</Text></TouchableOpacity>
             </View>
           </View>
         </View>
@@ -591,7 +626,7 @@ function createProfileStyles(colors: { [K in keyof typeof commuterColors]: strin
     inboxIcon: { width: 40, height: 40, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: "rgba(98,160,234,0.1)" },
     inboxTitle: { color: colors.textPrimary, fontSize: 14, fontWeight: "600" },
     inboxSubtitle: { color: colors.textSecondary, fontSize: 12, lineHeight: 18, marginTop: 4 },
-    verificationInput: { minHeight: 52, marginTop: 8, borderWidth: 1, borderColor: colors.border, borderRadius: 12, paddingHorizontal: 16, backgroundColor: colors.surfaceSecondary, color: colors.textPrimary, textAlign: "center", fontSize: 20, letterSpacing: 6, fontFamily: "monospace" },
+    verificationInput: { minHeight: 52, marginTop: 8, borderWidth: 1, borderColor: colors.border, borderRadius: 12, paddingHorizontal: 16, backgroundColor: colors.surfaceSecondary, color: colors.textPrimary, textAlign: "center", fontSize: 20, letterSpacing: 6, },
     passwordCodeActions: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
     passwordTextAction: { minHeight: 40, alignItems: "center", justifyContent: "center", paddingHorizontal: 8 },
     passwordBackText: { color: colors.textSecondary, fontSize: 12, fontWeight: "500" },
@@ -727,9 +762,9 @@ const baseStyles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "rgba(16, 185, 129, 0.1)",
+    backgroundColor: "#0E2238",
     borderWidth: 1,
-    borderColor: "rgba(16, 185, 129, 0.3)",
+    borderColor: "#2A4D72",
     borderRadius: 12,
     padding: 12,
     marginBottom: 16,
@@ -737,7 +772,7 @@ const baseStyles = StyleSheet.create({
   successBannerText: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#34D399",
+    color: "#C9D9EC",
   },
   warningBanner: {
     flexDirection: "row",
@@ -1026,7 +1061,7 @@ const baseStyles = StyleSheet.create({
   codeMonoInput: {
     textAlign: "center",
     fontSize: 18,
-    fontFamily: "monospace",
+
     letterSpacing: 8,
   },
   codeInstructions: {

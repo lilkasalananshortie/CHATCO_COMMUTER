@@ -1,11 +1,7 @@
 /// <reference types="jest" />
 jest.mock("../api-client", () => ({ post: jest.fn(), request: jest.fn(), put: jest.fn(), del: jest.fn() }));
-jest.mock("expo-file-system", () => ({
-  File: class MockExpoFile {
-    constructor(public uri: string) {}
-    async bytes() { return new Uint8Array([112, 114, 111, 111, 102]); }
-  },
-}));
+jest.mock("../../storage/app-storage", () => ({ appStorage: { getItem: jest.fn(), setItem: jest.fn(), removeItem: jest.fn() } }));
+jest.mock("expo-file-system", () => ({ File: class { constructor(public uri: string) {} async bytes() { return new Uint8Array([1, 2, 3]); } } }));
 import { post, request } from "../api-client";
 import { commuterService } from "../commuter-service";
 
@@ -89,9 +85,10 @@ test("voucher wallet does not hide authentication or network failures", async ()
   expect(mockRequest).toHaveBeenCalledTimes(1);
 });
 test("private voucher and renewal notices map to supported presentation types", async () => {
-  mockRequest.mockResolvedValue([{ id: "v", type: "voucher_received" }, { id: "r", type: "STUDENT_RENEWAL_DONE" }]);
+  mockRequest.mockResolvedValue([{ id: "v", type: "voucher_received", title: "Voucher earned", message: "Your web notification message" }, { id: "r", type: "STUDENT_RENEWAL_DONE" }]);
   const announcements = await commuterService.getAnnouncements();
-  expect(announcements[0]).toMatchObject({ type: "VOUCHER", rawType: "voucher_received" });
+  expect(mockRequest).toHaveBeenLastCalledWith("/mobile/commuter/announcements");
+  expect(announcements[0]).toMatchObject({ title: "Voucher earned", content: "Your web notification message", type: "VOUCHER", rawType: "voucher_received" });
   expect(announcements[1]).toMatchObject({ type: "SYSTEM", rawType: "STUDENT_RENEWAL_DONE" });
 });
 test("renewal state uses only the mobile namespace", async () => {
@@ -130,13 +127,21 @@ test("Lost and Found claim sends validated contact and proof images as multipart
   expect(form.get("claimant_contact")).toBe("09171234567");
   expect(form.get("images[0]")).toMatchObject({ name: "proof.jpg", type: "image/jpeg", size: 5 });
 });
-test("native Lost and Found photos are converted from URI to supported multipart bytes", async () => {
-  await commuterService.claimLostItem("item-2", {
-    proof: "Distinctive mark",
-    images: [{ uri: "file:///proof.png", name: "proof.png", type: "image/png" }],
-  });
-  const [, form] = mockPost.mock.calls[0];
-  const image = form.get("images[0]");
-  expect(image).toBeInstanceOf(Blob);
-  expect(image).toMatchObject({ name: "proof.png", type: "image/png", size: 5 });
+test("native Lost and Found photos provide byte-backed multipart parts for Expo fetch", async () => {
+  const Original = globalThis.FormData;
+  const append = jest.fn();
+  globalThis.FormData = class { append = append; } as unknown as typeof FormData;
+  try {
+    await commuterService.claimLostItem("item-2", {
+      proof: "Distinctive mark",
+      images: [
+        { uri: "file:///proof-1.png", name: "proof-1.png", type: "image/png" },
+        { uri: "file:///proof-2.jpg", name: "proof-2.jpg", type: "image/jpeg" },
+      ],
+    });
+    expect(append).toHaveBeenCalledWith("images[0]", expect.objectContaining({ name: "proof-1.png", type: "image/png", bytes: expect.any(Function) }));
+    expect(append).toHaveBeenCalledWith("images[1]", expect.objectContaining({ name: "proof-2.jpg", type: "image/jpeg", bytes: expect.any(Function) }));
+    expect(await append.mock.calls[1][1].bytes()).toEqual(new Uint8Array([1, 2, 3]));
+    expect(append.mock.calls[1][1]).not.toHaveProperty("uri");
+  } finally { globalThis.FormData = Original; }
 });

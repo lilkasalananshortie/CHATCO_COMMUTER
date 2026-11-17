@@ -28,6 +28,18 @@ export function resetSessionEndedNotified() {
 }
 
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const startedAt = Date.now();
+  try {
+    return await requestCore<T>(path, init);
+  } finally {
+    if (typeof __DEV__ !== "undefined" && __DEV__ && process.env.EXPO_PUBLIC_PROFILE_API === "1") {
+      // Omit query strings: search text and other private values can appear there.
+      console.info(`[API timing] ${init.method ?? "GET"} ${path.split("?")[0]} ${Date.now() - startedAt}ms`);
+    }
+  }
+}
+
+async function requestCore<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = await appStorage.getItem(TOKEN_KEY);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -48,11 +60,11 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   } catch (cause) {
     const errorDetail = cause instanceof Error ? cause.message : String(cause);
     if (controller.signal.aborted || (cause instanceof Error && cause.name === "AbortError")) {
-      throw new NetworkError(`The ChatCo server did not respond within ${REQUEST_TIMEOUT_MS / 1000}s. Check your connection and try again.`);
+      throw new NetworkError(`The E-CHATCO server did not respond within ${REQUEST_TIMEOUT_MS / 1000}s. Check your connection and try again.`);
     }
     console.error(`[API Network Error] ${init.method ?? "GET"} ${API_URL}/api/v1${path}:`, cause);
     throw new NetworkError(
-      `Unable to reach the ChatCo server (${errorDetail}). Target: ${API_URL}. Check your internet connection or host settings.`
+      `Unable to reach the E-CHATCO server (${errorDetail}). Target: ${API_URL}. Check your internet connection or host settings.`
     );
   } finally {
     clearTimeout(timeout);

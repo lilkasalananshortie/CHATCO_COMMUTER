@@ -16,6 +16,7 @@ jest.mock("react-native", () => ({ View: "View", Text: "Text", Pressable: "Press
 jest.mock("react-native-safe-area-context", () => ({ SafeAreaProvider: "SafeArea", useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) }));
 jest.mock("expo-status-bar", () => ({ StatusBar: "StatusBar" }));
 jest.mock("../../../shared/ui/BrandFonts", () => ({ BrandFonts: "BrandFonts" }));
+jest.mock("../../../shared/ui/BrandText", () => ({ Text: "Text", TextInput: "TextInput" }));
 jest.mock("@react-native-async-storage/async-storage", () => ({ getItem: jest.fn().mockResolvedValue("done") }));
 jest.mock("../../../core/theme/ThemeProvider", () => ({ ThemeProvider: "Theme", useCommuterTheme: () => ({ colors: jest.requireActual("../../../core/theme/colors").commuterColors }) }));
 jest.mock("../../../core/api/api-client", () => ({ setSessionEndedHandler: jest.fn(() => jest.fn()) }));
@@ -41,22 +42,23 @@ jest.mock("../../student-renewal/StudentRenewalScreen", () => ({ StudentRenewalS
 jest.mock("../../student-renewal/RenewalReminder", () => ({ RenewalReminder: "Reminder" }));
 jest.mock("../../student-renewal/useStudentRenewal", () => ({ useStudentRenewal: () => ({ state: null, refresh: jest.fn() }) }));
 jest.mock("../../discount-application/DiscountApplicationScreen", () => ({ DiscountApplicationScreen: "Application" }));
-jest.mock("../../discount-application/useDiscountApplication", () => ({ useDiscountApplication: () => ({ state: null }) }));
+jest.mock("../../discount-application/useDiscountApplication", () => ({ useDiscountApplication: () => ({ state: null, refresh: jest.fn(), refreshAfterMutation: jest.fn() }) }));
 type Element = React.ReactElement<Record<string, any>>;
 function walk(node: any): Element[] { if (Array.isArray(node)) return node.flatMap(walk); if (!React.isValidElement(node)) return []; const e = node as Element; return [e, ...walk(e.props.children)]; }
 function render() { mockStateIndex = 0; mockRefIndex = 0; mockEffects = []; const main = walk(App()).find(e => typeof e.type === "function" && e.type.name === "MainApp")!; return walk((main.type as () => React.ReactNode)()); }
-function register() { render(); mockEffects[1]!(); return (setSessionEndedHandler as jest.Mock).mock.calls.at(-1)![0] as () => void; }
+function register() { render(); mockEffects[2]!(); return (setSessionEndedHandler as jest.Mock).mock.calls.at(-1)![0] as () => void; }
 const user = { id: "owner", role: "COMMUTER", email: "owner@example.test", name: "Owner" };
 beforeEach(() => { mockStates = []; mockRefs = []; jest.clearAllMocks(); render(); mockStates[0] = false; mockStates[1] = false; });
 test("actual App registers expiry handler and clears user/modals/feedback/badges", () => {
-  mockStates[2] = user; mockStates[3] = { first_name: "Owner" }; mockStates[6] = { id: "old-ride" };
-  for (let i = 7; i <= 11; i++) mockStates[i] = true;
-  mockStates[12] = 4; mockStates[13] = 2; mockStates[14] = 3;
+  mockStates[2] = user; mockStates[3] = { first_name: "Owner" };
+  mockStates[7] = "rewards"; mockStates[9] = { id: "old-ride" };
+  for (let i = 10; i <= 14; i++) mockStates[i] = true;
+  mockStates[15] = 4; mockStates[16] = 2; mockStates[17] = 3; mockStates[18] = true;
   register()();
   expect(render().some(e => e.type === "Login")).toBe(true);
-  expect(mockStates[2]).toBeNull(); expect(mockStates[3]).toBeNull(); expect(mockStates[6]).toBeNull();
-  expect(mockStates.slice(7, 12)).toEqual([false, false, false, false, false]);
-  expect(mockStates.slice(12, 15)).toEqual([0, 0, 0]);
+  expect(mockStates[2]).toBeNull(); expect(mockStates[3]).toBeNull(); expect(mockStates[7]).toBe("home"); expect(mockStates[9]).toBeNull();
+  expect(mockStates.slice(10, 15)).toEqual([false, false, false, false, false]);
+  expect(mockStates.slice(15, 18)).toEqual([0, 0, 0]); expect(mockStates[18]).toBe(false);
 });
 test("late profile response from a logged-out login cannot restore account state", async () => {
   let finish!: (value: any) => void;
@@ -66,6 +68,49 @@ test("late profile response from a logged-out login cannot restore account state
   ended(); finish({ profile: { first_name: "Old account" } });
   await Promise.resolve(); await Promise.resolve();
   expect(mockStates[2]).toBeNull(); expect(mockStates[3]).toBeNull();
+});
+
+test("Feedback highlights its bottom tab while open and restores the previous tab on close", () => {
+  (commuterService.getProfile as jest.Mock).mockResolvedValue({ profile: { first_name: "Owner" } });
+  render().find(e => e.type === "Login")!.props.onLoginSuccess(user, "token");
+  render().find(e => e.type === "Nav")!.props.onTabChange("rewards");
+  expect(render().find(e => e.type === "Nav")!.props.activeTab).toBe("rewards");
+  render().find(e => e.type === "Nav")!.props.onTabChange("feedback");
+  expect(render().find(e => e.type === "Nav")!.props.activeTab).toBe("feedback");
+  render().find(e => e.type === "Feedback")!.props.onFeedbackComplete();
+  expect(render().find(e => e.type === "Nav")!.props.activeTab).toBe("rewards");
+});
+
+test("home bell opens the web-sourced Updates section", () => {
+  (commuterService.getProfile as jest.Mock).mockResolvedValue({ profile: { first_name: "Owner" } });
+  render().find(e => e.type === "Login")!.props.onLoginSuccess(user, "token");
+  render().find(e => e.type === "Dashboard")!.props.onOpenAnnouncements();
+  const rewards = render().find(e => e.type === "Rewards")!;
+  expect(rewards.props.initialSection).toBe("announcements");
+  expect(render().find(e => e.type === "Nav")!.props.activeTab).toBe("rewards");
+});
+
+test("student renewal opened from Settings returns to Settings", () => {
+  (commuterService.getProfile as jest.Mock).mockResolvedValue({ profile: { first_name: "Owner" } });
+  render().find(e => e.type === "Login")!.props.onLoginSuccess(user, "token");
+  render().find(e => e.type === "Nav")!.props.onTabChange("profile");
+  render().find(e => e.type === "Profile")!.props.onOpenRenewal();
+  const renewal = render().find(e => e.type === "Renewal")!;
+  expect(renewal.props.backLabel).toBe("Settings");
+  renewal.props.onClose();
+  expect(render().find(e => e.type === "Nav")!.props.activeTab).toBe("profile");
+  expect(render().find(e => e.type === "Profile")).toBeDefined();
+});
+
+test("student renewal opened from Updates returns to Rewards & Updates", () => {
+  (commuterService.getProfile as jest.Mock).mockResolvedValue({ profile: { first_name: "Owner" } });
+  render().find(e => e.type === "Login")!.props.onLoginSuccess(user, "token");
+  render().find(e => e.type === "Nav")!.props.onTabChange("rewards");
+  render().find(e => e.type === "Rewards")!.props.onOpenRenewal();
+  const renewal = render().find(e => e.type === "Renewal")!;
+  expect(renewal.props.backLabel).toBe("Rewards & Updates");
+  renewal.props.onClose();
+  expect(render().find(e => e.type === "Nav")!.props.activeTab).toBe("rewards");
 });
 
 test("cached offline account is gated until the server validates its session", async () => {

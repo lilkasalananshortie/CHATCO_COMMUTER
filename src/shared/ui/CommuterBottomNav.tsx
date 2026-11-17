@@ -52,12 +52,6 @@ export const CommuterBottomNav: React.FC<CommuterBottomNavProps> = ({
       activeIcon: "home",
     },
     {
-      id: "fare",
-      label: "Fare",
-      icon: "calculator-outline",
-      activeIcon: "calculator",
-    },
-    {
       id: "lostfound",
       label: "Lost & Found",
       icon: "search-outline",
@@ -129,6 +123,12 @@ export const CommuterBottomNav: React.FC<CommuterBottomNavProps> = ({
         },
       ]}
     >
+      {Platform.OS === "android" && isLight && <View pointerEvents="none" style={styles.topShadow}>
+        <View style={[styles.shadowBand, { backgroundColor: "rgba(15, 23, 42, 0.015)" }]} />
+        <View style={[styles.shadowBand, { backgroundColor: "rgba(15, 23, 42, 0.03)" }]} />
+        <View style={[styles.shadowBand, { backgroundColor: "rgba(15, 23, 42, 0.055)" }]} />
+        <View style={[styles.shadowBand, { backgroundColor: "rgba(15, 23, 42, 0.085)" }]} />
+      </View>}
       <View onLayout={handleNavLayout} style={styles.navRow}>
         <Animated.View
           accessible={false}
@@ -192,6 +192,8 @@ export const CommuterBottomNav: React.FC<CommuterBottomNavProps> = ({
 function createStyles(colors: { [K in keyof typeof commuterColors]: string }, isLight: boolean) {
 return StyleSheet.create({
   container: {
+    position: "relative",
+    zIndex: 10,
     backgroundColor: isLight ? colors.surface : "#0B1E33",
     borderTopWidth: 1,
     borderTopColor: colors.border,
@@ -199,8 +201,16 @@ return StyleSheet.create({
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.35,
     shadowRadius: 12,
-    elevation: 12,
+    elevation: 0,
   },
+  topShadow: {
+    position: "absolute",
+    top: -12,
+    left: 0,
+    right: 0,
+    height: 12,
+  },
+  shadowBand: { height: 3 },
   navRow: {
     flexDirection: "row",
     alignItems: "center",

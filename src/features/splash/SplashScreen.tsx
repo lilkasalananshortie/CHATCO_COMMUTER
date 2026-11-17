@@ -1,14 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  Animated,
-  Dimensions,
-  Easing,
-  Platform,
-  Image,
-} from "react-native";
+import { Text } from "../../shared/ui/BrandText";
+import { View, StyleSheet, Animated, Dimensions, Easing, Platform, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 interface SplashScreenProps {
@@ -371,8 +363,8 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
           ]}
         >
           <View style={styles.titleRow}>
-            <Image source={require("../../../assets/logo-transparent.png")} style={{ width: 36, height: 36 }} resizeMode="contain" accessibilityLabel="ChatCo logo" />
-            <Text style={styles.brandTitle}>CHATCO</Text>
+            <Image source={require("../../../assets/logo-e-chatco.png")} style={{ width: 36, height: 36 }} resizeMode="contain" accessibilityLabel="E-CHATCO logo" />
+            <Text style={styles.brandTitle}>E-CHATCO</Text>
             <View style={styles.commuterPill}>
               <View style={styles.commuterPillDot} />
               <Text style={styles.commuterPillText}>COMMUTER</Text>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { View, Text, Pressable, StyleSheet, ActivityIndicator, Animated, Easing, Modal, Platform } from "react-native";
+import { Text } from "./src/shared/ui/BrandText";
+import { View, Pressable, StyleSheet, ActivityIndicator, Animated, BackHandler, Easing, Modal, Platform } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -15,7 +16,7 @@ import type { User, CommuterProfile, CommuterTab, Trip } from "./src/core/domain
 // UI Components
 import { CommuterBottomNav } from "./src/shared/ui/CommuterBottomNav";
 
-// Screens (6 commuter tabs + Onboarding + Splash)
+// Screens (5 commuter tabs + Onboarding + Splash)
 import { OnboardingScreen, ONBOARDING_STORAGE_KEY } from "./src/features/onboarding/OnboardingScreen";
 import { LoginScreen } from "./src/features/auth/LoginScreen";
 import { RegisterScreen } from "./src/features/auth/RegisterScreen";
@@ -31,15 +32,23 @@ import { QrScannerModal } from "./src/features/scanner/QrScannerModal";
 import { ReceiptScanModal } from "./src/features/scanner/ReceiptScanModal";
 import { ShareRideModal } from "./src/features/share/ShareRideModal";
 import { MascotErrorBoundary } from "./src/shared/ui/MascotErrorBoundary";
-import { FareScreen } from "./src/features/fare/FareScreen";
 import { StudentRenewalScreen } from "./src/features/student-renewal/StudentRenewalScreen";
 import { RenewalReminder } from "./src/features/student-renewal/RenewalReminder";
 import { useStudentRenewal } from "./src/features/student-renewal/useStudentRenewal";
 import { subscribeRewardsChanged } from "./src/core/domain/rewards-events";
+import { clearRewardsRequestCache } from "./src/core/api/rewards-request-cache";
 import { subscribeAnnouncementsRead } from "./src/core/domain/announcements-events";
 import { foregroundPoll } from "./src/shared/foreground-poll";
 import { DiscountApplicationScreen } from "./src/features/discount-application/DiscountApplicationScreen";
 import { useDiscountApplication } from "./src/features/discount-application/useDiscountApplication";
+
+const renewalBackLabels: Record<CommuterTab, string> = {
+  home: "Home",
+  lostfound: "Lost & Found",
+  rewards: "Rewards & Updates",
+  feedback: "Feedback",
+  profile: "Settings",
+};
 
 export default function App() {
   return (
@@ -73,9 +82,12 @@ function MainApp() {
   currentUserId.current = user?.id;
   const [profile, setProfile] = useState<CommuterProfile | null>(null);
   const [authView, setAuthView] = useState<"LOGIN" | "REGISTER">("LOGIN");
+  const [animateRegisterEntrance, setAnimateRegisterEntrance] = useState(false);
+  const [animateLoginEntrance, setAnimateLoginEntrance] = useState(false);
 
-  // Navigation state — six commuter tabs, including the fare calculator.
+  // Navigation state — five commuter tabs; the fare calculator opens from Home.
   const [activeTab, setActiveTab] = useState<CommuterTab>("home");
+  const [routeNoticeDismissed, setRouteNoticeDismissed] = useState(false);
   const [feedbackTargetTrip, setFeedbackTargetTrip] = useState<Trip | null>(null);
 
   // Smooth Dashboard Entrance Animation upon Login
@@ -87,6 +99,14 @@ function MainApp() {
   const [showShareModal, setShowShareModal] = useState(false);
   const [showRenewal, setShowRenewal] = useState(false);
   const [showDiscountApplication, setShowDiscountApplication] = useState(false);
+  useEffect(() => {
+    if (!showDiscountApplication || Platform.OS !== "android") return;
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      setShowDiscountApplication(false);
+      return true;
+    });
+    return () => subscription.remove();
+  }, [showDiscountApplication]);
   const operationalUserId = !sessionVerified.current || user?.must_change_password ? undefined : user?.id;
   const discountApplication = useDiscountApplication(operationalUserId);
   const renewal = useStudentRenewal(operationalUserId);
@@ -114,15 +134,17 @@ function MainApp() {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackFormVisible, setFeedbackFormVisible] = useState(false);
   const [retryingSession, setRetryingSession] = useState(false);
+  const [rewardsEntrySection, setRewardsEntrySection] = useState<"rewards" | "announcements">("rewards");
 
   const handleLogout = useCallback(() => {
+    clearRewardsRequestCache();
     sessionEpoch.current++;
     sessionVerified.current = false;
     currentUserId.current = undefined;
     setUnreadAnnouncements(0); setAvailableVouchers(0); setLostFoundBadge(0);
     setShowScanModal(false); setShowReceiptScanModal(false); setShowShareModal(false);
     setShowRenewal(false); setShowDiscountApplication(false); setShowFeedbackModal(false); setFeedbackTargetTrip(null);
-    setUser(null); setProfile(null); setActiveTab("home"); setAuthView("LOGIN");
+    setUser(null); setProfile(null); setActiveTab("home"); setAuthView("LOGIN"); setAnimateLoginEntrance(false);
   }, []);
 
   useEffect(() => setSessionEndedHandler(handleLogout), [handleLogout]);
@@ -203,6 +225,7 @@ function MainApp() {
   }, [fetchUnreadCount]);
 
   const handleLoginSuccess = (loggedInUser: User, token: string) => {
+    setAnimateLoginEntrance(false);
     const epoch = ++sessionEpoch.current;
     sessionVerified.current = true;
     currentUserId.current = loggedInUser.id;
@@ -279,6 +302,8 @@ function MainApp() {
       <OnboardingScreen
         onFinish={(targetAuthView) => {
           if (targetAuthView) {
+            setAnimateRegisterEntrance(false);
+            setAnimateLoginEntrance(false);
             setAuthView(targetAuthView);
           }
           setShowOnboarding(false);
@@ -290,7 +315,7 @@ function MainApp() {
   if (user && !sessionVerified.current) return (
     <View style={[styles.loadingScreen, { padding: 24, gap: 16 }]}>
       <Text style={{ color: colors.textPrimary, fontSize: 20, fontWeight: "700", textAlign: "center" }}>Session not verified</Text>
-      <Text style={{ color: colors.textSecondary, textAlign: "center" }}>Reconnect to ChatCo to verify your account before continuing.</Text>
+      <Text style={{ color: colors.textSecondary, textAlign: "center" }}>Reconnect to E-CHATCO to verify your account before continuing.</Text>
       <Pressable disabled={retryingSession} onPress={() => void retrySession()} style={{ backgroundColor: colors.primary, padding: 14, borderRadius: 10 }}>
         <Text style={{ color: "white", fontWeight: "700" }}>{retryingSession ? "Checking session…" : "Try again"}</Text>
       </Pressable>
@@ -307,8 +332,13 @@ function MainApp() {
       {!user ? (
         authView === "LOGIN" ? (
           <LoginScreen
+            animateEntranceFromRight={animateLoginEntrance}
             onLoginSuccess={handleLoginSuccess}
-            onGoToRegister={() => setAuthView("REGISTER")}
+            onGoToRegister={(animateEntrance) => {
+              setAnimateLoginEntrance(false);
+              setAnimateRegisterEntrance(animateEntrance);
+              setAuthView("REGISTER");
+            }}
             onResetOnboarding={async () => {
               await AsyncStorage.removeItem(ONBOARDING_STORAGE_KEY);
               setShowOnboarding(true);
@@ -316,8 +346,9 @@ function MainApp() {
           />
         ) : (
           <RegisterScreen
-            onRegisterSuccess={() => setAuthView("LOGIN")}
-            onGoToLogin={() => setAuthView("LOGIN")}
+            animateEntrance={animateRegisterEntrance}
+            onRegisterSuccess={() => { setAnimateRegisterEntrance(false); setAnimateLoginEntrance(false); setAuthView("LOGIN"); }}
+            onGoToLogin={(animateEntrance) => { setAnimateRegisterEntrance(false); setAnimateLoginEntrance(animateEntrance); setAuthView("LOGIN"); }}
           />
         )
       ) : (
@@ -350,24 +381,35 @@ function MainApp() {
           <View
             style={[
               styles.screenViewport,
-              activeTab !== "home" && { paddingTop: insets.top },
+              activeTab === "home" && { overflow: "hidden" },
+              (activeTab !== "home" || showDiscountApplication) && { paddingTop: insets.top },
             ]}
           >
+            {showDiscountApplication && <DiscountApplicationScreen key={user.id}
+              state={discountApplication.state} loading={discountApplication.loading} loadError={discountApplication.error}
+              onRefresh={async () => { await discountApplication.refreshAfterMutation(); await refreshRenewal(); }}
+              onGoHome={() => { setShowDiscountApplication(false); setActiveTab("home"); }}
+              onOpenRenewal={() => { setShowDiscountApplication(false); setShowRenewal(true); void renewal.refresh(); }} />}
+            {!showDiscountApplication && <>
             {activeTab === "home" && (
               <DashboardScreen
                 user={user}
                 profile={profile}
+                routeNoticeDismissed={routeNoticeDismissed}
+                onDismissRouteNotice={() => setRouteNoticeDismissed(true)}
                 onOpenScan={() => setShowScanModal(true)}
                 onOpenShareRide={() => setShowShareModal(true)}
-                onOpenProfile={() => setActiveTab("profile")}
+                onOpenProfile={() => { setActiveTab("profile"); void renewal.refresh(); void discountApplication.refresh(); }}
                 onOpenTour={() => setShowOnboarding(true)}
+                onOpenAnnouncements={() => { setRewardsEntrySection("announcements"); setActiveTab("rewards"); }}
+                unreadAnnouncements={unreadAnnouncements}
                 onNavigateToFeedback={handleNavigateToFeedback}
               />
             )}
             {activeTab === "lostfound" && <LostFoundScreen />}
-            {activeTab === "fare" && <FareScreen />}
             {activeTab === "rewards" && (
               <RewardsScreen
+                initialSection={rewardsEntrySection}
                 onOpenReceiptScan={() => setShowReceiptScanModal(true)}
                 onOpenRenewal={() => { setShowRenewal(true); void renewal.refresh(); }}
                 onOpenDiscountApplication={() => { setShowDiscountApplication(true); void discountApplication.refresh(); }}
@@ -384,6 +426,8 @@ function MainApp() {
                 }}
                 onOpenTour={() => setShowOnboarding(true)}
                 serverProfile={profile}
+                renewalState={renewal.state}
+                onOpenRenewal={() => { setShowRenewal(true); void renewal.refresh(); }}
                 discountApplicationState={discountApplication.state}
                 discountApplicationLoading={discountApplication.loading}
                 discountApplicationError={discountApplication.error}
@@ -396,12 +440,16 @@ function MainApp() {
                 }}
               />
             )}
+            </>}
           </View>
 
           {/* Bottom navigation matching the commuter destinations */}
           <CommuterBottomNav
-            activeTab={activeTab}
+            activeTab={showFeedbackModal ? "feedback" : activeTab}
             onTabChange={(tab) => {
+              setShowDiscountApplication(false);
+              if (tab === "rewards") setRewardsEntrySection("rewards");
+              if (tab === "profile") { void renewal.refresh(); void discountApplication.refresh(); }
               if (tab === "feedback") {
                 handleNavigateToFeedback();
               } else {
@@ -421,20 +469,10 @@ function MainApp() {
 
           <Modal visible={showRenewal} animationType="slide" onRequestClose={() => setShowRenewal(false)}>
             <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: insets.bottom, backgroundColor: colors.background }}>
-              {showRenewal && <StudentRenewalScreen state={renewal.state} loading={renewal.loading} loadError={renewal.error} onRefresh={refreshRenewal} onClose={() => setShowRenewal(false)} />}
+              {showRenewal && <StudentRenewalScreen state={renewal.state} loading={renewal.loading} loadError={renewal.error} backLabel={renewalBackLabels[activeTab]} onRefresh={refreshRenewal} onClose={() => setShowRenewal(false)} />}
             </View>
           </Modal>
-          <Modal visible={showDiscountApplication} animationType="slide" onRequestClose={() => setShowDiscountApplication(false)}>
-            <View style={{ flex: 1, paddingTop: insets.top, paddingBottom: insets.bottom, backgroundColor: colors.background }}>
-              {showDiscountApplication && <DiscountApplicationScreen key={user.id}
-                state={discountApplication.state} loading={discountApplication.loading} loadError={discountApplication.error}
-                onRefresh={async () => { await discountApplication.refreshAfterMutation(); await refreshRenewal(); }}
-                onClose={() => setShowDiscountApplication(false)}
-                onGoHome={() => { setShowDiscountApplication(false); setActiveTab("home"); }}
-                onOpenRenewal={() => { setShowDiscountApplication(false); setShowRenewal(true); void renewal.refresh(); }} />}
-            </View>
-          </Modal>
-          <RenewalReminder key={user.id} state={renewal.state} enabled={!showDiscountApplication && !showRenewal && !showScanModal && !showReceiptScanModal && !showShareModal} onOpen={() => setShowRenewal(true)} onRefresh={renewal.refresh} />
+          <RenewalReminder key={user.id} noticeId={renewal.noticeId} viewingRenewal={showRenewal} state={renewal.state} enabled={!showDiscountApplication && !showRenewal && !showScanModal && !showReceiptScanModal && !showShareModal} onOpen={() => setShowRenewal(true)} onRefresh={renewal.refresh} />
 
           <ReceiptScanModal
             visible={showReceiptScanModal}

@@ -6,19 +6,19 @@ import { discountApplicationService } from "../../core/api/discount-application-
 import { FeatureButton, useFeatureStyles } from "../../shared/ui/FeatureControls";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import { ProfileIcon } from "../profile/ProfileIcon";
-import { EMPTY_SCHOOL_FIELDS, SchoolProofFields } from "../student-renewal/SchoolProofFields";
+import { DiscountSchoolProofFields, EMPTY_APPLICATION_SCHOOL_FIELDS } from "./DiscountSchoolProofFields";
 import { pickRenewalDocument } from "../student-renewal/pick-renewal-document";
 import { SupportingDocumentField } from "../student-renewal/SupportingDocumentField";
 import { readNativeProof, schoolProofFieldsError, type RenewalDocument, type RenewalFields } from "../student-renewal/renewal-types";
 import { APPLICATION_LABELS, DISCOUNT_CATEGORIES, applicationPayload, canCancelApplication, type ApplicationState, type DiscountCategory } from "./application-types";
 
-export function DiscountApplicationScreen({ state, loading, loadError, onRefresh, onClose, onGoHome, onOpenRenewal }: {
-  state: ApplicationState | null; loading: boolean; loadError: string; onRefresh: () => Promise<void>; onClose: () => void; onGoHome: () => void; onOpenRenewal: () => void;
+export function DiscountApplicationScreen({ state, loading, loadError, onRefresh, onGoHome, onOpenRenewal }: {
+  state: ApplicationState | null; loading: boolean; loadError: string; onRefresh: () => Promise<void>; onGoHome: () => void; onOpenRenewal: () => void;
 }) {
   const s = useFeatureStyles();
   const { colors, isLight } = useCommuterTheme();
   const [category, setCategory] = useState<DiscountCategory | "">("");
-  const [fields, setFields] = useState<RenewalFields>(EMPTY_SCHOOL_FIELDS);
+  const [fields, setFields] = useState<RenewalFields>(EMPTY_APPLICATION_SCHOOL_FIELDS);
   const [document, setDocument] = useState<RenewalDocument | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -37,8 +37,8 @@ export function DiscountApplicationScreen({ state, loading, loadError, onRefresh
     setDocument(null);
     if (application?.request_type === "APPLICATION" && current?.status === "NEEDS_CORRECTION") {
       setCategory(application.requested_type);
-      setFields({ school_name: application.school_name ?? "", education_level: application.education_level ?? "HIGH_SCHOOL", grade_level: String(application.grade_level ?? 7), school_year: application.school_year ?? "", enrollment_term: application.enrollment_term ?? "" });
-    } else { setCategory(""); setFields(EMPTY_SCHOOL_FIELDS); }
+      setFields({ school_name: application.school_name ?? "", education_level: application.education_level ?? "", grade_level: application.grade_level == null ? "" : String(application.grade_level), school_year: application.school_year ?? "", enrollment_term: application.enrollment_term ?? "" });
+    } else { setCategory(""); setFields(EMPTY_APPLICATION_SCHOOL_FIELDS); }
   }, [current?.application?.id, current?.application?.revision, current?.status]);
   const choose = async () => {
     if (pending.current) return;
@@ -135,16 +135,16 @@ export function DiscountApplicationScreen({ state, loading, loadError, onRefresh
               <View style={{ flexDirection: "column", gap: 9, marginTop: 12 }}>
                 {(Object.keys(DISCOUNT_CATEGORIES) as DiscountCategory[]).map((value) => {
                   const selected = category === value;
-                  return <TouchableOpacity key={value} accessibilityRole="radio" accessibilityLabel={DISCOUNT_CATEGORIES[value]} accessibilityState={{ checked: selected, disabled: blocked || correction }} disabled={blocked || correction} onPress={() => { setCategory(value); setFields(EMPTY_SCHOOL_FIELDS); setDocument(null); setError(""); }} style={{ width: "100%", minHeight: 88, justifyContent: "flex-start", gap: 12, padding: 13, borderRadius: 10, borderWidth: 1, borderColor: selected ? (isLight ? "#1A5FB4" : "#62A0EA") : colors.border, backgroundColor: selected ? (isLight ? "#EAF3FF" : "#1A5FB4") : (isLight ? colors.surface : "rgba(255,255,255,0.03)"), opacity: blocked || correction ? 0.7 : 1 }}>
-                    <Ionicons name={value === "STUDENT" ? "school-outline" : value === "PWD" ? "accessibility-outline" : "id-card-outline"} size={20} color={selected ? (isLight ? "#1A5FB4" : "#99C1F1") : colors.textMuted} />
-                    <View><Text style={{ color: colors.textPrimary, fontWeight: "700", fontSize: 14 }}>{DISCOUNT_CATEGORIES[value]}</Text><Text style={{ color: colors.textMuted, fontSize: 11, lineHeight: 15, marginTop: 3 }}>{categoryDetails[value]}</Text></View>
+                  return <TouchableOpacity key={value} accessibilityRole="radio" accessibilityLabel={DISCOUNT_CATEGORIES[value]} accessibilityState={{ checked: selected, disabled: blocked || correction }} disabled={blocked || correction} onPress={() => { setCategory(value); setDocument(null); setError(""); }} style={{ width: "100%", minHeight: 88, justifyContent: "flex-start", gap: 12, padding: 13, borderRadius: 10, borderWidth: 1, borderColor: selected ? "#1A5FB4" : colors.border, backgroundColor: selected ? "#1A5FB4" : (isLight ? colors.surface : "#0B1828"), opacity: blocked || correction ? 0.7 : 1 }}>
+                    <Ionicons name={value === "STUDENT" ? "school-outline" : value === "PWD" ? "accessibility-outline" : "id-card-outline"} size={20} color={selected ? "#FFFFFF" : colors.textMuted} />
+                    <View><Text style={{ color: selected ? "#FFFFFF" : colors.textPrimary, fontWeight: "700", fontSize: 14 }}>{DISCOUNT_CATEGORIES[value]}</Text><Text style={{ color: selected ? "#DDEBFA" : colors.textMuted, fontSize: 11, lineHeight: 15, marginTop: 3 }}>{categoryDetails[value]}</Text></View>
                   </TouchableOpacity>;
                 })}
               </View>
             </View>
             {!!category && <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 18, gap: 14 }}>
               <View><Text style={{ color: colors.textPrimary, fontSize: 16, fontWeight: "700" }}>Supporting document</Text><Text style={[s.muted, { marginTop: 5 }]}>{requiresDocument ? category === "STUDENT" ? "Use a school ID showing the current school year or another document proving current enrollment." : `Upload your ${DISCOUNT_CATEGORIES[category]} ID/card. The name should match your verified commuter account.` : "Document upload is disabled for local workflow testing. No file will be sent or stored."}</Text></View>
-              {category === "STUDENT" && <SchoolProofFields fields={fields} onChange={setFields} disabled={blocked} />}
+              {category === "STUDENT" && <DiscountSchoolProofFields fields={fields} onChange={setFields} disabled={blocked} />}
               {requiresDocument && <><Text style={fieldLabel}>{category === "STUDENT" ? "Enrollment proof" : `${DISCOUNT_CATEGORIES[category]} ID/card`}</Text><SupportingDocumentField webLayout document={document} label={busy ? "Choosing supporting document…" : "Choose supporting document"} disabled={blocked} onChoose={() => void choose()} onRemove={() => setDocument(null)} /></>}
             </View>}
             <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, padding: 13, borderRadius: 12, borderWidth: 1, borderColor: isLight ? "rgba(26,95,180,0.2)" : "rgba(98,160,234,0.2)", backgroundColor: isLight ? "#F0F7FF" : "rgba(98,160,234,0.07)" }}><ProfileIcon name="shield-check" size={19} color={isLight ? "#1A5FB4" : "#99C1F1"} /><Text style={[s.text, { flex: 1, fontSize: 13 }]}>Your fare stays Regular while the team checks your document. Once approved, your new classification is used by the existing fare discount process. Student discounts require annual renewal.</Text></View>
@@ -155,7 +155,7 @@ export function DiscountApplicationScreen({ state, loading, loadError, onRefresh
             <Text style={s.text}>{current.status === "PENDING" ? "Your supporting document is being verified. Your account stays Regular until approval. We will send the result to Rewards & Updates." : current.status === "APPROVED" ? "Your discount application was approved. Your current commuter classification is shown above." : "New discount applications are available to active Regular commuter accounts."}</Text>
             {current.commuter_type === "STUDENT" && current.discount_expires_at && <View style={{ gap: 8 }}><Text style={s.muted}>Your Student discount expires {new Date(current.discount_expires_at).toLocaleDateString("en-PH", { dateStyle: "medium", timeZone: "Asia/Manila" })} Philippine time.</Text><TouchableOpacity accessibilityRole="button" onPress={onOpenRenewal} style={{ minHeight: 40, justifyContent: "center" }}><Text style={{ color: isLight ? "#1A5FB4" : "#99C1F1", textDecorationLine: "underline", fontWeight: "700" }}>View annual renewal</Text></TouchableOpacity></View>}
             {canCancelApplication(current) && <FeatureButton secondary label="Cancel application" disabled={blocked} onPress={() => setConfirmCancel(true)} />}
-            <TouchableOpacity accessibilityRole="button" disabled={busy || loading} onPress={() => void refreshStatus()} style={{ minHeight: 42, flexDirection: "row", alignItems: "center", gap: 7 }}><Text style={{ color: isLight ? "#1A5FB4" : "#99C1F1", fontWeight: "700", fontSize: 14 }}>Refresh status</Text><Ionicons name="arrow-forward" size={15} color={isLight ? "#1A5FB4" : "#99C1F1"} /></TouchableOpacity>
+            <TouchableOpacity accessibilityRole="button" disabled={busy || loading} onPress={() => void refreshStatus()} style={{ minHeight: 42, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 }}><Text style={{ color: isLight ? "#1A5FB4" : "#99C1F1", fontWeight: "700", fontSize: 14 }}>Refresh status</Text><Ionicons name="arrow-forward" size={15} color={isLight ? "#1A5FB4" : "#99C1F1"} /></TouchableOpacity>
           </View>}
       </View>}
       <View style={[panel, { gap: 14 }]}>

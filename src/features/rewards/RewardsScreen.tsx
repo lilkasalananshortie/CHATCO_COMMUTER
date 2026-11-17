@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Animated,
+  Easing,
   RefreshControl,
   ActivityIndicator,
   Modal,
@@ -22,12 +23,13 @@ import { ReceiptScanModal } from "../scanner/ReceiptScanModal";
 import { Mascot } from "../../shared/ui/Mascot";
 import { MascotMessage } from "../../shared/ui/MascotMessage";
 import { getMascotErrorState } from "../../shared/ui/mascot-error";
-import { loadRewardsAndUpdates } from "./load-rewards";
 import { voucherLabel, voucherWalletStatus } from "../../core/domain/rewards";
 import { subscribeRewardsChanged } from "../../core/domain/rewards-events";
+import { clearRewardsRequestCache } from "../../core/api/rewards-request-cache";
 import { notifyAnnouncementsRead } from "../../core/domain/announcements-events";
 import { announcementLabel } from "../../core/domain/announcement-category";
 import { RewardsProgressRing, REWARD_RING_CIRCUMFERENCE } from "./RewardsProgressRing";
+import { RewardsRenewalNotice } from "./RewardsRenewalNotice";
 import type { RenewalState } from "../student-renewal/renewal-types";
 import { useReducedMotion } from "../../shared/useReducedMotion";
 
@@ -39,6 +41,7 @@ import type {
 } from "../../core/domain/types";
 
 interface RewardsScreenProps {
+  initialSection?: "rewards" | "announcements";
   onOpenReceiptScan?: () => void;
   onOpenRenewal?: () => void;
   onOpenDiscountApplication?: () => void;
@@ -138,9 +141,14 @@ function AnimatedVoucherStub({ voucher, tab, index }: { voucher: Voucher; tab: "
     };
   }, [colors, isLight]);
   const opacity = useRef(new Animated.Value(0)).current;
+  const reduceMotion = useReducedMotion();
   const expiresAt = voucher.expiresAt ?? voucher.expires_at;
 
   useEffect(() => {
+    if (reduceMotion) {
+      opacity.setValue(1);
+      return;
+    }
     opacity.setValue(0);
     const animation = Animated.timing(opacity, {
       toValue: 1,
@@ -150,7 +158,7 @@ function AnimatedVoucherStub({ voucher, tab, index }: { voucher: Voucher; tab: "
     });
     animation.start();
     return () => animation.stop();
-  }, [index, opacity, tab, voucher.id]);
+  }, [index, opacity, reduceMotion, tab, voucher.id]);
 
   const available = tab === "AVAILABLE";
   const label = tab === "USED" ? "Used" : tab === "EXPIRED" ? "Expired" : expiresAt ? "Valid until" : "Validity";
@@ -181,6 +189,7 @@ function AnimatedVoucherStub({ voucher, tab, index }: { voucher: Voucher; tab: "
 }
 
 export const RewardsScreen: React.FC<RewardsScreenProps> = ({
+  initialSection = "rewards",
   onOpenReceiptScan,
   onOpenRenewal,
   onOpenDiscountApplication,
@@ -210,17 +219,21 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
   const [voucherCopied, setVoucherCopied] = useState(false);
   const [selectedAnnouncement, setSelectedAnnouncement] = useState<Announcement | null>(null);
   const [voucherTab, setVoucherTab] = useState<"AVAILABLE" | "USED" | "EXPIRED">("AVAILABLE");
-  const [section, setSection] = useState<"rewards" | "announcements">("rewards");
+  const [section, setSection] = useState<"rewards" | "announcements">(initialSection);
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [walletItems, setWalletItems] = useState<Record<"AVAILABLE" | "USED" | "EXPIRED", Voucher[]>>({ AVAILABLE: [], USED: [], EXPIRED: [] });
   const walletCursors = useRef<Record<"AVAILABLE" | "USED" | "EXPIRED", string | null>>({ AVAILABLE: null, USED: null, EXPIRED: null });
   const [walletHasMore, setWalletHasMore] = useState<Record<"AVAILABLE" | "USED" | "EXPIRED", boolean>>({ AVAILABLE: false, USED: false, EXPIRED: false });
   const [walletLoading, setWalletLoading] = useState<Record<"AVAILABLE" | "USED" | "EXPIRED", boolean>>({ AVAILABLE: false, USED: false, EXPIRED: false });
   const [walletError, setWalletError] = useState<Record<"AVAILABLE" | "USED" | "EXPIRED", unknown>>({ AVAILABLE: null, USED: null, EXPIRED: null });
+  const [announcementsLoading, setAnnouncementsLoading] = useState(true);
   const walletRequestIds = useRef<Record<"AVAILABLE" | "USED" | "EXPIRED", number>>({ AVAILABLE: 0, USED: 0, EXPIRED: 0 });
   const previousAvailableVoucherKey = useRef<string | null>(null);
   const reduceMotion = useReducedMotion();
   const progressRingValue = useRef(new Animated.Value(0)).current;
+  const voucherTabProgress = useRef(new Animated.Value(0)).current;
+  const voucherListOpacity = useRef(new Animated.Value(1)).current;
+  const previousVoucherTab = useRef(voucherTab);
   const progressPercent = data
     ? Math.min(100, Math.max(0, ((data.currentCycleRides ?? data.current_rides ?? 0) / (data.ridesNeeded ?? data.target_rides ?? 10)) * 100))
     : 0;
@@ -239,32 +252,62 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
     return () => animation.stop();
   }, [progressPercent, progressRingValue, reduceMotion]);
 
+  useEffect(() => {
+    if (reduceMotion) {
+      voucherTabProgress.setValue(voucherTab === "AVAILABLE" ? 0 : 1);
+      return;
+    }
+    const animation = Animated.timing(voucherTabProgress, {
+      toValue: voucherTab === "AVAILABLE" ? 0 : 1,
+      duration: 220,
+      easing: Easing.out(Easing.ease),
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [voucherTab, voucherTabProgress, reduceMotion]);
+
+  useEffect(() => {
+    if (previousVoucherTab.current === voucherTab) return;
+    previousVoucherTab.current = voucherTab;
+    if (reduceMotion) {
+      voucherListOpacity.setValue(1);
+      return;
+    }
+    voucherListOpacity.setValue(0);
+    const animation = Animated.timing(voucherListOpacity, {
+      toValue: 1,
+      duration: 220,
+      easing: Easing.out(Easing.ease),
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [voucherTab, voucherListOpacity, reduceMotion]);
+
   const fetchData = useCallback(async () => {
     if (fetching.current) return;
     fetching.current = true;
     const revision = announcementsRevision.current;
     try {
-      const { rewards: rewardRes, announcements: announcementRes } = await loadRewardsAndUpdates(commuterService);
-      if (!mounted.current) return;
-
-      if (rewardRes.status === "fulfilled") {
-        setData(rewardRes.value);
-        setError(null);
-      } else {
-        setError(rewardRes.reason ?? new Error("Rewards unavailable"));
-      }
-
-      if (announcementRes.status === "fulfilled" && revision === announcementsRevision.current) {
-        setAnnouncements(announcementRes.value || []);
-        setAnnouncementsError(null);
-      } else if (announcementRes.status === "rejected") {
-        setAnnouncementsError(announcementRes.reason ?? new Error("Updates unavailable"));
-      }
-    } catch (err) {
-      if (mounted.current) setError(err ?? new Error("Rewards unavailable"));
+      await Promise.all([
+        commuterService.getRewards().then(
+          rewards => { if (mounted.current) { setData(rewards); setError(null); } },
+          err => { if (mounted.current) setError(err ?? new Error("Rewards unavailable")); },
+        ).finally(() => { if (mounted.current) setLoading(false); }),
+        commuterService.getAnnouncements().then(
+          announcements => {
+            if (mounted.current && revision === announcementsRevision.current) {
+              setAnnouncements(announcements || []);
+              setAnnouncementsError(null);
+            }
+          },
+          err => { if (mounted.current) setAnnouncementsError(err ?? new Error("Updates unavailable")); },
+        ).finally(() => { if (mounted.current) setAnnouncementsLoading(false); }),
+      ]);
     } finally {
       fetching.current = false;
-      if (mounted.current) { setLoading(false); setRefreshing(false); }
+      if (mounted.current) setRefreshing(false);
     }
   }, []);
 
@@ -321,6 +364,7 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
   }, [availableVoucherKey, fetchWallet]);
 
   const onRefresh = () => {
+    clearRewardsRequestCache();
     setRefreshing(true);
     void Promise.all([fetchData(), fetchWallet(voucherTab, true)]);
   };
@@ -387,31 +431,16 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
   };
 
 
-  if (loading) {
-    return (
-      <View style={styles.loadingScreen}>
-        <ActivityIndicator size="large" color="#62A0EA" />
-      </View>
-    );
-  }
-
-  if (!data) {
-    return (
-      <View style={styles.errorScreen}>
-        <MascotMessage {...getMascotErrorState(error)} onRetry={onRefresh} retrying={refreshing} />
-      </View>
-    );
-  }
-
-  const currentRides = data.currentCycleRides ?? data.current_rides ?? 0;
-  const targetRides = data.ridesNeeded ?? data.target_rides ?? 10;
+  const rewardData = data ?? {};
+  const currentRides = rewardData.currentCycleRides ?? rewardData.current_rides ?? 0;
+  const targetRides = rewardData.ridesNeeded ?? rewardData.target_rides ?? 10;
   const ridesRemaining = Math.max(0, targetRides - currentRides);
   const progressRingOffset = progressRingValue.interpolate({
     inputRange: [0, 100],
     outputRange: [REWARD_RING_CIRCUMFERENCE, 0],
   });
-  const vouchers = data.vouchers || [];
-  const availableVoucherCount = data.availableVoucherCount ?? vouchers.filter(voucher => voucherWalletStatus(voucher) === "AVAILABLE").length;
+  const vouchers = rewardData.vouchers || [];
+  const availableVoucherCount = rewardData.availableVoucherCount ?? vouchers.filter(voucher => voucherWalletStatus(voucher) === "AVAILABLE").length;
   const visibleVouchers = walletItems[voucherTab];
 
   return (
@@ -453,7 +482,7 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
           />
         }
       >
-        {Boolean(error) && (
+        {section === "rewards" && Boolean(data) && Boolean(error) && (
           <MascotMessage
             {...getMascotErrorState(error)}
             message="Showing your last loaded rewards. Reconnect and refresh before using a voucher."
@@ -461,10 +490,7 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
           />
         )}
         {section === "announcements" && <>
-        {onOpenRenewal && renewalState?.notice_active && <View style={styles.renewalNotice}>
-          <Text style={styles.renewalNoticeText}>Student renewal: {renewalState.renewal_period}. Check your eligibility and submit enrollment proof.</Text>
-          <TouchableOpacity accessibilityRole="button" onPress={onOpenRenewal} style={styles.renewalAction}><Text style={styles.renewalActionText}>Review student renewal</Text></TouchableOpacity>
-        </View>}
+        {onOpenRenewal && renewalState?.notice_active && <RewardsRenewalNotice renewal={renewalState} onOpen={onOpenRenewal} />}
         {/* --- 1. LATEST UPDATES (ANNOUNCEMENTS) --- */}
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
@@ -537,6 +563,8 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
 
             {Boolean(announcementsError) ? (
               <MascotMessage {...getMascotErrorState(announcementsError)} message="We couldn't refresh announcements. Please try again." compact onRetry={onRefresh} retrying={refreshing} />
+            ) : announcementsLoading && announcements.length === 0 ? (
+              <ActivityIndicator accessibilityLabel="Loading updates" size="small" color="#62A0EA" />
             ) : announcements.filter((item) => !unreadOnly || !item.is_read).length === 0 && (
               <MascotMessage pose="noticeboard" title="All caught up" message="No announcements right now. Check back for updates." compact />
             )}
@@ -544,7 +572,13 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
         </View>
         </>}
 
-        {section === "rewards" && <>
+        {section === "rewards" && (loading ? (
+          <View style={styles.loadingScreen}><ActivityIndicator size="large" color="#62A0EA" /></View>
+        ) : !data ? (
+          <View style={styles.errorScreen}>
+            <MascotMessage {...getMascotErrorState(error)} onRetry={onRefresh} retrying={refreshing} />
+          </View>
+        ) : <>
         {/* --- 2. PROGRESS RING SECTION --- */}
         <View style={styles.progressCard}>
           {/* Help Button "?" */}
@@ -579,7 +613,7 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
             <View style={styles.statsRow}>
               <View style={styles.statBox}>
                 <Text style={styles.statBoxLabel}>Total Rides</Text>
-                <Text style={styles.statBoxValue}>{data.totalRides}</Text>
+                <Text style={styles.statBoxValue}>{rewardData.totalRides}</Text>
               </View>
               <View style={styles.statBox}>
                 <Text style={styles.statBoxLabel}>Vouchers Available</Text>
@@ -600,10 +634,13 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
               accessibilityRole="tab" accessibilityState={{ selected: tab === voucherTab }}
               onPress={() => setVoucherTab(tab)}
               style={[styles.voucherTab, tab === voucherTab && styles.voucherTabActive]}>
+              <Animated.View style={{ transform: [{ scale: voucherTabProgress.interpolate({ inputRange: [0, 1], outputRange: tab === "AVAILABLE" ? [1, 0.96] : [0.96, 1] }) }] }}>
               <Text style={[styles.voucherTabText, tab === voucherTab && styles.voucherTabTextActive]}>{tab === "AVAILABLE" ? "Available" : "Expired"}{tab === "AVAILABLE" && availableVoucherCount > 0 ? ` ${availableVoucherCount}` : ""}</Text>
+              </Animated.View>
             </TouchableOpacity>)}
           </View>
           </View>
+          <Animated.View style={{ opacity: voucherListOpacity }}>
           <ScrollView nestedScrollEnabled style={{ maxHeight: 420 }} contentContainerStyle={styles.vouchersList} accessibilityLabel="Voucher list">
             {walletLoading[voucherTab] && <View style={styles.walletLoading}><ActivityIndicator size="small" color="#62A0EA" /></View>}
             {!walletLoading[voucherTab] && visibleVouchers.map((voucher, index) => (
@@ -644,8 +681,9 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
               </TouchableOpacity>
             )}
           </ScrollView>
+          </Animated.View>
         </View>
-        </>}
+        </>)}
       </ScrollView>
 
       {/* --- RECEIPT SCAN MODAL --- */}
@@ -658,75 +696,27 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
       />
 
       {/* --- "HOW REWARDS WORK" EXPLAINER MODAL --- */}
-      <Modal visible={showRewardsHelp} animationType="fade" transparent>
+      <Modal visible={showRewardsHelp} animationType={reduceMotion ? "none" : "fade"} transparent onRequestClose={() => setShowRewardsHelp(false)}>
         <View style={styles.modalBackdrop}>
-          <View style={styles.explainerCard}>
-            <View style={styles.explainerHeader}>
-              <Text style={styles.explainerTitle}>How free rides work</Text>
-              <Text style={styles.explainerSub}>
-                Every {targetRides} eligible paid rides earns one free ride voucher.
-              </Text>
+          <View accessibilityViewIsModal style={[styles.explainerCard, { maxWidth: 448, borderRadius: 10, backgroundColor: isLight ? "#FFFFFF" : "#1B273F", borderColor: isLight ? "#E5E7EB" : "#334155" }]}>
+            <View style={{ paddingLeft: 20, paddingRight: 8, paddingTop: 8, paddingBottom: 8, flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Text accessibilityRole="header" style={{ flex: 1, color: colors.textPrimary, fontSize: 18, fontWeight: "700" }}>How rewards work</Text>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Close rewards help" onPress={() => setShowRewardsHelp(false)} style={{ width: 44, height: 44, justifyContent: "center", alignItems: "center" }}><Ionicons name="close" size={20} color={colors.textMuted} /></TouchableOpacity>
             </View>
-
-            <ScrollView style={styles.explainerBody}>
-              <View style={styles.stepRow}>
-                <View style={styles.stepNumberCircle}>
-                  <Text style={styles.stepNumberText}>1</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                    <Text style={styles.stepTitle}>Complete an eligible ride</Text>
-                  <Text style={styles.stepDesc}>
-                      Only paid CASH and GCASH rides count toward the reward cycle.
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.stepRow}>
-                <View style={styles.stepNumberCircle}>
-                  <Text style={styles.stepNumberText}>2</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                    <Text style={styles.stepTitle}>Record cash rides</Text>
-                  <Text style={styles.stepDesc}>
-                      GCash rides are counted automatically. Scan the QR on a cash receipt from the Rewards screen to add that ride.
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.stepRow}>
-                <View style={styles.stepNumberCircle}>
-                  <Text style={styles.stepNumberText}>3</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                    <Text style={styles.stepTitle}>Unlock your voucher</Text>
-                  <Text style={styles.stepDesc}>
-                      After {targetRides} eligible paid rides, ChatCo adds a free ride voucher to My Vouchers.
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.stepRow}>
-                <View style={styles.stepNumberCircle}>
-                  <Text style={styles.stepNumberText}>4</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                    <Text style={styles.stepTitle}>Use it on a ride</Text>
-                  <Text style={styles.stepDesc}>
-                      Open My Vouchers, tap <Text style={{ color: colors.textPrimary, fontWeight: "700" }}>Use Voucher</Text>,
-                      and show the code to the conductor. They record the voucher fare; that free ride does not add progress to the next cycle.
-                  </Text>
-                </View>
-              </View>
-
+            <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 20, gap: 20 }}>
+              {[
+                { title: "1. Complete paid rides", description: "GCash rides count automatically. For cash rides, scan the QR on your conductor's receipt. Each receipt can be claimed once within its claim window." },
+                { title: "2. Earn a free ride", description: `Every ${targetRides} paid rides earns a voucher. Your progress then starts toward the next voucher.` },
+                { title: "3. Use it with GCash", description: "When you scan the conductor's GCash QR to pay, we offer your available voucher. Accept it to get the ride free or discounted; any remaining fare is paid by GCash." },
+              ].map(item => <View key={item.title} style={{ gap: 4 }}>
+                <Text style={{ color: colors.textPrimary, fontSize: 13, lineHeight: 20, fontWeight: "700" }}>{item.title}</Text>
+                <Text style={{ color: colors.textSecondary, fontSize: 13, lineHeight: 20 }}>{item.description}</Text>
+              </View>)}
+              <Text style={{ color: colors.textSecondary, fontSize: 12, lineHeight: 18, borderTopWidth: 1, borderTopColor: isLight ? "#E5E7EB" : "#334155", paddingTop: 14 }}>Check each voucher's expiry date before riding. Free rides paid with vouchers do not count toward the next reward.</Text>
             </ScrollView>
-
-            <View style={styles.modalFooter}>
-              <TouchableOpacity
-                onPress={() => setShowRewardsHelp(false)}
-                style={styles.neutralModalButton}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.neutralModalButtonText}>Got it</Text>
+            <View style={{ padding: 16, paddingTop: 0 }}>
+              <TouchableOpacity accessibilityRole="button" onPress={() => setShowRewardsHelp(false)} style={[styles.neutralModalButton, { backgroundColor: isLight ? "#F9FAFB" : "#24324A", borderColor: isLight ? "#E5E7EB" : "#334155", minHeight: 44 }]} activeOpacity={0.8}>
+                <Text style={{ color: colors.textPrimary, fontSize: 13, fontWeight: "600" }}>Got it</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -985,18 +975,6 @@ const baseStyles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 20,
   },
-  renewalNotice: {
-    marginBottom: 24,
-    padding: 20,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "rgba(98,160,234,0.3)",
-    backgroundColor: "#071A2E",
-    gap: 12,
-  },
-  renewalNoticeText: { color: "#99C1F1", fontSize: 13, lineHeight: 20 },
-  renewalAction: { alignSelf: "flex-start", minHeight: 44, justifyContent: "center", paddingHorizontal: 16, borderRadius: 8, backgroundColor: "#1A5FB4" },
-  renewalActionText: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
   unreadFilter: {
     flexDirection: "row",
     alignItems: "center",
@@ -1086,10 +1064,10 @@ const baseStyles = StyleSheet.create({
     marginTop: 2,
   },
   announcementTitle: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: "700",
     color: "#FFFFFF",
-    lineHeight: 19,
+    lineHeight: 23,
   },
   announcementTitleRead: {
     color: "rgba(255, 255, 255, 0.6)",
@@ -1112,9 +1090,9 @@ const baseStyles = StyleSheet.create({
     color: "rgba(255, 255, 255, 0.4)",
   },
   announcementMessage: {
-    fontSize: 12,
-    color: "rgba(255, 255, 255, 0.4)",
-    lineHeight: 16,
+    fontSize: 15,
+    color: "rgba(255, 255, 255, 0.78)",
+    lineHeight: 22,
     marginTop: 4,
   },
   emptyCard: {
@@ -1314,7 +1292,7 @@ const baseStyles = StyleSheet.create({
   },
   voucherValue: { color: "#FFFFFF", fontSize: 24, fontWeight: "800", marginTop: 6 },
   voucherValueMuted: { color: "rgba(255,255,255,0.55)" },
-  voucherCode: { color: "rgba(255,255,255,0.4)", fontSize: 11, fontFamily: "monospace" },
+  voucherCode: { color: "rgba(255,255,255,0.4)", fontSize: 11, },
   voucherStub: {
     width: 142,
     borderLeftWidth: 1,
@@ -1612,9 +1590,9 @@ const baseStyles = StyleSheet.create({
     padding: 20,
   },
   announcementModalText: {
-    fontSize: 13,
-    color: "rgba(255, 255, 255, 0.7)",
-    lineHeight: 20,
+    fontSize: 16,
+    color: "rgba(255, 255, 255, 0.88)",
+    lineHeight: 25,
   },
   announcementPrimaryAction: {
     minHeight: 44,

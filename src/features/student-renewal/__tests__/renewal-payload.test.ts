@@ -1,13 +1,19 @@
 /// <reference types="jest" />
 import { readNativeProof, renewalPayload, schoolProofFieldsError, type RenewalFields } from "../renewal-types";
-jest.mock("expo-file-system", () => ({ File: class { bytes() { return Promise.resolve(new Uint8Array([1, 2, 3])); } } }));
+jest.mock("expo-file-system", () => ({ File: class { constructor(public uri: string) {} async bytes() { return new Uint8Array([6, 7]); } } }));
 const fields: RenewalFields = { school_name: " School ", education_level: "HIGH_SCHOOL", grade_level: "10", school_year: "2027-2028", enrollment_term: "" };
 const file = () => new File(["image"], "proof.jpg", { type: "image/jpeg" });
 test("native proof submits a MIME-typed file with its original name", async () => {
   const document = { uri: "file:///proof.pdf", name: "proof.pdf", type: "application/pdf" };
-  const bytes = await readNativeProof(document);
-  const payload = renewalPayload(fields, document, true, bytes);
-  expect(payload.get("document")).toMatchObject({ name: "proof.pdf", type: "application/pdf", size: 3 });
+  const nativeProof = await readNativeProof(document);
+  const Original = globalThis.FormData;
+  const append = jest.fn();
+  globalThis.FormData = class { append = append; } as unknown as typeof FormData;
+  try {
+    renewalPayload(fields, document, true, nativeProof);
+    expect(append).toHaveBeenCalledWith("document", expect.objectContaining({ name: "proof.pdf", type: "application/pdf", bytes: expect.any(Function) }));
+    expect(await append.mock.calls[0][1].bytes()).toEqual(new Uint8Array([6, 7]));
+  } finally { globalThis.FormData = Original; }
 });
 test("high school proof carries grade and trims school name", () => {
   const payload = renewalPayload(fields, file());

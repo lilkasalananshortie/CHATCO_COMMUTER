@@ -1,20 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
-import {
-  View,
-  Text,
-  Animated,
-  Easing,
-  TextInput,
-  StyleSheet,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-  TouchableOpacity,
-  ActivityIndicator,
-  Modal,
-  useWindowDimensions,
-  Image,
-} from "react-native";
+import { Text, TextInput } from "../../shared/ui/BrandText";
+import { View, Animated, Easing, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity, ActivityIndicator, Modal, useWindowDimensions, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { commuterColors } from "../../core/theme/colors";
 import { authService } from "../../core/api/auth-service";
@@ -30,7 +16,8 @@ import { useReducedMotion } from "../../shared/useReducedMotion";
 
 interface RegisterScreenProps {
   onRegisterSuccess: () => void;
-  onGoToLogin: () => void;
+  onGoToLogin: (animateEntrance: boolean) => void;
+  animateEntrance?: boolean;
 }
 
 type AppliedType = "REGULAR" | "STUDENT" | "SENIOR" | "PWD";
@@ -73,6 +60,7 @@ const PHONE_PATTERN = /^09\d{9}$/;
 export const RegisterScreen: React.FC<RegisterScreenProps> = ({
   onRegisterSuccess,
   onGoToLogin,
+  animateEntrance = false,
 }) => {
   const colors = commuterColors;
   const styles = baseStyles;
@@ -85,8 +73,14 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
   const previousStep = useRef(step);
   const stepOpacity = useRef(new Animated.Value(1)).current;
   const stepTranslateX = useRef(new Animated.Value(0)).current;
+  const entrance = useRef(new Animated.Value(animateEntrance ? 0 : 1)).current;
+  const exitProgress = useRef(new Animated.Value(1)).current;
+  const exitAnimation = useRef<Animated.CompositeAnimation | null>(null);
+  const leaving = useRef(false);
+  const mounted = useRef(true);
   const otpInputRefs = useRef<Array<React.ElementRef<typeof TextInput> | null>>([]);
   const [loading, setLoading] = useState(false);
+  const [exiting, setExiting] = useState(false);
   const [agreement, setAgreement] = useState<AgreementChoices>({ terms: false, privacy: false, confirmation: false });
   const [showRegistrationTerms, setShowRegistrationTerms] = useState(false);
   const [idUploadRequired, setIdUploadRequired] = useState(true);
@@ -156,6 +150,41 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
 
   // Field validation errors
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; exitAnimation.current?.stop(); };
+  }, []);
+
+  useEffect(() => {
+    if (!animateEntrance) { entrance.setValue(1); return; }
+    const animation = Animated.timing(entrance, {
+      toValue: 1,
+      duration: 300,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: Platform.OS !== "web",
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [animateEntrance, entrance]);
+
+  const returnToLogin = () => {
+    if (loading || leaving.current) return;
+    if (reduceMotion) { onGoToLogin(false); return; }
+    leaving.current = true;
+    setExiting(true);
+    const animation = Animated.timing(exitProgress, {
+      toValue: 0,
+      duration: 240,
+      easing: Easing.in(Easing.cubic),
+      useNativeDriver: Platform.OS !== "web",
+    });
+    exitAnimation.current = animation;
+    animation.start(({ finished }) => {
+      if (finished && mounted.current) onGoToLogin(true);
+      else if (mounted.current) { leaving.current = false; setExiting(false); }
+    });
+  };
 
   useEffect(() => {
     const fromStep = previousStep.current;
@@ -602,6 +631,13 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
       {/* Background Graphic Layer: Luminous ambient glows & transit grid */}
       <AuthBackgroundGraphic />
 
+      <Animated.View pointerEvents={exiting ? "none" : "auto"} style={[styles.container, {
+        opacity: Animated.multiply(entrance, exitProgress),
+        transform: [
+          { translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [18, 0] }) },
+          { translateX: exitProgress.interpolate({ inputRange: [0, 1], outputRange: [-28, 0] }) },
+        ],
+      }]}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : Platform.OS === "android" ? "height" : undefined}
         style={styles.container}
@@ -623,8 +659,8 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
             <View style={styles.navBar}>
               <TouchableOpacity
                 style={styles.backButton}
-                  onPress={onGoToLogin}
-                  disabled={loading}
+                  onPress={returnToLogin}
+                  disabled={loading || exiting}
                 activeOpacity={0.7}
                 accessibilityRole="button"
                 accessibilityLabel="Go back to login"
@@ -633,8 +669,8 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
               </TouchableOpacity>
 
                   <View style={styles.brandRow}>
-                <Image source={require("../../../assets/logo-transparent.png")} style={{ width: isCompact ? 24 : 28, height: isCompact ? 24 : 28 }} resizeMode="contain" accessibilityLabel="ChatCo logo" />
-                <Text style={styles.brandTitle}>CHATCO.</Text>
+                <Image source={require("../../../assets/logo-e-chatco.png")} style={{ width: isCompact ? 24 : 28, height: isCompact ? 24 : 28 }} resizeMode="contain" accessibilityLabel="E-CHATCO logo" />
+                <Text style={styles.brandTitle}>E-CHATCO.</Text>
               </View>
             </View>
 
@@ -1295,7 +1331,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
               {/* Already have an account row */}
               <View style={styles.loginPromptRow}>
                 <Text style={styles.loginPromptText}>Already have an account? </Text>
-                <TouchableOpacity onPress={onGoToLogin} disabled={loading}>
+                <TouchableOpacity onPress={returnToLogin} disabled={loading || exiting}>
                   <Text style={styles.loginPromptLink}>Sign in</Text>
                 </TouchableOpacity>
               </View>
@@ -1387,6 +1423,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
           </View>
         </Modal>
       </KeyboardAvoidingView>
+      </Animated.View>
     </View>
   );
 };
@@ -1749,7 +1786,9 @@ const baseStyles = StyleSheet.create({
   },
   optionPill: {
     flex: 1,
-    minWidth: 72,
+    minWidth: 0,
+    minHeight: 48,
+    paddingHorizontal: 6,
     paddingVertical: 10,
     borderRadius: 12,
     borderWidth: 1.5,
@@ -1766,6 +1805,7 @@ const baseStyles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
     color: "#94A3B8",
+    textAlign: "center",
   },
   optionPillTextActive: {
     color: "#FFFFFF",

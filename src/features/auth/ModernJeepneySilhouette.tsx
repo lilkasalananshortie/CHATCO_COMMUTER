@@ -361,7 +361,7 @@ export const ModernJeepneySilhouette: React.FC<ModernJeepneySilhouetteProps> = (
           />
           <Rect x="110" y="74" width="4.5" height="2" rx="0.5" fill="#475569" />
 
-          {/* Circular CHATCO Seal Logo on Driver Door */}
+          {/* Circular E-CHATCO Seal Logo on Driver Door */}
           <Circle cx="96" cy="80" r="7.5" fill="#1D4ED8" stroke="#FFFFFF" strokeWidth="0.9" />
           <Circle cx="96" cy="80" r="6" fill="#FFFFFF" />
           <Circle cx="96" cy="80" r="4.6" fill="#1E3A8A" />
@@ -369,12 +369,12 @@ export const ModernJeepneySilhouette: React.FC<ModernJeepneySilhouetteProps> = (
             x="96"
             y="91"
             fill="#1E3A8A"
-            fontSize="4.6"
+            fontSize="3.5"
             fontWeight="900"
             textAnchor="middle"
-            letterSpacing={0.4}
+            letterSpacing={0.15}
           >
-            CHATCO
+            E-CHATCO
           </SvgText>
 
           {/* Continuous Black Frame for Panoramic Passenger Windows */}

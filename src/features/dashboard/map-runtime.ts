@@ -9,7 +9,26 @@ export function mapUpdateScript(state: unknown): string {
 export const MAP_RUNTIME = `
 var busArt = ${JSON.stringify(BUS_ART)};
 var vehicleMarkers = Object.create(null), userMarker = null, hailCircle = null, userPosition = null, userDirection = null;
+var hasInitialCentered = false, userInteracted = false;
+map.on('dragstart zoomstart', function() { userInteracted = true; });
 function coordinates(lat, lng) { return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180; }
+function centerOnFirstFix(position) {
+  if (hasInitialCentered || userInteracted) return;
+  var points = routePoints.filter(function(p) { return coordinates(p[0], p[1]); });
+  if (!points.length) return;
+  var south = Infinity, north = -Infinity, west = Infinity, east = -Infinity;
+  points.forEach(function(p) { south = Math.min(south, p[0]); north = Math.max(north, p[0]); west = Math.min(west, p[1]); east = Math.max(east, p[1]); });
+  var latPad = (north - south) * 0.008, lngPad = (east - west) * 0.008;
+  var nearRoute = position[0] >= south - latPad && position[0] <= north + latPad && position[1] >= west - lngPad && position[1] <= east + lngPad;
+  var inMapArea = position[0] >= south - 0.04 && position[0] <= north + 0.015 && position[1] >= west - 0.1 && position[1] <= east + 0.1;
+  var reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Match web LocationFinder: one initial GPS focus, then respect navigation.
+  hasInitialCentered = true;
+  if (nearRoute) {
+    if (reducedMotion) map.setView(position, 16, { animate: false });
+    else map.flyTo(position, 16, { duration: 1.5 });
+  } else if (inMapArea) map.setView(position, 13, { animate: !reducedMotion });
+}
 function updateUserDirection() {
   if (!userPosition || map.getBounds().contains(userPosition)) {
     if (userDirection) userDirection.style.display = 'none';
@@ -145,6 +164,7 @@ window.chatcoUpdate = function(state) {
       userMarker.bindPopup(currentLocationDetails(), {className:'chatco-location-popup',autoClose:false,closeOnClick:false,minWidth:180,maxWidth:260});
     }
     else { userMarker.setLatLng(position); userMarker.setIcon(icon); }
+    centerOnFirstFix(position);
     if (state.isHailing) {
       if (!hailCircle) hailCircle = L.circle(position,{radius:1000,color:'#FF6D3A',fillOpacity:0.1,weight:1.5}).addTo(map);
       else hailCircle.setLatLng(position);

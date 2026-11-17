@@ -21,8 +21,15 @@ jest.mock("../../../shared/foreground-poll", () => ({ foregroundPoll: (task: () 
 } }));
 jest.mock("../../../core/api/api-client", () => ({ request: jest.fn() }));
 jest.mock("../../../core/storage/app-storage", () => ({ appStorage: { getItem: jest.fn(), setItem: jest.fn() } }));
-function render() { mockCursor = 0; return usePublishedRoute(); }
+function render(enabled = true) { mockCursor = 0; return usePublishedRoute(enabled); }
 beforeEach(() => { mockStates = []; jest.clearAllMocks(); (appStorage.getItem as jest.Mock).mockResolvedValue(null); });
+
+test("a map receiving its parent's route does not start another route poll", () => {
+  render(false);
+  expect(mockEffect()).toBeUndefined();
+  expect(appStorage.getItem).not.toHaveBeenCalled();
+  expect(request).not.toHaveBeenCalled();
+});
 
 test("identical route polls keep coordinates stable, but geometry changes replace them", async () => {
   const points = [[14, 120], [15, 121]];

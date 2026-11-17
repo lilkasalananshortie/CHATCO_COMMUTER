@@ -1,14 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import {
-  Animated,
-  Easing,
-  View,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  ActivityIndicator,
-} from "react-native";
+import { Animated, Easing, View, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, type StyleProp, type ViewStyle } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from "expo-camera";
 import * as Haptics from "expo-haptics";
@@ -17,7 +8,7 @@ import { commuterService } from "../../core/api/commuter-service";
 import type { Trip, ResolvedCrew } from "../../core/domain/types";
 import { getMascotErrorState } from "../../shared/ui/mascot-error";
 import { feedbackPayload } from "./feedback-payload";
-import { Text } from "../../shared/ui/BrandText";
+import { Text, TextInput } from "../../shared/ui/BrandText";
 import { WebIcon } from "../../shared/ui/WebIcon";
 import Svg, { Path, Circle } from "react-native-svg";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
@@ -28,6 +19,17 @@ interface FeedbackScreenProps {
   initialTrip?: Trip | null;
   onFeedbackComplete?: () => void;
   onFormVisibilityChange?: (visible: boolean) => void;
+}
+
+function FeedbackReveal({ children, style, reducedMotion }: { children: React.ReactNode; style: StyleProp<ViewStyle>; reducedMotion: boolean }) {
+  const entrance = useRef(new Animated.Value(reducedMotion ? 1 : 0)).current;
+  useEffect(() => {
+    if (reducedMotion) { entrance.setValue(1); return; }
+    const animation = Animated.timing(entrance, { toValue: 1, duration: 300, easing: Easing.out(Easing.ease), useNativeDriver: true });
+    animation.start();
+    return () => animation.stop();
+  }, [entrance, reducedMotion]);
+  return <Animated.View style={[style, { opacity: entrance, transform: [{ translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }] }]}>{children}</Animated.View>;
 }
 
 type ScanStatus = "scanning" | "resolving" | "resolved" | "error";
@@ -141,8 +143,9 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
   const [countdown, setCountdown] = useState(3);
 
   const reduceMotion = useReducedMotion();
-  const driverComplete = driverRating > 0 && driverTags.length > 0;
-  const conductorComplete = conductorRating > 0 && conductorTags.length > 0;
+  // The API requires ratings; tags and comments are optional.
+  const driverComplete = driverRating > 0;
+  const conductorComplete = conductorRating > 0;
 
   useEffect(() => {
     if (!driverComplete) {
@@ -313,12 +316,12 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
     return <ScrollView contentContainerStyle={styles.centeredScreen}>
       <Text style={styles.statusTitle}>Feedback Submitted</Text>
       <Text style={styles.statusSubtitle}>This ride has already been rated. Your saved feedback cannot be submitted again.</Text>
-      {feedback && <View style={styles.statusBox}>
+      {feedback && <FeedbackReveal style={styles.statusBox} reducedMotion={reduceMotion}>
         <Text style={styles.statusSubtitle}>Driver: {feedback.rating}/5</Text>
         {!!feedback.comment && <Text style={styles.statusSubtitle}>{feedback.comment}</Text>}
         <Text style={styles.statusSubtitle}>Conductor: {feedback.conductor_rating ?? "Not rated"}/5</Text>
         {!!feedback.conductor_comment && <Text style={styles.statusSubtitle}>{feedback.conductor_comment}</Text>}
-      </View>}
+      </FeedbackReveal>}
       <TouchableOpacity style={styles.neutralButton} onPress={onFeedbackComplete}><Text style={styles.neutralButtonText}>Back to Home</Text></TouchableOpacity>
     </ScrollView>;
   }
@@ -432,17 +435,17 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
   // 3. ERROR STATE
   if (scanStatus === "error") {
     let unitLabel = "This unit";
-    try { const unit = JSON.parse(lastScan.current ?? "{}"); unitLabel = unit.unit_number ?? unit.unitNumber ?? unit.plate_number ?? unitLabel; } catch { /* Signed QR has no public unit label. */ }
-    if (noCrew.current) return <ScrollView contentContainerStyle={styles.centeredScreen}><View style={styles.statusBox}>
+    try { const unit = JSON.parse(lastScan.current ?? "{}"); unitLabel = unit.unit_number ?? unit.unitNumber ?? unit.plate_number ?? unit.plateNumber ?? unitLabel; } catch { /* Signed QR has no public unit label. */ }
+    if (noCrew.current) return <ScrollView contentContainerStyle={styles.centeredScreen}><FeedbackReveal style={styles.statusBox} reducedMotion={reduceMotion}>
       <Ionicons name="bus-outline" size={44} color="#62A0EA" />
       <Text style={styles.statusTitle}>No crew on duty</Text>
       <Text style={styles.statusSubtitle}>{unitLabel} has no crew recorded today. Check again after the conductor starts a shift.</Text>
       <TouchableOpacity accessibilityRole="button" style={styles.primaryButton} onPress={() => { if (lastScan.current) void handleResolveToken(lastScan.current); }}><Text style={styles.primaryButtonText}>Check again</Text></TouchableOpacity>
       <TouchableOpacity accessibilityRole="button" style={styles.neutralButton} onPress={handleRescan}><Text style={styles.neutralButtonText}>Scan another unit</Text></TouchableOpacity>
-    </View></ScrollView>;
+    </FeedbackReveal></ScrollView>;
     return (
       <ScrollView contentContainerStyle={styles.centeredScreen}>
-        <View style={[styles.statusBox, styles.errorStatusBox]}>
+        <FeedbackReveal style={[styles.statusBox, styles.errorStatusBox]} reducedMotion={reduceMotion}>
           <View style={styles.errorCircle}>
             <Ionicons name="warning-outline" size={28} color="#F87171" />
           </View>
@@ -455,7 +458,7 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
           >
             <Text style={styles.primaryButtonText}>Try Again</Text>
           </TouchableOpacity>
-        </View>
+        </FeedbackReveal>
       </ScrollView>
     );
   }
@@ -464,7 +467,7 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
   if (isSubmitted) {
     return (
       <ScrollView contentContainerStyle={styles.centeredScreen}>
-        <View style={[styles.statusBox, styles.successStatusBox]}>
+        <FeedbackReveal style={[styles.statusBox, styles.successStatusBox]} reducedMotion={reduceMotion}>
           <View style={styles.successCircle}>
             <Ionicons name="checkmark" size={34} color="#34D399" />
           </View>
@@ -486,7 +489,7 @@ export const FeedbackScreen: React.FC<FeedbackScreenProps> = ({
           >
             <Text style={styles.neutralButtonText}>Scan another unit</Text>
           </TouchableOpacity>
-        </View>
+        </FeedbackReveal>
       </ScrollView>
     );
   }
@@ -1166,8 +1169,8 @@ const baseStyles = StyleSheet.create({
     maxWidth: 256,
   },
   reticle: {
-    width: 192,
-    height: 192,
+    width: "100%",
+    height: "100%",
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
@@ -1183,28 +1186,28 @@ const baseStyles = StyleSheet.create({
     left: 0,
     borderTopWidth: 2,
     borderLeftWidth: 2,
-    borderTopLeftRadius: 8,
+    borderTopLeftRadius: 16,
   },
   topRight: {
     top: 0,
     right: 0,
     borderTopWidth: 2,
     borderRightWidth: 2,
-    borderTopRightRadius: 8,
+    borderTopRightRadius: 16,
   },
   bottomLeft: {
     bottom: 0,
     left: 0,
     borderBottomWidth: 2,
     borderLeftWidth: 2,
-    borderBottomLeftRadius: 8,
+    borderBottomLeftRadius: 16,
   },
   bottomRight: {
     bottom: 0,
     right: 0,
     borderBottomWidth: 2,
     borderRightWidth: 2,
-    borderBottomRightRadius: 8,
+    borderBottomRightRadius: 16,
   },
   reticleHint: {
     color: "rgba(255, 255, 255, 0.4)",
@@ -1378,7 +1381,7 @@ const baseStyles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "800",
     color: "#62A0EA",
-    fontFamily: "monospace",
+
   },
   crewMembersList: {
     gap: 12,

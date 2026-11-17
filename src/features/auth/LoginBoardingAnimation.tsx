@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { AccessibilityInfo, Animated, Easing, Image, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Text } from "../../shared/ui/BrandText";
+import { AccessibilityInfo, Animated, Easing, Image, StyleSheet, View, useWindowDimensions } from "react-native";
 
 // Complete rendered frames show handrail/step contact and doorway occlusion.
 const BOARDING_SHEET = require("../../../assets/mascot/mascot-boarding-sheet-v2.png");
@@ -51,12 +52,12 @@ export function LoginBoardingAnimation({ onComplete }: { onComplete: () => void 
 
   return (
     <View style={styles.container} accessibilityLiveRegion="polite">
-      <Text style={styles.brand}>CHATCO.</Text>
+      <Text style={styles.brand}>E-CHATCO.</Text>
       <Animated.View style={[styles.scene, { width: sceneWidth, height: sceneHeight,
         opacity: departure.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
         transform: [{ translateY: departure.interpolate({ inputRange: [0, 1], outputRange: [0, -8] }) }] }]}>
         <Image source={BOARDING_SHEET} resizeMode="stretch" fadeDuration={0}
-          accessibilityLabel="ChatCo mascot grips the jeepney handrail, climbs the steps, and sits inside"
+          accessibilityLabel="E-CHATCO mascot grips the jeepney handrail, climbs the steps, and sits inside"
           style={{ position: "absolute", width: sceneWidth * 3, height: sceneHeight * 2,
             left: -(frame % 3) * sceneWidth, top: -Math.floor(frame / 3) * sceneHeight }} />
       </Animated.View>

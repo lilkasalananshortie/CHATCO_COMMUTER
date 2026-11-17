@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
-import { ActivityIndicator, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Text, TextInput } from "../../shared/ui/BrandText";
+import { ActivityIndicator, ScrollView, TouchableOpacity, View } from "react-native";
 import { authService } from "../../core/api/auth-service";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import { validateNewPassword } from "./recovery-validation";

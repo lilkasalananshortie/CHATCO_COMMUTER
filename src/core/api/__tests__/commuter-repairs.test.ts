@@ -1,5 +1,6 @@
 /// <reference types="jest" />
 jest.mock("../api-client", () => ({ post: jest.fn(), request: jest.fn(), put: jest.fn(), del: jest.fn() }));
+jest.mock("../../storage/app-storage", () => ({ appStorage: { getItem: jest.fn(), setItem: jest.fn(), removeItem: jest.fn() } }));
 import { post, put, request } from "../api-client";
 import { commuterService } from "../commuter-service";
 
@@ -40,6 +41,12 @@ test("signed feedback QR preserves the authoritative shift", async () => {
 test("permanent vehicle QR uses scan-public without weakening paid-ride feedback checks", async () => {
   (post as jest.Mock).mockResolvedValue({ shift_id: "shift-B" });
   expect(await commuterService.scanQr(JSON.stringify({ vehicle_id: "vehicle" }))).toMatchObject({ shiftId: "shift-B" });
+  expect(post).toHaveBeenCalledWith("/mobile/commuter/qr/scan-public", { vehicle_id: "vehicle" });
+});
+test("admin printed permanent QR resolves its camelCase vehicleId", async () => {
+  (post as jest.Mock).mockResolvedValue({ shift_id: "active-shift", conductor_name: "Crew" });
+  const qr = JSON.stringify({ chatco: "unit-qr", v: 1, vehicleId: "vehicle", unitNumber: "J-01" });
+  expect(await commuterService.scanQr(qr)).toMatchObject({ shiftId: "active-shift", conductorName: "Crew" });
   expect(post).toHaveBeenCalledWith("/mobile/commuter/qr/scan-public", { vehicle_id: "vehicle" });
 });
 test("missing resolved shift fails closed", async () => {

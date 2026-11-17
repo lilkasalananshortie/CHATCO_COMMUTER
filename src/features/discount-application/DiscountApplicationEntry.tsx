@@ -1,5 +1,6 @@
 import React from "react";
-import { Text, View } from "react-native";
+import { Text } from "../../shared/ui/BrandText";
+import { View } from "react-native";
 import { FeatureButton, useFeatureStyles } from "../../shared/ui/FeatureControls";
 import { APPLICATION_LABELS, type ApplicationState } from "./application-types";
 

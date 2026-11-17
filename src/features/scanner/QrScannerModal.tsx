@@ -1,28 +1,21 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Text } from "../../shared/ui/BrandText";
-import {
-  View,
-  StyleSheet,
-  Modal,
-  TextInput,
-  TouchableOpacity,
-  ActivityIndicator,
-  Linking,
-  ScrollView,
-  AppState,
-} from "react-native";
+import { View, StyleSheet, Modal, TouchableOpacity, ActivityIndicator, Linking, ScrollView, AppState } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from "expo-camera";
 import * as Haptics from "expo-haptics";
 import { commuterColors } from "../../core/theme/colors";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
-import { themedStyles } from "../../core/theme/themed-styles";
+import { paymentAppearance } from "./payment-appearance";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useWindowDimensions } from "react-native";
 import {
   commuterService,
   type ClaimGcashResult,
 } from "../../core/api/commuter-service";
 import { notifyRewardsChanged } from "../../core/domain/rewards-events";
 import { voucherLabel } from "../../core/domain/rewards";
+import { useReducedMotion } from "../../shared/useReducedMotion";
 import { GroupVoucherPicker } from "./GroupVoucherPicker";
 
 interface QrScannerModalProps {
@@ -47,19 +40,20 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
   onPaymentSuccess,
 }) => {
   const { colors: selectedColors, isLight = false } = useCommuterTheme();
-  const colors = { ...commuterColors, ...(selectedColors ?? {}) };
-  const styles = useMemo(() => themedStyles(baseStyles, colors, isLight), [colors, isLight]);
+  const colors = useMemo(() => ({ ...commuterColors, ...(selectedColors ?? {}) }), [selectedColors]);
+  const styles = useMemo(() => paymentAppearance(baseStyles, colors, isLight), [colors, isLight]);
   const [step, setStep] = useState<Step>("scanning");
   const [claimResult, setClaimResult] = useState<ClaimGcashResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [manualToken, setManualToken] = useState("");
-  const [showManualEntry, setShowManualEntry] = useState(false);
   const [scanned, setScanned] = useState(false);
   const pending = useRef(false);
   const generation = useRef(0);
   const checking = useRef(false);
 
   const [permission, requestPermission] = useCameraPermissions();
+  const reducedMotion = useReducedMotion();
+  const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
 
   useEffect(() => {
     if (visible && step === "scanning") {
@@ -74,8 +68,6 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
     setStep("scanning");
     setClaimResult(null);
     setError(null);
-    setManualToken("");
-    setShowManualEntry(false);
     setScanned(false);
   };
 
@@ -267,20 +259,18 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
   return (
     <Modal
       visible={visible}
-      animationType="fade"
+      animationType={reducedMotion ? "none" : "fade"}
       transparent
       onRequestClose={handleClose}
     >
       <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
+        <View style={[styles.modalContent, { maxHeight: Math.max(1, height - insets.top - insets.bottom - 40) }]}>
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerTitleGroup}>
-              <View style={styles.headerIconCircle}>
-                <Ionicons name="qr-code" size={18} color="#62A0EA" />
-              </View>
-              <View>
-                <Text style={styles.headerTitle}>Scan QR Code</Text>
+              <Ionicons name="camera-outline" size={24} color={isLight ? "#1A5FB4" : "#62A0EA"} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.headerTitle}>Scan Payment QR</Text>
                 <Text style={styles.headerSubtitle}>
                   Point your camera at the conductor&apos;s QR
                 </Text>
@@ -293,7 +283,7 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
               accessibilityRole="button"
               accessibilityLabel="Close scanner"
             >
-              <Ionicons name="close" size={18} color="rgba(255,255,255,0.6)" />
+              <Ionicons name="close" size={20} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
@@ -301,19 +291,17 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
           <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
             {step === "scanning" && (
               <View style={styles.scanningContainer}>
-                {!showManualEntry ? (
-                  <>
                     {!permission ? (
                       <View style={styles.permissionBox}>
-                        <ActivityIndicator size="large" color="#62A0EA" />
+                        <ActivityIndicator size="large" color={colors.primaryLight} />
                         <Text style={styles.permissionText}>Checking camera access…</Text>
                       </View>
                     ) : !permission.granted ? (
                       <View style={styles.permissionBox}>
-                        <Ionicons name="camera-outline" size={44} color="#62A0EA" />
+                        <Ionicons name="camera-outline" size={44} color={colors.primaryLight} />
                         <Text style={styles.permissionTitle}>Camera Access Required</Text>
                         <Text style={styles.permissionText}>
-                          ChatCo needs camera access to scan the conductor&apos;s fare QR code.
+                          E-CHATCO needs camera access to scan the conductor&apos;s fare QR code.
                         </Text>
                         <TouchableOpacity
                           style={styles.primaryButton}
@@ -342,7 +330,6 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
                             <View style={[styles.corner, styles.topRight]} />
                             <View style={[styles.corner, styles.bottomLeft]} />
                             <View style={[styles.corner, styles.bottomRight]} />
-                            <View style={styles.scanLaser} />
                           </View>
                         </View>
 
@@ -353,61 +340,16 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
                       Align the QR code shown by the conductor within the frame
                     </Text>
 
-                    <TouchableOpacity
-                      onPress={() => setShowManualEntry(true)}
-                      style={styles.manualEntryLink}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.manualEntryLinkText}>
-                        Enter token manually
-                      </Text>
-                    </TouchableOpacity>
-                  </>
-                ) : (
-                  <View style={styles.manualFormContainer}>
-                    <Text style={styles.inputLabel}>Payment QR Token</Text>
-                    <TextInput
-                      style={styles.textInput}
-                      placeholder="Paste qr_token here"
-                      placeholderTextColor="rgba(255, 255, 255, 0.25)"
-                      value={manualToken}
-                      onChangeText={setManualToken}
-                      autoCapitalize="none"
-                      autoFocus
-                    />
 
-                    <TouchableOpacity
-                      onPress={() => handleScanSuccess(manualToken)}
-                      disabled={!manualToken.trim()}
-                      style={[
-                        styles.primaryButton,
-                        !manualToken.trim() && styles.disabledButton,
-                      ]}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={styles.primaryButtonText}>Claim Payment</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      onPress={() => setShowManualEntry(false)}
-                      style={styles.secondaryLink}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.secondaryLinkText}>
-                        Use camera instead
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
               </View>
             )}
 
             {step === "verifying" && (
               <View style={styles.centeredState}>
-                <ActivityIndicator size="large" color="#62A0EA" />
+                <ActivityIndicator size="large" color={colors.primaryLight} />
                 <Text style={styles.stateTitle}>Verifying Transaction</Text>
                 <Text style={styles.stateSubtitle}>
-                  Claiming this payment + binding it to your account…
+                  Checking your fare and payment details…
                 </Text>
               </View>
             )}
@@ -418,12 +360,12 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
             ) : step === "voucher_offer" && claimResult && (
               <View style={styles.centeredState}>
                 <View style={styles.successIconCircle}>
-                  <Ionicons name="gift-outline" size={32} color="#10B981" />
+                  <Ionicons name="gift-outline" size={32} color={isLight ? "#047857" : "#34D399"} />
                 </View>
                 <Text style={styles.stateTitle}>{claimResult.availableVoucher ? `Use ${voucherLabel(claimResult.availableVoucher)}?` : "Use your voucher?"}</Text>
                 <Text style={styles.stateSubtitle}>
                   {claimResult.isGroup
-                    ? "The voucher applies to your seat only, not your companions. Discount vouchers may leave a balance. The backend calculates the remaining GCash total."
+                    ? "The voucher applies to your seat only, not your companions. Discount vouchers may leave a balance. Your final GCash total is confirmed before payment."
                     : "Free-ride vouchers cover your fare. Discount vouchers deduct their peso value; any remaining amount is paid through GCash."}
                 </Text>
 
@@ -491,10 +433,10 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
 
                   {claimResult.discountAmount > 0 && (
                     <View style={styles.summaryRow}>
-                      <Text style={[styles.summaryLabel, { color: "#34D399" }]}>
+                      <Text style={[styles.summaryLabel, { color: isLight ? "#047857" : "#34D399" }]}>
                         Discount ({claimResult.passengerRole?.replace("_", " ") || "Verified"})
                       </Text>
-                      <Text style={[styles.summaryValue, { color: "#34D399", fontWeight: "700" }]}>
+                      <Text style={[styles.summaryValue, { color: isLight ? "#047857" : "#34D399", fontWeight: "700" }]}>
                         -₱{claimResult.discountAmount.toFixed(2)}
                       </Text>
                     </View>
@@ -509,7 +451,7 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
 
                   <View style={styles.summaryRow}>
                     <Text style={styles.summaryLabel}>Method</Text>
-                    <Text style={[styles.summaryValue, { color: "#62A0EA", fontWeight: "700" }]}>
+                    <Text style={[styles.summaryValue, { color: colors.primaryLight, fontWeight: "700" }]}>
                       GCash
                     </Text>
                   </View>
@@ -525,7 +467,7 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
                 {/* GCash notice */}
                 <View style={styles.noticeBox}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                    <Ionicons name="shield-checkmark" size={14} color="#62A0EA" />
+                    <Ionicons name="shield-checkmark" size={14} color={colors.primaryLight} />
                     <Text style={styles.noticeTitle}>GCash Secure Payment</Text>
                   </View>
                   <Text style={styles.noticeDesc}>
@@ -558,17 +500,17 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
 
             {step === "redirecting" && (
               <View style={styles.centeredState}>
-                <ActivityIndicator size="large" color="#62A0EA" />
+                <ActivityIndicator size="large" color={colors.primaryLight} />
                 <Text style={styles.stateTitle}>Processing Payment</Text>
                 <Text style={styles.stateSubtitle}>
-                  Settling transaction and updating conductor poller…
+                  Please wait while your payment is confirmed…
                 </Text>
               </View>
             )}
 
             {step === "awaiting_payment" && <View style={styles.centeredState}>
               <Text style={styles.stateTitle}>Waiting for payment confirmation</Text>
-              <Text style={styles.stateSubtitle}>Opening checkout does not mean your fare is paid. We will confirm the status with ChatCo.</Text>
+              <Text style={styles.stateSubtitle}>Opening checkout does not mean your fare is paid. We will confirm the status with E-CHATCO.</Text>
               {!!error && <Text style={styles.stateSubtitle}>{error}</Text>}
               <TouchableOpacity style={styles.primaryButton} onPress={() => void checkPayment()}><Text style={styles.primaryButtonText}>Check payment status</Text></TouchableOpacity>
               <TouchableOpacity style={styles.neutralButton} onPress={handleClose}><Text style={styles.neutralButtonText}>Close and check history later</Text></TouchableOpacity>
@@ -577,7 +519,7 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
             {step === "success" && claimResult && (
               <View style={styles.centeredState}>
                 <View style={styles.successIconCircle}>
-                  <Ionicons name="checkmark" size={32} color="#10B981" />
+                  <Ionicons name="checkmark" size={32} color={isLight ? "#047857" : "#34D399"} />
                 </View>
                 <Text style={styles.stateTitle}>
                   {claimResult.amount <= 0
@@ -626,7 +568,7 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
             {step === "failed" && (
               <View style={styles.centeredState}>
                 <View style={styles.errorIconCircle}>
-                  <Ionicons name="alert-circle-outline" size={32} color="#F87171" />
+                  <Ionicons name="alert-circle-outline" size={32} color={isLight ? "#B91C1C" : "#F87171"} />
                 </View>
                 <Text style={styles.stateTitle}>Payment Failed</Text>
                 <Text style={styles.stateSubtitle}>
@@ -666,16 +608,16 @@ export const QrScannerModal: React.FC<QrScannerModalProps> = ({
 const baseStyles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.8)",
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
+    padding: 16,
   },
   modalContent: {
     width: "100%",
-    maxWidth: 380,
-    backgroundColor: "#071A2E",
-    borderRadius: 20,
+    maxWidth: 384,
+    backgroundColor: "#050F1A",
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
     overflow: "hidden",
@@ -689,7 +631,8 @@ const baseStyles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: 18,
+    gap: 12,
+    padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: "rgba(255, 255, 255, 0.1)",
   },
@@ -698,8 +641,10 @@ const baseStyles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
     flex: 1,
+    minWidth: 0,
   },
   headerIconCircle: {
+    flexShrink: 0,
     width: 36,
     height: 36,
     borderRadius: 10,
@@ -710,22 +655,19 @@ const baseStyles = StyleSheet.create({
     justifyContent: "center",
   },
   headerTitle: {
-    fontSize: 16,
-    fontWeight: "800",
+    fontSize: 18,
+    fontWeight: "700",
     color: "#FFFFFF",
   },
   headerSubtitle: {
-    fontSize: 11,
+    fontSize: 12,
     color: "rgba(255, 255, 255, 0.4)",
     marginTop: 2,
   },
   closeBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    width: 44,
+    height: 44,
+    flexShrink: 0,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -738,7 +680,7 @@ const baseStyles = StyleSheet.create({
   scannerViewport: {
     width: "100%",
     aspectRatio: 1,
-    backgroundColor: "#050F1A",
+    backgroundColor: "#071A2E",
     borderRadius: 16,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
@@ -792,45 +734,45 @@ const baseStyles = StyleSheet.create({
     marginBottom: 16,
   },
   reticle: {
-    width: 140,
-    height: 140,
+    width: "100%",
+    height: "100%",
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
   },
   corner: {
     position: "absolute",
-    width: 20,
-    height: 20,
+    width: 24,
+    height: 24,
     borderColor: "#62A0EA",
   },
   topLeft: {
     top: 0,
     left: 0,
-    borderTopWidth: 3,
-    borderLeftWidth: 3,
-    borderTopLeftRadius: 4,
+    borderTopWidth: 2,
+    borderLeftWidth: 2,
+    borderTopLeftRadius: 16,
   },
   topRight: {
     top: 0,
     right: 0,
-    borderTopWidth: 3,
-    borderRightWidth: 3,
-    borderTopRightRadius: 4,
+    borderTopWidth: 2,
+    borderRightWidth: 2,
+    borderTopRightRadius: 16,
   },
   bottomLeft: {
     bottom: 0,
     left: 0,
-    borderBottomWidth: 3,
-    borderLeftWidth: 3,
-    borderBottomLeftRadius: 4,
+    borderBottomWidth: 2,
+    borderLeftWidth: 2,
+    borderBottomLeftRadius: 16,
   },
   bottomRight: {
     bottom: 0,
     right: 0,
-    borderBottomWidth: 3,
-    borderRightWidth: 3,
-    borderBottomRightRadius: 4,
+    borderBottomWidth: 2,
+    borderRightWidth: 2,
+    borderBottomRightRadius: 16,
   },
   reticleHint: {
     color: "rgba(255, 255, 255, 0.4)",
@@ -839,35 +781,6 @@ const baseStyles = StyleSheet.create({
     marginTop: 16,
     textAlign: "center",
     maxWidth: 240,
-  },
-  manualEntryLink: {
-    marginTop: 16,
-    paddingVertical: 6,
-  },
-  manualEntryLinkText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#62A0EA",
-  },
-  manualFormContainer: {
-    width: "100%",
-  },
-  inputLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "rgba(255, 255, 255, 0.6)",
-    marginBottom: 8,
-  },
-  textInput: {
-    width: "100%",
-    backgroundColor: "#050F1A",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 14,
-    color: "#FFFFFF",
   },
   primaryButton: {
     backgroundColor: "#1A5FB4",
@@ -886,19 +799,6 @@ const baseStyles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "700",
-  },
-  disabledButton: {
-    opacity: 0.4,
-  },
-  secondaryLink: {
-    marginTop: 14,
-    alignItems: "center",
-    paddingVertical: 6,
-  },
-  secondaryLinkText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "rgba(255, 255, 255, 0.4)",
   },
   centeredState: {
     alignItems: "center",
@@ -1002,7 +902,7 @@ const baseStyles = StyleSheet.create({
   summaryValueMono: {
     fontSize: 11,
     color: "rgba(255, 255, 255, 0.5)",
-    fontFamily: "monospace",
+
   },
   lineThrough: {
     textDecorationLine: "line-through",

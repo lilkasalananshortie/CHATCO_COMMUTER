@@ -25,13 +25,15 @@ test("profile icon and identity background use browser elements on web", () => {
   expect(background).not.toContain("NativeSvg");
 });
 
-test("native profile gradient has rounded corners like its card", () => {
+test("native profile gradient fills the measured card with rounded corners", () => {
   const platform = jest.requireMock("react-native").Platform as { OS: string };
   platform.OS = "android";
   try {
-    const background = ProfileIdentityBackground({ isLight: false }) as React.ReactElement<{ children: React.ReactElement[] }>;
+    expect(ProfileIdentityBackground({ isLight: false })).toBeNull();
+    const background = ProfileIdentityBackground({ isLight: false, width: 340, height: 124 }) as React.ReactElement<{ children: React.ReactElement[] }>;
     const rect = background.props.children.find(child => child.type === "NativeRect");
-    expect(rect?.props).toMatchObject({ rx: 16, ry: 16 });
+    expect(background.props).toMatchObject({ width: 340, height: 124 });
+    expect(rect?.props).toMatchObject({ width: 340, height: 124, rx: 16, ry: 16 });
   } finally { platform.OS = "web"; }
 });
 

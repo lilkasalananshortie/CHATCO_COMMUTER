@@ -1,3 +1,5 @@
+import { appendNativeMultipartFile } from "../../core/api/native-multipart-file";
+
 export type RenewalStatus = "NOT_RENEWED" | "PENDING" | "NEEDS_CORRECTION" | "APPROVED" | "REJECTED" | "CANCELLED" | "EXPIRED";
 export type EducationLevel = "HIGH_SCHOOL" | "COLLEGE";
 export interface RenewalApplication {
@@ -16,7 +18,7 @@ export const RENEWAL_LABELS: Record<RenewalStatus, string> = {
   APPROVED: "Renewed", REJECTED: "Rejected", CANCELLED: "Cancelled", EXPIRED: "Expired",
 };
 export interface RenewalFields {
-  school_name: string; education_level: EducationLevel; grade_level: string; school_year: string; enrollment_term: string;
+  school_name: string; education_level: EducationLevel | ""; grade_level: string; school_year: string; enrollment_term: string;
 }
 export type RenewalDocument = { uri: string; name: string; type: string; size?: number } | File;
 
@@ -30,13 +32,14 @@ export function schoolProofFieldsError(fields: RenewalFields): string | null {
   return null;
 }
 
-export async function readNativeProof(document: RenewalDocument | null, required = true): Promise<Blob | undefined> {
+type NativeProof = { uri: string; name: string; type: string };
+
+export async function readNativeProof(document: RenewalDocument | null, required = true): Promise<NativeProof | undefined> {
   if (!required || !document || !("uri" in document)) return undefined;
-  const { File } = await import("expo-file-system");
-  return new Blob([await new File(document.uri).bytes()], { type: document.type });
+  return { uri: document.uri, name: document.name, type: document.type };
 }
 
-export function proofPayload(document: RenewalDocument | null, required = true, nativeBytes?: Blob): FormData {
+export function proofPayload(document: RenewalDocument | null, required = true, nativeProof?: NativeProof): FormData {
   const form = new FormData();
   // Local application debugging must not upload a selected file to R2.
   if (!required) return form;
@@ -44,14 +47,14 @@ export function proofPayload(document: RenewalDocument | null, required = true, 
   if (document.size != null && document.size > 5 * 1024 * 1024) throw new Error("Enrollment proof must be 5MB or smaller.");
   if (!["image/jpeg", "image/png", "image/webp", "application/pdf"].includes(document.type)) throw new Error("Choose a JPG, PNG, WebP or PDF document.");
   if ("uri" in document) {
-    if (!nativeBytes) throw new Error("Unable to read the selected document.");
-    form.append("document", nativeBytes, document.name);
+    if (!nativeProof) throw new Error("Unable to read the selected document.");
+    appendNativeMultipartFile(form, "document", nativeProof);
   } else form.append("document", document);
   return form;
 }
 
-export function renewalPayload(fields: RenewalFields, document: RenewalDocument | null, documentRequired = true, nativeBytes?: Blob): FormData {
-  const form = proofPayload(document, documentRequired, nativeBytes);
+export function renewalPayload(fields: RenewalFields, document: RenewalDocument | null, documentRequired = true, nativeProof?: NativeProof): FormData {
+  const form = proofPayload(document, documentRequired, nativeProof);
   const fieldsError = schoolProofFieldsError(fields);
   if (fieldsError) throw new Error(fieldsError);
   form.append("school_name", fields.school_name.trim());

@@ -7,10 +7,10 @@ import { COMMUTER_ACCOUNT_PATH } from "../commuter-map-pin";
 import { BUS_ART } from "../bus-map-art";
 import { mapVehicleState } from "../map-vehicle-state";
 
-function runtime() {
+function runtime(reducedMotion = false) {
   const markers: any[] = [];
-  const map = { removeLayer: jest.fn(), on: jest.fn(), getBounds: () => ({ contains: () => true }) };
-  const window: any = { addEventListener: jest.fn(), ReactNativeWebView: { postMessage: jest.fn() } };
+  const map = { removeLayer: jest.fn(), on: jest.fn(), flyTo: jest.fn(), setView: jest.fn(), getBounds: () => ({ contains: () => true }) };
+  const window: any = { matchMedia: () => ({ matches: reducedMotion }), addEventListener: jest.fn(), ReactNativeWebView: { postMessage: jest.fn() } };
   const element = () => {
     const node: any = { style: {}, className: "", textContent: "", children: [], attributes: {} };
     node.appendChild = (child: unknown) => node.children.push(child);
@@ -22,7 +22,7 @@ function runtime() {
     const marker = { addTo: jest.fn().mockReturnThis(), bindPopup: jest.fn().mockReturnThis(), on: jest.fn().mockReturnThis(), setLatLng: jest.fn(), setPopupContent: jest.fn(), setIcon: jest.fn() };
     markers.push(marker); return marker;
   }), circle: jest.fn(() => ({ addTo: jest.fn().mockReturnThis(), setLatLng: jest.fn() })) };
-  runInNewContext(MAP_RUNTIME, { window, document, map, L });
+  runInNewContext(MAP_RUNTIME, { window, document, map, L, routePoints: [[14.8, 120.8], [14.9, 120.9]] });
   return { update: window.chatcoUpdate, markers, map, L, window };
 }
 const unit = { id: "unit", unitNumber: "U1", plateNumber: "ABC", lat: 14.8, lng: 120.8, driverName: "Driver", conductorName: "Conductor", availableSeats: 0 };
@@ -117,4 +117,45 @@ test("hailing keeps the web's blue current-location pin and its separate hail ra
 test("losing the location fix removes the marker instead of showing a fake location", () => {
   const r = runtime(); r.update({ vehicles: [], userLocation: fix }); r.update({ vehicles: [], userLocation: null });
   expect(r.map.removeLayer).toHaveBeenCalledWith(r.markers[0]);
+});
+
+test("first valid GPS fix zooms into the user like web, once only", () => {
+  const r = runtime();
+  r.update({ vehicles: [], userLocation: null });
+  r.update({ vehicles: [], userLocation: { latitude: NaN, longitude: 120.8 } });
+  expect(r.map.flyTo).not.toHaveBeenCalled();
+  r.update({ vehicles: [], userLocation: fix });
+  expect(r.map.flyTo).toHaveBeenCalledWith([14.8, 120.8], 16, { duration: 1.5 });
+  r.update({ vehicles: [], userLocation: null });
+  r.update({ vehicles: [], userLocation: { ...fix, latitude: 14.85 } });
+  expect(r.map.flyTo).toHaveBeenCalledTimes(1);
+});
+
+test("manual navigation before GPS arrives prevents automatic zoom", () => {
+  const r = runtime();
+  r.map.on.mock.calls.find(([events]) => events === "dragstart zoomstart")![1]();
+  r.update({ vehicles: [], userLocation: fix });
+  expect(r.map.flyTo).not.toHaveBeenCalled();
+  expect(r.map.setView).not.toHaveBeenCalled();
+});
+
+test("first fix elsewhere in the service area uses web's wider zoom", () => {
+  const r = runtime();
+  r.update({ vehicles: [], userLocation: { latitude: 14.78, longitude: 120.8 } });
+  expect(r.map.setView).toHaveBeenCalledWith([14.78, 120.8], 13, { animate: true });
+  expect(r.map.flyTo).not.toHaveBeenCalled();
+});
+
+test("a fix outside the service area leaves the route view in place", () => {
+  const r = runtime();
+  r.update({ vehicles: [], userLocation: { latitude: 15.5, longitude: 121.5 } });
+  expect(r.map.flyTo).not.toHaveBeenCalled();
+  expect(r.map.setView).not.toHaveBeenCalled();
+});
+
+test("reduced motion keeps the initial user zoom without the fly animation", () => {
+  const r = runtime(true);
+  r.update({ vehicles: [], userLocation: fix });
+  expect(r.map.setView).toHaveBeenCalledWith([14.8, 120.8], 16, { animate: false });
+  expect(r.map.flyTo).not.toHaveBeenCalled();
 });

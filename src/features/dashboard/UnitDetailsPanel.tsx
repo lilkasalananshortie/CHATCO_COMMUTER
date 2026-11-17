@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Image, Pressable, Text, View } from "react-native";
+import { Text } from "../../shared/ui/BrandText";
+import { ActivityIndicator, Image, Pressable, View } from "react-native";
 import { commuterService, type VehicleDetails } from "../../core/api/commuter-service";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 

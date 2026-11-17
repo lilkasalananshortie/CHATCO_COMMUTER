@@ -6,10 +6,11 @@ import { coordinatesMatch, routeCoordinates } from "./published-route";
 import { foregroundPoll } from "../../shared/foreground-poll";
 const KEY = "chatco_commuter_published_route_v1";
 
-export function usePublishedRoute() {
+export function usePublishedRoute(enabled = true) {
   const [coordinates, setCoordinates] = useState(() => routeCoordinates(ROUTE_POINTS));
   const [source, setSource] = useState<"backend" | "cached" | "fallback">("fallback");
   useEffect(() => {
+    if (!enabled) return;
     let active = true;
     let running = false;
     const load = async () => {
@@ -38,6 +39,6 @@ export function usePublishedRoute() {
     })();
     const poll = foregroundPoll(async () => { await initialize; if (active) await load(); }, 60000);
     return () => { active = false; poll.stop(); };
-  }, []);
+  }, [enabled]);
   return { coordinates, source };
 }

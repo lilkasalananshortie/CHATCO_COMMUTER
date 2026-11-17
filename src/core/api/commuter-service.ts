@@ -1,8 +1,11 @@
-import { del, post, put, request } from "./api-client";
+import { del, post, put, request, TOKEN_KEY } from "./api-client";
+import { appStorage } from "../storage/app-storage";
+import { getSharedRewards, clearRewardsRequestCache } from "./rewards-request-cache";
 import { normalizeRewards } from "../domain/rewards";
 import { mapAnnouncementType } from "../domain/announcement-category";
 import { mapTrip } from "../domain/trips";
-import { notifyRewardsChanged } from "../domain/rewards-events";
+import { notifyRewardsChanged, subscribeRewardsChanged } from "../domain/rewards-events";
+import { appendNativeMultipartFile } from "./native-multipart-file";
 import type { GroupSeat, VoucherOption } from "../domain/group-voucher-plan";
 import type {
   Announcement,
@@ -19,6 +22,8 @@ import type {
   User,
   VehicleLocation,
 } from "../domain/types";
+
+subscribeRewardsChanged(clearRewardsRequestCache);
 
 export interface ClaimGcashResult {
   transactionId: string;
@@ -38,6 +43,7 @@ export interface ClaimGcashResult {
 
 export interface ReceiptClaimResult {
   transactionId: string;
+  unitNumber?: string | null;
   amount: number;
   regularAmount: number;
   discountAmount: number;
@@ -294,9 +300,10 @@ export const commuterService = {
       qr_token: receiptToken,
       receipt_token: receiptToken,
     });
-    notifyRewardsChanged();
+    if (!res.already_claimed) notifyRewardsChanged();
     return {
       transactionId: res.transaction_id || res.id || "",
+      unitNumber: res.unit_number ?? null,
       amount: Number(res.amount ?? res.final_amount ?? 0),
       regularAmount: Number(res.regular_amount ?? res.gross_amount ?? res.amount ?? 0),
       discountAmount: Number(res.discount_amount ?? 0),
@@ -359,8 +366,8 @@ export const commuterService = {
 
   // Rewards
   async getRewards(): Promise<RewardProgress> {
-    const res = await request<any>("/mobile/commuter/rewards");
-    return normalizeRewards(res);
+    const session = await appStorage.getItem(TOKEN_KEY);
+    return getSharedRewards(session, async () => normalizeRewards(await request<any>("/mobile/commuter/rewards")));
   },
 
   async getVoucherWallet(status: "available" | "used" | "expired", cursor?: string | null): Promise<{
@@ -404,7 +411,7 @@ export const commuterService = {
     let signedToken = token;
     try {
       const parsed = JSON.parse(token);
-      if (typeof parsed.vehicle_id === "string") vehicleId = parsed.vehicle_id;
+      if (typeof (parsed.vehicle_id ?? parsed.vehicleId) === "string") vehicleId = parsed.vehicle_id ?? parsed.vehicleId;
       else if (typeof (parsed.token ?? parsed.qr_token) === "string") signedToken = parsed.token ?? parsed.qr_token;
     } catch { /* Bare signed token. */ }
     const res = vehicleId
@@ -499,14 +506,8 @@ export const commuterService = {
     form.append("proof", data.proof || data.proof_description || "");
     if (data.claimant_contact?.trim()) form.append("claimant_contact", data.claimant_contact.trim());
     for (const [index, image] of (data.images ?? []).entries()) {
-      // Expo's native fetch serializer accepts Blob/File bytes, but not React Native's
-      // `{ uri, name, type }` FormData part. Keep browser File uploads unchanged.
-      let multipartImage = image.file;
-      if (!multipartImage) {
-        const { File } = await import("expo-file-system");
-        multipartImage = new Blob([await new File(image.uri).bytes()], { type: image.type });
-      }
-      form.append(`images[${index}]`, multipartImage, image.name);
+      if (image.file) form.append(`images[${index}]`, image.file, image.name);
+      else appendNativeMultipartFile(form, `images[${index}]`, image);
     }
     return post(`/lost-found/${encodeURIComponent(itemId)}/claim`, form);
   },

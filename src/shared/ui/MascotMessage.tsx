@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import { Text } from "./BrandText";
+import { ActivityIndicator, StyleSheet, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import { Mascot, type MascotPose } from "./Mascot";
 

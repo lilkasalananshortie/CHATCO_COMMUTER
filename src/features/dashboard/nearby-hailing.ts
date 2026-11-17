@@ -1,5 +1,18 @@
 import type { VehicleLocation } from "../../core/domain/types";
 import { distanceMeters, PICKUP_RADIUS_METERS } from "./route-data";
+import { distanceToRouteMeters } from "./trip-direction";
+
+export function unavailableHailReason(
+  gpsStatus: "loading" | "available" | "denied" | "unavailable",
+  location: { latitude: number; longitude: number } | null,
+  route: [number, number][],
+): "denied" | "unavailable" | "out-of-range" | "no-nearby-units" {
+  if (gpsStatus === "denied") return "denied";
+  if (gpsStatus !== "available" || !location) return "unavailable";
+  const distance = distanceToRouteMeters(route, location.latitude, location.longitude);
+  if (!Number.isFinite(distance)) return "unavailable";
+  return distance > PICKUP_RADIUS_METERS ? "out-of-range" : "no-nearby-units";
+}
 
 export const HAIL_LOCATION_MAX_AGE_MS = 10 * 60 * 1000;
 

@@ -1,6 +1,7 @@
 /// <reference types="jest" />
 
-import { getNearbyHailableVehicles } from "../nearby-hailing";
+import { getNearbyHailableVehicles, unavailableHailReason } from "../nearby-hailing";
+import { distanceToRouteMeters } from "../trip-direction";
 import type { VehicleLocation } from "../../../core/domain/types";
 
 const now = Date.parse("2026-11-02T00:00:00.000Z");
@@ -41,4 +42,21 @@ test("the nearest hailable unit is selected after removing full units", () => {
   ], commuter, now);
 
   expect(results[0]?.vehicle.vehicle_id).toBe("available");
+});
+
+const route: [number, number][] = [[14.8, 120.8], [14.9, 120.8]];
+test("route proximity measures road segments rather than distant route vertices", () => {
+  expect(distanceToRouteMeters(route, 14.85, 120.8)).toBeLessThan(1);
+  expect(unavailableHailReason("available", { latitude: 14.85, longitude: 120.8 }, route)).toBe("no-nearby-units");
+});
+test("too far applies outside the existing one kilometer route radius", () => {
+  expect(unavailableHailReason("available", { latitude: 14.85, longitude: 120.82 }, route)).toBe("out-of-range");
+  expect(unavailableHailReason("available", { latitude: 14.85, longitude: 120.805 }, route)).toBe("no-nearby-units");
+});
+test("missing, denied, or invalid GPS cannot be confused with no nearby units", () => {
+  expect(unavailableHailReason("denied", commuter, route)).toBe("denied");
+  expect(unavailableHailReason("unavailable", commuter, route)).toBe("unavailable");
+  expect(unavailableHailReason("available", null, route)).toBe("unavailable");
+  expect(unavailableHailReason("available", { latitude: NaN, longitude: 120.8 }, route)).toBe("unavailable");
+  expect(unavailableHailReason("available", commuter, [])).toBe("unavailable");
 });

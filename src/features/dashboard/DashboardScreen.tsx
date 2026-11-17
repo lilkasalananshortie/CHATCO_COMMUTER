@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Text } from "../../shared/ui/BrandText";
+import { Ionicons } from "@expo/vector-icons";
 import {
   Animated,
   Easing,
@@ -8,6 +9,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Vibration,
+  AppState,
   Platform,
   useWindowDimensions,
   Image,
@@ -17,10 +19,12 @@ import * as Location from "expo-location";
 import { commuterColors } from "../../core/theme/colors";
 import { CommuterLiveMap } from "./CommuterLiveMap";
 import { NearbyUnitsCard } from "./NearbyUnitsCard";
+import { FareSheet } from "../fare/FareSheet";
 import { PaymentHistoryModal } from "./PaymentHistoryModal";
 import { commuterService } from "../../core/api/commuter-service";
 import type { HailRequest, VehicleLocation, Trip, CommuterProfile, User } from "../../core/domain/types";
-import { getNearbyHailableVehicles } from "./nearby-hailing";
+import { usePublishedRoute } from "./usePublishedRoute";
+import { getNearbyHailableVehicles, unavailableHailReason } from "./nearby-hailing";
 import { MascotMessage } from "../../shared/ui/MascotMessage";
 import { getMascotErrorState } from "../../shared/ui/mascot-error";
 import { hailIsTerminal, hailSecondsRemaining } from "./hail-state";
@@ -33,30 +37,41 @@ import { WebIcon } from "../../shared/ui/WebIcon";
 import { WebSpinner } from "../../shared/ui/WebSpinner";
 import { useReducedMotion } from "../../shared/useReducedMotion";
 import { foregroundPoll } from "../../shared/foreground-poll";
+import { playDashboardSound, preloadDashboardSounds } from "./dashboard-sounds";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 
+const HAIL_REMINDER_INTERVAL_MS = 4000;
+
 interface DashboardScreenProps {
+  routeNoticeDismissed?: boolean;
+  onDismissRouteNotice?: () => void;
   onOpenScan: () => void;
   onOpenShareRide: () => void;
   onNavigateToFeedback?: (trip?: Trip) => void;
   onOpenProfile?: () => void;
   onOpenTour?: () => void;
+  onOpenAnnouncements?: () => void;
+  unreadAnnouncements?: number;
   user?: User | null;
   profile?: CommuterProfile | null;
 }
 
 export const DashboardScreen: React.FC<DashboardScreenProps> = ({
+  routeNoticeDismissed = false,
+  onDismissRouteNotice,
   onOpenScan,
   onOpenShareRide,
   onNavigateToFeedback,
   onOpenProfile,
   onOpenTour,
+  onOpenAnnouncements,
+  unreadAnnouncements = 0,
   user,
   profile,
 }) => {
   const { colors: selectedColors, isLight = false } = useCommuterTheme();
   const colors = selectedColors ?? commuterColors;
-  const styles = useMemo(() => themedStyles(dashboardStyles(colors), colors, isLight), [colors, isLight]);
+  const styles = useMemo(() => themedStyles(dashboardStyles(colors, isLight), colors, isLight), [colors, isLight]);
   const [failedAvatar, setFailedAvatar] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
@@ -83,9 +98,14 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   const notifiedVehicles = useRef(new Set<string>());
   const hailBottom = hailDockBottom(viewportHeight, sheetHeight, insets.top, showSheet);
   const reduceMotion = useReducedMotion();
+  const [showFareSheet, setShowFareSheet] = useState(false);
+  const [gcashCardSize, setGcashCardSize] = useState({ width: 0, height: 0 });
+  const publishedRoute = usePublishedRoute();
   const sheetTranslateY = useRef(new Animated.Value(0)).current;
   const sheetContentOpacity = useRef(new Animated.Value(1)).current;
   const hailHoldProgress = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => { void preloadDashboardSounds(); }, []);
 
   useEffect(() => {
     const collapsedOffset = toolsSheetCollapsedOffset(sheetHeight);
@@ -125,13 +145,6 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
       : commuterType === "PWD"
       ? "PWD"
       : commuterType;
-
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return "Good morning";
-    if (hour < 18) return "Good afternoon";
-    return "Good evening";
-  };
 
   // Fetch vehicles from API
   const fetchVehicles = useCallback(async () => {
@@ -277,7 +290,8 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     if (nearby.length === 0) setProximityNotice(null);
     if (newlyNearby) {
       const plate = newlyNearby.vehicle.plate_number || newlyNearby.vehicle.unit_number;
-      setProximityNotice({ title: "CHATCO Jeep Nearby!", message: `${plate} is ${newlyNearby.distanceMeters}m away. Get ready to board!` });
+      setProximityNotice({ title: "E-CHATCO Jeep Nearby!", message: `${plate} is ${newlyNearby.distanceMeters}m away. Get ready to board!` });
+      void playDashboardSound("nearby");
     }
   }, [gpsStatus, nearbyHailableVehicles]);
 
@@ -297,6 +311,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   );
 
   const canHail = gpsStatus === "available" && nearestVehicleInfo !== null;
+  const unavailableReason = useMemo(() => unavailableHailReason(gpsStatus, userLocation, publishedRoute.coordinates), [gpsStatus, userLocation, publishedRoute.coordinates]);
 
   // Capacity alone does not cancel a server-owned hail.
   useEffect(() => {
@@ -305,7 +320,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     }
   }, [activeHail, isUnitFull]);
 
-  // Handle Hail Toggle with Web-Matching Countdown & Audio/Vibration Loop
+  // Handle hail toggle and confirm a successfully created request with the web cue.
   const handleToggleHail = async () => {
     if (hailBusy.current) return;
     hailMutation.current++;
@@ -367,7 +382,6 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     setHailError(null);
     setHailNotification(null);
     try {
-      if (Platform.OS !== "web") Vibration.vibrate([100, 50, 100]);
       const hail = await commuterService.sendHail({
         vehicle_id: vehicleId,
         commuter_lat: userLocation.latitude,
@@ -379,6 +393,8 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
       });
       setActiveHail(hail);
       setHailTimerSeconds(hailSecondsRemaining(hail));
+      if (Platform.OS !== "web") Vibration.vibrate(Platform.OS === "android" ? [0, 100, 50, 100] : [100, 50, 100]);
+      void playDashboardSound("hail");
     } catch (err: any) {
       const msg = String(err?.response?.data?.message || err?.message || "");
       if (msg.toLowerCase().includes("break")) {
@@ -441,6 +457,17 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     return () => clearInterval(timer);
   }, [activeHail]);
 
+  // Match the web's four-second cue while the server still owns an active hail.
+  useEffect(() => {
+    if (!activeHail || hailIsTerminal(activeHail)) return;
+    const reminder = setInterval(() => {
+      if (AppState.currentState !== "active") return;
+      if (Platform.OS !== "web") Vibration.vibrate(Platform.OS === "android" ? [0, 200, 100, 200] : [200, 100, 200]);
+      void playDashboardSound("hail");
+    }, HAIL_REMINDER_INTERVAL_MS);
+    return () => clearInterval(reminder);
+  }, [activeHail?.id, activeHail?.status]);
+
   // Poll active hail status every 2s for instant conductor accept/reject feedback (TC-COND-HAIL-169)
   useEffect(() => {
     if (!activeHail?.id) return;
@@ -488,6 +515,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
       <View style={StyleSheet.absoluteFill}>
         <CommuterLiveMap
           vehicles={vehicles}
+          route={publishedRoute}
           userLocation={gpsStatus === "available" ? userLocation : null}
           isHailing={!!activeHail}
           style={StyleSheet.absoluteFill}
@@ -518,7 +546,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           },
         ]}
       >
-        {/* Web phone header: clickable avatar, greeting and plain divided fare type. */}
+        {/* Compact header: profile, name, fare type, and updates. */}
         <View style={styles.topGreetingCard}>
           <TouchableOpacity
             activeOpacity={0.8}
@@ -530,13 +558,28 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           >
             {profile?.profile_image_url && failedAvatar !== profile.profile_image_url ? <Image source={{ uri: profile.profile_image_url }} onError={() => setFailedAvatar(profile.profile_image_url ?? null)} accessibilityLabel="Your profile photo" style={{ width: "100%", height: "100%", borderRadius: 999 }} /> : <WebIcon name="user-round" size={18} color="#FFFFFF" />}
           </TouchableOpacity>
-          <Text style={styles.topGreetingText} numberOfLines={1} ellipsizeMode="tail">
-            <Text style={{ color: colors.textMuted, fontWeight: "500" }}>{getGreeting()}, </Text>
-            <Text style={{ fontWeight: "700" }}>{displayName}</Text>
+          <Text style={styles.topGreetingText} numberOfLines={1} ellipsizeMode="tail" adjustsFontSizeToFit minimumFontScale={0.85}>
+            {displayName}
           </Text>
-          <View style={{ borderLeftWidth: 1, borderLeftColor: colors.border, paddingLeft: 12, alignSelf: "stretch", justifyContent: "center" }}>
-            <Text style={[styles.commuterTypeText, { color: colors.primaryLight, textTransform: "uppercase", letterSpacing: 0.8 }]}>{commuterTypeLabel}</Text>
+          <View style={{ borderLeftWidth: 1, borderLeftColor: colors.border, paddingLeft: 8, alignSelf: "stretch", justifyContent: "center", flexShrink: 1 }}>
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={[styles.commuterTypeText, { color: colors.primaryLight, textTransform: "uppercase", letterSpacing: 0.8 }]}>{commuterTypeLabel}</Text>
           </View>
+          {onOpenAnnouncements && (
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel={`Open updates, ${unreadAnnouncements} unread`}
+              onPress={onOpenAnnouncements}
+              hitSlop={8}
+              style={{ width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceSecondary }}
+            >
+              <Ionicons name="notifications-outline" size={20} color={colors.textPrimary} />
+              {unreadAnnouncements > 0 && (
+                <View style={{ position: "absolute", top: -2, right: -3, minWidth: 16, height: 16, paddingHorizontal: 3, borderRadius: 8, backgroundColor: colors.danger, alignItems: "center", justifyContent: "center" }}>
+                  <Text style={{ color: "#FFFFFF", fontSize: 9, fontWeight: "800" }}>{unreadAnnouncements > 9 ? "9+" : unreadAnnouncements}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -567,7 +610,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           <View style={[styles.sheetHandle, showSheet ? styles.sheetHandleOpen : styles.sheetHandleClosed]} />
           {!showSheet && (
             <View style={styles.toolsHintRow}>
-              <WebIcon name="tools-chevron" size={13} color="rgba(255, 255, 255, 0.5)" />
+              <WebIcon name="tools-chevron" size={13} color={isLight ? "#4B5563" : "rgba(255, 255, 255, 0.5)"} />
               <Text style={styles.toolsHintText}>TOOLS</Text>
             </View>
           )}
@@ -598,7 +641,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             )}
             {/* Live ETA / GPS Status Card */}
             {gpsStatus === "loading" && (
-              <View style={styles.statusBox}>
+              <View style={[styles.statusBox, { marginBottom: 12 }]}>
                 <View style={{ marginRight: 10 }}><WebSpinner size={16} color={commuterColors.primaryLight} /></View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.statusBoxText}>Locating you... Waiting for GPS signal</Text>
@@ -615,7 +658,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
 
 
-            {gpsStatus === "available" && <NearbyUnitsCard vehicles={nearbyHailableVehicles} />}
+            {gpsStatus === "available" && <NearbyUnitsCard key={nearbyHailableVehicles.length ? "available" : unavailableReason} vehicles={nearbyHailableVehicles} unavailableReason={unavailableReason} dismissed={unavailableReason === "out-of-range" && routeNoticeDismissed} onDismiss={unavailableReason === "out-of-range" ? onDismissRouteNotice : undefined} />}
 
 
             {gpsStatus === "available" && isUnitFull && (
@@ -655,6 +698,9 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             <TouchableOpacity
               activeOpacity={0.9}
               onPress={onOpenScan}
+              onLayout={({ nativeEvent: { layout } }) => setGcashCardSize(current =>
+                current.width === layout.width && current.height === layout.height
+                  ? current : { width: layout.width, height: layout.height })}
               accessibilityRole="button"
               accessibilityLabel="Pay with GCash"
               style={styles.gcashPayCard}
@@ -662,9 +708,9 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
               {Platform.OS === "web" ? React.createElement("div", {
                 "aria-hidden": true,
                 style: { position: "absolute", inset: 0, borderRadius: 16, background: "linear-gradient(135deg, #1A5FB4, #123B6E)", pointerEvents: "none" },
-              }) : <Svg style={[StyleSheet.absoluteFill, { pointerEvents: "none" }]} width="100%" height="100%" accessible={false}>
+              }) : gcashCardSize.width > 0 && gcashCardSize.height > 0 && <Svg style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none" }} width={gcashCardSize.width} height={gcashCardSize.height} accessible={false}>
                 <Defs><LinearGradient id="gcash-card" x1="0%" y1="0%" x2="100%" y2="100%"><Stop offset="0%" stopColor="#1A5FB4" /><Stop offset="100%" stopColor="#123B6E" /></LinearGradient></Defs>
-                <Rect width="100%" height="100%" rx={16} ry={16} fill="url(#gcash-card)" />
+                <Rect width={gcashCardSize.width} height={gcashCardSize.height} rx={16} ry={16} fill="url(#gcash-card)" />
               </Svg>}
               {/* Subtle decorative circle matching web */}
               <View style={styles.gcashDecoCircle} />
@@ -677,7 +723,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
               {/* Card Content */}
               <View style={styles.gcashContent}>
                 <View style={styles.gcashTitleRow}>
-                  <Text style={styles.gcashTitle}>Pay with GCash</Text>
+                  <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={styles.gcashTitle}>Pay with GCash</Text>
                   <View style={styles.historyBtnPlaceholder} />
                 </View>
                 <Text style={styles.gcashSubtitle}>Tap to scan conductor's QR code</Text>
@@ -703,10 +749,14 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
               <TouchableOpacity
                 activeOpacity={0.8}
                 onPress={onOpenShareRide}
-                style={[styles.quickActionBtn, { backgroundColor: isLight ? "#F9FAFB" : "rgba(255,255,255,0.05)", borderColor: isLight ? "#E5E7EB" : "rgba(255,255,255,0.1)" }]}
+                style={styles.quickActionBtn}
               >
-                <WebIcon name="share-ride" size={16} color={isLight ? "#1A5FB4" : "#93C5FD"} style={{ marginRight: 6 }} />
+                <WebIcon name="share-ride" size={16} color={isLight ? "#1A5FB4" : "#93C5FD"} style={{ marginRight: 8 }} />
                 <Text style={[styles.quickActionText, { color: isLight ? "#374151" : "rgba(255,255,255,0.7)" }]}>Share Ride</Text>
+              </TouchableOpacity>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Fare Matrix" onPress={() => setShowFareSheet(true)} style={styles.quickActionBtn}>
+                <Ionicons name="calculator-outline" size={16} color={isLight ? "#1A5FB4" : "#93C5FD"} style={{ marginRight: 8 }} />
+                <Text style={[styles.quickActionText, { color: colors.textSecondary }]}>Fare Matrix</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
@@ -782,16 +832,19 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
               ? hailHold.holding ? "Keep holding…" : "Hold to hail"
               : gpsStatus === "loading"
               ? "Locating..."
-              : gpsStatus === "denied"
+              : unavailableReason === "denied" || unavailableReason === "unavailable"
               ? "No GPS"
+              : unavailableReason === "out-of-range"
+              ? "Too far"
               : "No nearby units"}
           </Text>
         </View>
 
       {!activeHail && gpsStatus !== "loading" && !canHail && <View style={{ pointerEvents: "box-none", position: "absolute", bottom: hailBottom + 62, right: isTablet ? Math.max(0, (windowWidth - 640) / 2) : 0, width: 44, height: 44, zIndex: 70 }}><HailRangeHint
-          reason={gpsStatus === "denied" ? "denied" : gpsStatus === "unavailable" ? "unavailable" : "out-of-range"}
+          reason={unavailableReason}
           onRetry={() => void requestGps()} /></View>}
 
+      <FareSheet visible={showFareSheet} onClose={() => setShowFareSheet(false)} />
       {/* Payment History Modal */}
       <PaymentHistoryModal
         visible={showHistoryModal}
@@ -805,23 +858,25 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   );
 };
 
-function dashboardStyles(colors: { [K in keyof typeof commuterColors]: string }) {
+function dashboardStyles(colors: { [K in keyof typeof commuterColors]: string }, isLight: boolean) {
   return {
     ...baseStyles,
+    sheetHandleOpen: { ...baseStyles.sheetHandleOpen, backgroundColor: isLight ? "#6B7280" : "rgba(255, 255, 255, 0.3)" },
+    sheetHandleClosed: { ...baseStyles.sheetHandleClosed, backgroundColor: isLight ? "#4B5563" : "rgba(255, 255, 255, 0.6)" },
     container: { ...baseStyles.container, backgroundColor: colors.background },
-    topGreetingCard: { ...baseStyles.topGreetingCard, backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 16, flex: 1, flexDirection: "row" as const, alignItems: "center" as const, gap: 12, paddingLeft: 8, paddingRight: 16, paddingVertical: 8, marginRight: 0 },
+    topGreetingCard: { ...baseStyles.topGreetingCard, backgroundColor: colors.surface, borderColor: colors.border, borderRadius: 16, flex: 1, flexDirection: "row" as const, alignItems: "center" as const, gap: 8, paddingLeft: 8, paddingRight: 12, paddingVertical: 8, marginRight: 0, minWidth: 0 },
     topGreetingText: { ...baseStyles.topGreetingText, fontSize: 14, flex: 1, minWidth: 0, color: colors.textPrimary },
     avatarBtn: { ...baseStyles.avatarBtn, width: 36, height: 36, borderRadius: 18, shadowOpacity: 0, elevation: 0 },
     bottomSheet: { ...baseStyles.bottomSheet, backgroundColor: colors.surface, borderTopColor: colors.border },
     hailFloatingContainer: { ...baseStyles.hailFloatingContainer },
-    quickActionBtn: { ...baseStyles.quickActionBtn, backgroundColor: colors.surfaceSecondary, borderColor: colors.border, paddingVertical: 10 },
+    quickActionBtn: { ...baseStyles.quickActionBtn, backgroundColor: isLight ? "#FFFFFF" : "rgba(255,255,255,0.05)", borderColor: isLight ? "#E5E7EB" : "rgba(255,255,255,0.1)", paddingVertical: 10, shadowColor: isLight ? "#0F172A" : "#000000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: isLight ? 0.15 : 0.24, shadowRadius: 12, elevation: 5 },
     quickActionText: { ...baseStyles.quickActionText, color: colors.textSecondary, fontWeight: "600" as const },
     quickActionsGrid: { ...baseStyles.quickActionsGrid, gap: 12, marginTop: 16 },
-    gcashPayCard: { ...baseStyles.gcashPayCard, padding: 20, borderRadius: 16, marginBottom: 0 },
+    gcashPayCard: { ...baseStyles.gcashPayCard, padding: 16, paddingRight: 48, borderRadius: 16, marginBottom: 0 },
     gcashTitle: { ...baseStyles.gcashTitle, fontSize: 18, fontWeight: "700" as const },
     gcashSubtitle: { ...baseStyles.gcashSubtitle, color: "rgba(255,255,255,0.5)", marginTop: 4 },
-    gcashIconBox: { ...baseStyles.gcashIconBox, width: 56, height: 56, borderRadius: 16, marginRight: 16, backgroundColor: "rgba(255,255,255,0.1)" },
-    historyBtn: { ...baseStyles.historyBtn, backgroundColor: "transparent" },
+    gcashIconBox: { ...baseStyles.gcashIconBox, width: 48, height: 48, borderRadius: 14, marginRight: 10, backgroundColor: "rgba(255,255,255,0.1)" },
+    historyBtn: { ...baseStyles.historyBtn, width: 32, height: 32, borderRadius: 8, backgroundColor: "#346DAF", borderColor: "#4C7FB8", borderWidth: 1 },
     scanPill: { ...baseStyles.scanPill, marginTop: 10, paddingHorizontal: 10, paddingVertical: 4, backgroundColor: "rgba(255,255,255,0.15)" },
   };
 }
@@ -961,12 +1016,9 @@ const baseStyles = StyleSheet.create({
   },
   hailCircleAvailable: {
     backgroundColor: "#FF6D3A",
-    borderColor: "#FF9A76",
-    shadowColor: "#FF6D3A",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
-    elevation: 8,
+    borderColor: "#FF6D3A",
+    shadowOpacity: 0,
+    elevation: 0,
   },
   hailCircleActive: {
     backgroundColor: "#EF4444",
@@ -1003,8 +1055,8 @@ const baseStyles = StyleSheet.create({
     justifyContent: "center",
   },
   sheetHandle: {
-    width: 40,
-    height: 4,
+    width: 34,
+    height: 3,
     borderRadius: 2,
   },
   sheetHandleOpen: {
@@ -1017,7 +1069,7 @@ const baseStyles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    marginTop: 4,
+    marginTop: 2,
   },
   toolsHintText: {
     fontSize: 10,
@@ -1229,6 +1281,7 @@ const baseStyles = StyleSheet.create({
   },
   gcashContent: {
     flex: 1,
+    minWidth: 0,
   },
   gcashTitleRow: {
     flexDirection: "row",

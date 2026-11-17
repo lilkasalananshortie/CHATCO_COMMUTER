@@ -1,4 +1,5 @@
-import { Modal, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { Modal, ScrollView, TouchableOpacity, View } from "react-native";
+import { Text } from "../ui/BrandText";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import { PRIVACY_SECTIONS, REGISTRATION_TERMS, POLICY_EFFECTIVE_DATE } from "../../features/auth/registration-policies";

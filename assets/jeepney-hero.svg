@@ -142,7 +142,7 @@
       />
       <rect x="110" y="74" width="4.5" height="2" rx="0.5" fill="#475569" />
 
-      <!-- Circular CHATCO Seal Logo on Driver Door -->
+      <!-- Circular E-CHATCO Seal Logo on Driver Door -->
       <circle cx="96.5" cy="80" r="7.5" fill="#1D4ED8" stroke="#FFFFFF" stroke-width="0.9" />
       <circle cx="96.5" cy="80" r="6" fill="#FFFFFF" />
       <circle cx="96.5" cy="80" r="4.6" fill="#1E3A8A" />
@@ -150,12 +150,12 @@
         x="96.5"
         y="91"
         fill="#1E3A8A"
-        font-size="4.6"
+        font-size="3.5"
         font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
         font-weight="900"
         text-anchor="middle"
-        letter-spacing="0.4"
-      >CHATCO</text>
+        letter-spacing="0.15"
+      >E-CHATCO</text>
 
       <!-- Continuous Black Frame for Panoramic Passenger Windows -->
       <rect
