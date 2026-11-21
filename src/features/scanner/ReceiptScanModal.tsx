@@ -205,7 +205,6 @@ export const ReceiptScanModal: React.FC<ReceiptScanModalProps> = ({
                         <View style={[styles.corner, styles.topRight]} />
                         <View style={[styles.corner, styles.bottomLeft]} />
                         <View style={[styles.corner, styles.bottomRight]} />
-                        <View style={styles.scanLaser} />
                       </View>
                     </View>
 
@@ -356,14 +355,14 @@ export const ReceiptScanModal: React.FC<ReceiptScanModalProps> = ({
                 <View style={styles.buttonRow}>
                   <TouchableOpacity
                     onPress={handleClose}
-                    style={[styles.neutralButton, { flex: 1 }]}
+                    style={[styles.neutralButton, styles.rowActionButton]}
                     activeOpacity={0.8}
                   >
                     <Text style={styles.neutralButtonText}>Close</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={retry}
-                    style={[styles.primaryButton, { flex: 1 }]}
+                    style={[styles.primaryButton, styles.rowActionButton]}
                     activeOpacity={0.8}
                   >
                     <Text style={styles.primaryButtonText}>Try Again</Text>
@@ -706,8 +705,13 @@ const baseStyles = StyleSheet.create({
   },
   buttonRow: {
     flexDirection: "row",
+    alignItems: "stretch",
     gap: 12,
     width: "100%",
     marginTop: 20,
+  },
+  rowActionButton: {
+    flex: 1,
+    marginTop: 0,
   },
 });
