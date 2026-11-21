@@ -6,7 +6,7 @@ import { APPLICATION_LABELS, DISCOUNT_CATEGORIES, type ApplicationState } from "
 
 export function DiscountApplicationEntry({ state, loading, failed, isLight, onOpen, discountRate = 20 }: {
   state: ApplicationState | null; loading: boolean; failed: boolean; isLight: boolean;
-  onOpen: () => void; discountRate?: number;
+  onOpen: () => void; discountRate?: number | null;
 }) {
   if (!state && loading) return <Text accessibilityRole="text" style={{ width: "100%", marginTop: 16, color: isLight ? "#6B7280" : "rgba(255,255,255,0.6)" }}>Loading discount application status...</Text>;
 
@@ -21,7 +21,7 @@ export function DiscountApplicationEntry({ state, loading, failed, isLight, onOp
     : status === "PENDING" ? { text: "Your discount application is currently under review. Check here for updates on your application status.", link: "View application status" }
     : status === "NEEDS_CORRECTION" ? { text: `An admin asked for a correction to your ${category} discount application. Send corrected documents to continue the review.`, link: "Update your application" }
     : status === "REJECTED" ? { text: `Your ${category} discount application was not approved.`, link: "Apply again" }
-    : { lead: "Student, PWD or Senior Citizen?", text: `Verify your ID to pay ${discountRate}% less on every ride.`, link: "Apply for a discount" };
+    : { lead: "Student, PWD or Senior Citizen?", text: discountRate ? `Verify your ID to pay ${discountRate}% less on every ride.` : "Verify your ID to pay less on every ride.", link: "Apply for a discount" };
   const primary = !!state && status !== "PENDING";
   const border = isLight ? "rgba(26,95,180,0.15)" : "rgba(255,255,255,0.15)";
   const bodyColor = status === "REJECTED" ? (isLight ? "#B91C1C" : "#FECACA") : (isLight ? "#374151" : "rgba(255,255,255,0.85)");

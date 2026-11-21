@@ -1,6 +1,6 @@
 import type { VehicleLocation } from "../../core/domain/types";
 import type { RoutePoint } from "./published-route";
-import { toTripDirection, unitHeading } from "./trip-direction";
+import { toTripDirection, tripLabel, unitHeading } from "./trip-direction";
 
 /** Use the same route-based facing as the web, including old payload fallback. */
 export function mapVehicleState(vehicle: VehicleLocation, route: RoutePoint[]) {
@@ -15,8 +15,7 @@ export function mapVehicleState(vehicle: VehicleLocation, route: RoutePoint[]) {
     availableSeats: vehicle.available_seats,
     capacityStatus: vehicle.capacity_status,
     routeName: vehicle.route_name,
-    driverName: vehicle.driver_name,
-    conductorName: vehicle.conductor_name,
+    tripLabel: tripLabel(toTripDirection(vehicle.trip_direction)),
     heading: unitHeading(route, lat, lng, toTripDirection(vehicle.trip_direction)),
   };
 }

@@ -27,6 +27,30 @@ export function resetSessionEndedNotified() {
   sessionEndedNotified = false;
 }
 
+let maintenanceHandler: ((message: string) => void) | null = null;
+
+/** Called when the server refuses a request because maintenance is on. */
+export function setMaintenanceHandler(handler: ((message: string) => void) | null): () => void {
+  maintenanceHandler = handler;
+  return () => {
+    if (maintenanceHandler === handler) maintenanceHandler = null;
+  };
+}
+
+/** Any HTTP reply, including 401, proves the server can be reached. */
+export async function isServerReachable(timeoutMs = REQUEST_TIMEOUT_MS): Promise<boolean> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    await fetch(`${API_URL}/api/v1/mobile/auth/session`, { headers: { Accept: "application/json" }, signal: controller.signal });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const startedAt = Date.now();
   try {
@@ -73,6 +97,9 @@ async function requestCore<T>(path: string, init: RequestInit = {}): Promise<T> 
   const payload = (await response.json().catch(() => null)) as Envelope<T> | null;
 
   if (!response.ok) {
+    if (response.status === 503 && (payload as any)?.code === "MAINTENANCE") {
+      maintenanceHandler?.(payload?.message ?? "");
+    }
     // A late failure from an old token must not sign out a newer login.
     if (response.status === 401 && path !== "/mobile/auth/login"
       && token && await appStorage.getItem(TOKEN_KEY) === token) {

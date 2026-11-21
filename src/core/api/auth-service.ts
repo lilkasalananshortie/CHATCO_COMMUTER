@@ -10,6 +10,8 @@ export interface LoginResult {
   profile?: CommuterProfile;
   token: string;
   unverified?: boolean;
+  /** The server answered with a temporary error, so the phone is not offline. */
+  reason?: "server";
 }
 
 const USER_KEY = "chatco_commuter_user";
@@ -63,8 +65,12 @@ export const authService = {
       // Connectivity failure is not token revocation. Never fabricate a profile.
       if (error instanceof NetworkError && cachedUser?.role === "COMMUTER") return { user: cachedUser, token, unverified: true };
       const status = (error as { status?: number }).status;
-      if (status === 401 || status === 403) await authService.clearLocalSession();
-      return null;
+      if (status === 401 || status === 403) {
+        await authService.clearLocalSession();
+        return null;
+      }
+      // A temporary server error says nothing about whether the login is valid.
+      return cachedUser?.role === "COMMUTER" ? { user: cachedUser, token, unverified: true, reason: "server" } : null;
     }
   },
 

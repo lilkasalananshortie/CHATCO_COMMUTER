@@ -30,6 +30,11 @@ test.each([401, 403])("invalid session %s is cleared instead of treated as offli
   expect(appStorage.removeItem).toHaveBeenCalledWith(TOKEN_KEY);
   expect(appStorage.removeItem).toHaveBeenCalledWith("chatco_commuter_user");
 });
+test.each([429, 500, 503])("temporary server error %s keeps the login", async status => {
+  (request as jest.Mock).mockRejectedValue(Object.assign(new Error("temporary"), { status }));
+  expect(await authService.restoreSession()).toEqual({ user, token: "token", unverified: true, reason: "server" });
+  expect(appStorage.removeItem).not.toHaveBeenCalled();
+});
 test("wrong-role restored session is not allowed into commuter shell", async () => {
   (request as jest.Mock).mockResolvedValue({ user: { ...user, role: "CONDUCTOR" } });
   expect(await authService.restoreSession()).toBeNull();

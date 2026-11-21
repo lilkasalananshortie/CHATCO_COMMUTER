@@ -34,12 +34,31 @@ test("mobile requests retain bearer authentication and unwrap the existing envel
     expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer session-token" }) }));
 });
 
-test("unit details use the backend commuter route and the authenticated envelope", async () => {
-  const { commuterService } = await import("../commuter-service");
-  const details = { vehicle_id: "unit-1", unit_number: "NAB 0002", driver: { name: "Driver", rating_count: 1, average_rating: 5 }, conductor: null };
-  const fetchMock = jest.spyOn(globalThis, "fetch").mockResolvedValue({ ok: true, json: async () => ({ data: details }) } as Response);
-  expect(await commuterService.getVehicleDetails("unit-1")).toEqual(details);
-  expect(fetchMock).toHaveBeenCalledWith("https://api.chatco.test/api/v1/commuter/vehicles/unit-1/details", expect.objectContaining({ headers: expect.objectContaining({ Authorization: "Bearer session-token" }) }));
+test("a maintenance refusal notifies the app and keeps the commuter session", async () => {
+  const notified = jest.fn();
+  const cleanup = client.setMaintenanceHandler(notified);
+  jest.spyOn(globalThis, "fetch").mockResolvedValue({
+    ok: false, status: 503, json: async () => ({ code: "MAINTENANCE", message: "Back soon." }),
+  } as Response);
+  try {
+    await expect(client.request("/mobile/commuter/rewards")).rejects.toThrow("Back soon.");
+    expect(notified).toHaveBeenCalledWith("Back soon.");
+    expect(appStorage.removeItem).not.toHaveBeenCalled();
+  } finally {
+    cleanup();
+  }
+});
+
+test("an ordinary server outage is not reported as maintenance", async () => {
+  const notified = jest.fn();
+  const cleanup = client.setMaintenanceHandler(notified);
+  jest.spyOn(globalThis, "fetch").mockResolvedValue({ ok: false, status: 503, json: async () => ({ message: "Unavailable" }) } as Response);
+  try {
+    await expect(client.request("/mobile/commuter/rewards")).rejects.toThrow("Unavailable");
+    expect(notified).not.toHaveBeenCalled();
+  } finally {
+    cleanup();
+  }
 });
 
 test("invalid mobile login does not revoke an existing local session", async () => {

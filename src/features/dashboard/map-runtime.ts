@@ -96,8 +96,9 @@ function commuterIcon() {
 function currentLocationDetails() {
   var panel = document.createElement('section');
   var header = document.createElement('div'); header.className = 'commuter-popup-header'; header.appendChild(accountSvg(34, 'commuter-popup-icon'));
-  var subtitle = document.createElement('div'); subtitle.className = 'commuter-popup-subtitle'; subtitle.textContent = 'Your location'; header.appendChild(subtitle);
-  var title = document.createElement('div'); title.className = 'commuter-popup-title'; title.textContent = 'You are here'; header.appendChild(title); panel.appendChild(header);
+  var heading = document.createElement('div'); heading.className = 'unit-popup-heading';
+  var subtitle = document.createElement('div'); subtitle.className = 'commuter-popup-subtitle'; subtitle.textContent = 'Your location'; heading.appendChild(subtitle);
+  var title = document.createElement('div'); title.className = 'commuter-popup-title'; title.textContent = 'You are here'; heading.appendChild(title); header.appendChild(heading); panel.appendChild(header);
   var status = document.createElement('span'); status.className = 'commuter-popup-status'; status.textContent = 'Live GPS'; panel.appendChild(status); return panel;
 }
 function unitDetails(v, userLocation) {
@@ -105,15 +106,15 @@ function unitDetails(v, userLocation) {
   var header = document.createElement('div'); header.className = 'unit-popup-header';
   var icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); icon.setAttribute('viewBox', '0 0 24 24'); icon.setAttribute('fill', 'currentColor'); icon.setAttribute('class', 'unit-popup-icon');
   var iconPath = document.createElementNS('http://www.w3.org/2000/svg', 'path'); iconPath.setAttribute('d', 'M19,13V7H20V4H4V7H5V13H2C2,13.93 2.5,14.71 3.5,14.93V20A1,1 0 0,0 4.5,21H5.5A1,1 0 0,0 6.5,20V19H17.5V20A1,1 0 0,0 18.5,21H19.5A1,1 0 0,0 20.5,20V14.93C21.5,14.7 22,13.93 22,13H19M8,15A1.5,1.5 0 0,1 6.5,13.5A1.5,1.5 0 0,1 8,12A1.5,1.5 0 0,1 9.5,13.5A1.5,1.5 0 0,1 8,15M16,15A1.5,1.5 0 0,1 14.5,13.5A1.5,1.5 0 0,1 16,12A1.5,1.5 0 0,1 17.5,13.5A1.5,1.5 0 0,1 16,15M17.5,10.5C15.92,10.18 14.03,10 12,10C9.97,10 8,10.18 6.5,10.5V7H17.5V10.5Z'); icon.appendChild(iconPath); header.appendChild(icon);
-  var heading = document.createElement('div'); var subtitle = document.createElement('div'); subtitle.className = 'unit-popup-subtitle'; subtitle.textContent = 'Unit details'; heading.appendChild(subtitle);
+  var heading = document.createElement('div'); heading.className = 'unit-popup-heading'; var subtitle = document.createElement('div'); subtitle.className = 'unit-popup-subtitle'; subtitle.textContent = 'Unit details'; heading.appendChild(subtitle);
   var title = document.createElement('div'); title.className = 'unit-popup-title'; title.textContent = String(v.plateNumber || v.unitNumber || '—'); heading.appendChild(title); header.appendChild(heading); node.appendChild(header);
   var body = document.createElement('div'); body.className = 'unit-popup-body'; node.appendChild(body);
   var capacity = String(v.capacityStatus || 'AVAILABLE').toUpperCase();
   var capacityLabel = capacity === 'FULL' ? 'Full' : capacity === 'STANDING' ? 'Standing only' : capacity === 'LAST_TRIP' ? 'Last trip' : 'Available';
-  var status = document.createElement('div'); status.className = 'unit-popup-status ' + (capacity === 'FULL' ? 'danger' : capacity === 'STANDING' ? 'warning' : 'success'); status.textContent = capacityLabel; body.appendChild(status);
+  var status = document.createElement('div'); status.className = 'unit-popup-status'; status.textContent = capacityLabel; body.appendChild(status);
   var details = document.createElement('div'); details.className = 'unit-popup-details'; body.appendChild(details);
-  function row(label, value) { var element = document.createElement('div'); element.className = 'unit-popup-row'; var key = document.createElement('span'); key.textContent = label + ': '; var val = document.createElement('span'); val.textContent = String(value); element.appendChild(key); element.appendChild(val); details.appendChild(element); }
-  row('Route', v.routeName || '—');
+  function row(label, value) { var element = document.createElement('div'); element.className = 'unit-popup-row'; var key = document.createElement('span'); key.textContent = label; var val = document.createElement('span'); val.textContent = String(value); element.appendChild(key); element.appendChild(val); details.appendChild(element); }
+  row('Route', v.tripLabel || v.routeName || '—');
   if (userLocation && coordinates(userLocation.latitude,userLocation.longitude) && coordinates(v.lat,v.lng)) {
     var distance = distanceMeters([userLocation.latitude,userLocation.longitude],[v.lat,v.lng]);
     var distanceLabel = distance < 1000 ? Math.round(distance) + ' m' : (distance / 1000).toFixed(1) + ' km';
@@ -128,6 +129,12 @@ function unitDetails(v, userLocation) {
   }
   return node;
 }
+// Leaflet sizes a popup once, so load Poppins early and re-measure any open card.
+if (document.fonts && document.fonts.load) {
+  Promise.all(['400','500','600','700'].map(function(weight) { return document.fonts.load(weight + ' 12px Poppins'); })).then(function() {
+    map.eachLayer(function(layer) { if (layer instanceof L.Popup) layer.update(); });
+  }).catch(function() {});
+}
 window.chatcoUpdate = function(state) {
   if (!state || !Array.isArray(state.vehicles)) return;
   var keep = Object.create(null);
@@ -140,11 +147,6 @@ window.chatcoUpdate = function(state) {
       var inRange = user && coordinates(user.latitude,user.longitude) && distanceMeters([user.latitude,user.longitude],[v.lat,v.lng]) <= 1000;
       marker = L.marker([v.lat,v.lng], {icon: markerIcon(v.capacityStatus, inRange, v.heading), zIndexOffset: 1000}).addTo(map);
       marker.bindPopup(unitDetails(v,state.userLocation), {className:'chatco-unit-popup',closeButton:false,minWidth:0,maxWidth:320});
-      marker.on('popupopen', function() {
-        var message = {type:'chatco-unit-open', id:key};
-        if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(message));
-        else if (window.parent && window.parent !== window) window.parent.postMessage(message, '*');
-      });
       vehicleMarkers[key] = marker;
     } else {
       var user = state.userLocation;
@@ -161,7 +163,7 @@ window.chatcoUpdate = function(state) {
     var icon = commuterIcon();
     if (!userMarker) {
       userMarker = L.marker(position,{icon:icon,title:'Your location',alt:'Your location',keyboard:true,interactive:true}).addTo(map);
-      userMarker.bindPopup(currentLocationDetails(), {className:'chatco-location-popup',autoClose:false,closeOnClick:false,minWidth:180,maxWidth:260});
+      userMarker.bindPopup(currentLocationDetails(), {className:'chatco-location-popup',closeButton:false,minWidth:0,maxWidth:320});
     }
     else { userMarker.setLatLng(position); userMarker.setIcon(icon); }
     centerOnFirstFix(position);

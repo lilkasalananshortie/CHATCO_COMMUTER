@@ -1,7 +1,7 @@
 /// <reference types="jest" />
 import React from "react";
 import App from "../../../../App";
-import { setSessionEndedHandler } from "../../../core/api/api-client";
+import { isServerReachable, setSessionEndedHandler } from "../../../core/api/api-client";
 import { commuterService } from "../../../core/api/commuter-service";
 import { authService } from "../../../core/api/auth-service";
 let mockStates: any[] = [], mockRefs: any[] = [], mockEffects: Array<() => any> = [];
@@ -19,12 +19,15 @@ jest.mock("../../../shared/ui/BrandFonts", () => ({ BrandFonts: "BrandFonts" }))
 jest.mock("../../../shared/ui/BrandText", () => ({ Text: "Text", TextInput: "TextInput" }));
 jest.mock("@react-native-async-storage/async-storage", () => ({ getItem: jest.fn().mockResolvedValue("done") }));
 jest.mock("../../../core/theme/ThemeProvider", () => ({ ThemeProvider: "Theme", useCommuterTheme: () => ({ colors: jest.requireActual("../../../core/theme/colors").commuterColors }) }));
-jest.mock("../../../core/api/api-client", () => ({ setSessionEndedHandler: jest.fn(() => jest.fn()) }));
+jest.mock("../../../core/api/api-client", () => ({ setSessionEndedHandler: jest.fn(() => jest.fn()), isServerReachable: jest.fn().mockResolvedValue(true) }));
 jest.mock("../../../core/api/auth-service", () => ({ authService: { restoreSession: jest.fn().mockResolvedValue(null) } }));
 jest.mock("../../../core/api/commuter-service", () => ({ commuterService: { getProfile: jest.fn() } }));
 jest.mock("../../../core/domain/rewards-events", () => ({ subscribeRewardsChanged: jest.fn() }));
 jest.mock("../../../shared/ui/CommuterBottomNav", () => ({ CommuterBottomNav: "Nav" }));
 jest.mock("../../../shared/ui/MascotErrorBoundary", () => ({ MascotErrorBoundary: "Boundary" }));
+jest.mock("../../../shared/ui/OfflineScreen", () => ({ OfflineScreen: "Offline" }));
+jest.mock("../../../shared/ui/MaintenanceGate", () => ({ MaintenanceGate: "MaintenanceGate" }));
+jest.mock("../../../core/api/connection-issue", () => ({ getConnectionIssue: jest.fn().mockResolvedValue("offline") }));
 jest.mock("../../splash/SplashScreen", () => ({ SplashScreen: "Splash" }));
 jest.mock("../../onboarding/OnboardingScreen", () => ({ OnboardingScreen: "Onboarding", ONBOARDING_STORAGE_KEY: "onboarding" }));
 jest.mock("../LoginScreen", () => ({ LoginScreen: "Login" }));
@@ -115,10 +118,34 @@ test("student renewal opened from Updates returns to Rewards & Updates", () => {
 
 test("cached offline account is gated until the server validates its session", async () => {
   mockStates[2] = user;
-  expect(render().some(e => e.type === "Text" && e.props.children === "Session not verified")).toBe(true);
+  expect(render().find(e => e.type === "Offline")!.props.secondaryLabel).toBe("Sign out");
   expect(render().some(e => e.type === "Dashboard")).toBe(false);
+  (authService.restoreSession as jest.Mock).mockResolvedValue({ user, token: "token", unverified: true });
+  render().find(e => e.type === "Offline")!.props.onRetry();
+  await new Promise(process.nextTick);
+  expect(render().find(e => e.type === "Offline")!.props.retryFailed).toBe(true);
   (authService.restoreSession as jest.Mock).mockResolvedValue({ user, token: "token" });
-  const retry = render().find(e => e.type === "Pressable" && walk(e).some(child => child.props.children === "Try again"))!;
-  await retry.props.onPress();
+  render().find(e => e.type === "Offline")!.props.onRetry();
+  await new Promise(process.nextTick);
   expect(render().some(e => e.type === "Dashboard")).toBe(true);
+});
+
+test("logged-out offline screen stays until the server responds or the commuter continues", async () => {
+  const offlineSlot = 22;
+  mockStates[offlineSlot] = true;
+  (isServerReachable as jest.Mock).mockResolvedValueOnce(false);
+  render().find(e => e.type === "Offline")!.props.onRetry();
+  await new Promise(process.nextTick);
+  expect(render().find(e => e.type === "Offline")!.props.retryFailed).toBe(true);
+  (isServerReachable as jest.Mock).mockResolvedValueOnce(true);
+  (authService.restoreSession as jest.Mock).mockResolvedValue(null);
+  render().find(e => e.type === "Offline")!.props.onRetry();
+  await new Promise(process.nextTick);
+  expect(render().some(e => e.type === "Offline")).toBe(false);
+  expect(render().some(e => e.type === "Login")).toBe(true);
+
+  mockStates[offlineSlot] = true;
+  expect(render().some(e => e.type === "Login")).toBe(true);
+  render().find(e => e.type === "Offline")!.props.onSecondary();
+  expect(render().some(e => e.type === "Offline")).toBe(false);
 });

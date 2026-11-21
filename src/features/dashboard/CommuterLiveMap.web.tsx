@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { View, StyleSheet, StyleProp, ViewStyle } from "react-native";
 import Constants from "expo-constants";
 import { commuterColors } from "../../core/theme/colors";
@@ -7,9 +7,8 @@ import { usePublishedRoute } from "./usePublishedRoute";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import { MAP_RUNTIME } from "./map-runtime";
 import { commuterLocationCss } from "./commuter-map-pin";
-import { UnitDetailsPanel } from "./UnitDetailsPanel";
 import { mapVehicleState } from "./map-vehicle-state";
-import { useMapFontCss } from "./useMapFontCss";
+import { MAP_FONT_CSS, MAP_FONT_FAMILY } from "./map-fonts";
 
 const CARTO_API_KEY =
   process.env.EXPO_PUBLIC_CARTO_API_KEY ||
@@ -34,10 +33,8 @@ export const CommuterLiveMap = React.memo(function CommuterLiveMap({
 }: CommuterLiveMapProps) {
   const loadedRoute = usePublishedRoute(!providedRoute);
   const route = providedRoute ?? loadedRoute;
-  const mapFontCss = useMapFontCss();
   const { isLight, colors } = useCommuterTheme();
   const frameRef = useRef<HTMLIFrameElement>(null);
-  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const routeCenter = useMemo(() => {
     const latitudes = route.coordinates.map(p => p[0]);
     const longitudes = route.coordinates.map(p => p[1]);
@@ -56,18 +53,6 @@ export const CommuterLiveMap = React.memo(function CommuterLiveMap({
   const mapState = useMemo(() => ({
     vehicles: mapVehicles, userLocation, isHailing,
   }), [mapVehicles, userLocation, isHailing]);
-  useEffect(() => {
-    if (selectedVehicleId && !vehicles.some(v => String(v.vehicle_id || v.id) === selectedVehicleId)) setSelectedVehicleId(null);
-  }, [vehicles, selectedVehicleId]);
-  useEffect(() => {
-    const onMessage = (event: MessageEvent) => {
-      if (event.source !== frameRef.current?.contentWindow || event.data?.type !== "chatco-unit-open") return;
-      const id = String(event.data.id);
-      if (vehicles.some(v => String(v.vehicle_id || v.id) === id)) setSelectedVehicleId(id);
-    };
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, [vehicles]);
   useEffect(() => { frameRef.current?.contentWindow?.postMessage({ type: "chatco-map-update", state: mapState }, "*"); }, [mapState, isLight]);
 
   const htmlContent = useMemo(() => `
@@ -79,8 +64,8 @@ export const CommuterLiveMap = React.memo(function CommuterLiveMap({
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
-    ${mapFontCss}
-    body, .leaflet-container { font-family: Poppins; }
+    ${MAP_FONT_CSS}
+    body, .leaflet-container { font-family: ${MAP_FONT_FAMILY}; }
     html, body, #map {
       width: 100%;
       height: 100%;
@@ -151,7 +136,7 @@ export const CommuterLiveMap = React.memo(function CommuterLiveMap({
   </script>
 </body>
 </html>
-  `, [routePointsJs, routeCenter.latitude, routeCenter.longitude, isLight, mapFontCss]);
+  `, [routePointsJs, routeCenter.latitude, routeCenter.longitude, isLight]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.surfaceSecondary }, style]}>
@@ -167,7 +152,6 @@ export const CommuterLiveMap = React.memo(function CommuterLiveMap({
         },
         title: "Commuter Live Map",
       })}
-      <UnitDetailsPanel vehicleId={selectedVehicleId} onClose={() => setSelectedVehicleId(null)} />
     </View>
   );
 });

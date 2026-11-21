@@ -23,6 +23,8 @@ import { ThemeToggleIcons } from "./ThemeToggleIcons";
 import { StudentRenewalEntry } from "./StudentRenewalEntry";
 import { DiscountApplicationEntry } from "./DiscountApplicationEntry";
 import type { RenewalState } from "../student-renewal/renewal-types";
+import { FaqEntry } from "../faq/FaqEntry";
+import { useDiscountRate } from "../fare/useDiscountRate";
 
 interface ProfileScreenProps {
   onLogout: () => void;
@@ -170,6 +172,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailC
   }, [successMessage]);
 
   const { progress: logoutEntrance, mounted: logoutMounted } = useWebDialogEntrance(showLogoutConfirm);
+  const discountRate = useDiscountRate();
 
   const handleSaveProfile = async () => {
     if (mutation.current) return;
@@ -333,7 +336,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailC
   const commuterType = (discountApplicationState?.commuter_type ?? profile.commuter_type ?? "REGULAR").toUpperCase();
   const accountStatus = (profile.account_status || "ACTIVE").toUpperCase();
   const effectiveFareType = discountApplicationState?.effective_fare_type ?? profile.effective_fare_type ?? commuterType;
-  const discountPercentage = effectiveFareType.toUpperCase() === "REGULAR" ? 0 : 20;
+  const discountPercentage = effectiveFareType.toUpperCase() === "REGULAR" ? 0 : discountRate ?? 20;
 
   const getStatusBadge = () => {
     if (accountStatus === "ACTIVE" || accountStatus === "APPROVED") {
@@ -397,9 +400,9 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailC
             expiresAt={discountApplicationState ? discountApplicationState.discount_expires_at : profile.student_discount_expires_at}
           />
           {onOpenDiscountApplication && ["ACTIVE", "APPROVED"].includes(accountStatus) && commuterType === "REGULAR" &&
-            <DiscountApplicationEntry state={discountApplicationState} loading={discountApplicationLoading} failed={!!discountApplicationError} isLight={isLight} onOpen={onOpenDiscountApplication} />}
+            <DiscountApplicationEntry state={discountApplicationState} loading={discountApplicationLoading} failed={!!discountApplicationError} isLight={isLight} onOpen={onOpenDiscountApplication} discountRate={discountRate} />}
           {onOpenRenewal && ["ACTIVE", "APPROVED"].includes(accountStatus) && (commuterType === "STUDENT" || commuterType === "PWD") &&
-            <StudentRenewalEntry state={renewalState} discountPercentage={20} isLight={isLight} onOpen={onOpenRenewal} />}
+            <StudentRenewalEntry state={renewalState} discountPercentage={discountRate ?? 20} isLight={isLight} onOpen={onOpenRenewal} />}
         </View>
         <>
           {photoError && <Text accessibilityRole="alert" style={[styles.photoHelp, { color: "#FCA5A5", marginTop: 8 }]}>{photoError}</Text>}
@@ -436,7 +439,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailC
         </View>
         <View><TouchableOpacity onPress={() => setShowLogoutConfirm(true)} style={styles.logoutButton}><ProfileIcon name="logout" size={17} color={isLight ? "#DC2626" : "#F87171"} /><Text style={styles.logoutButtonText}>Log out</Text></TouchableOpacity></View>
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open help and support" accessibilityState={{ expanded: showSupport }} onPress={() => setShowSupport(true)} style={styles.supportLink}><Text style={styles.supportText}>Help & support</Text><ProfileIcon name="chevron" size={14} color={mutedIcon} /></TouchableOpacity>
-        {showSupport && <View>{onOpenTour && <TouchableOpacity onPress={onOpenTour} style={styles.securityRow} accessibilityLabel="Replay App Guide and Walkthrough"><Text style={styles.securityText}>App Features & Guide</Text><ProfileIcon name="chevron" size={16} color={mutedIcon} /></TouchableOpacity>}<LegalSupportCard /></View>}
+        {showSupport && <View>{onOpenTour && <TouchableOpacity onPress={onOpenTour} style={styles.securityRow} accessibilityLabel="Replay App Guide and Walkthrough"><Text style={styles.securityText}>App Features & Guide</Text><ProfileIcon name="chevron" size={16} color={mutedIcon} /></TouchableOpacity>}<FaqEntry rowStyle={styles.securityRow} textStyle={styles.securityText} iconColor={mutedIcon} /><LegalSupportCard /></View>}
       </ScrollView>
 
       <Modal visible={photoToAdjust !== null || pendingPhoto !== null || photoSaved} animationType="fade" transparent onRequestClose={cancelPhoto}>

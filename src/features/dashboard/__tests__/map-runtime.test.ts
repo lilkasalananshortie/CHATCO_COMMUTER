@@ -49,14 +49,11 @@ test("marker uses the exact angled SVG data, web dimensions, and separate status
   expect(r.markers[0].setIcon.mock.calls[0][0].html.children[0].src).toBe(BUS_ART.s);
   expect(r.markers[0].setIcon.mock.calls[0][0].html.children).toHaveLength(2);
 });
-test("opening a unit requests its authenticated details without refetching on location polls", () => {
+test("tapping a unit only opens its map card", () => {
   const r = runtime(); r.update({ vehicles: [unit] });
-  const [event, handler] = r.markers[0].on.mock.calls[0];
-  expect(event).toBe("popupopen");
-  handler();
-  expect(JSON.parse(r.window.ReactNativeWebView.postMessage.mock.calls[0][0])).toEqual({ type: "chatco-unit-open", id: "unit" });
-  r.update({ vehicles: [{ ...unit, lat: 14.9 }] });
-  expect(r.window.ReactNativeWebView.postMessage).toHaveBeenCalledTimes(1);
+  expect(r.markers[0].bindPopup).toHaveBeenCalledTimes(1);
+  expect(r.markers[0].on).not.toHaveBeenCalledWith("popupopen", expect.anything());
+  expect(r.window.ReactNativeWebView.postMessage).not.toHaveBeenCalled();
 });
 test("location polls update the same marker and popup without recreating the map", () => {
   const r = runtime(); r.update({ vehicles: [unit] }); r.update({ vehicles: [{ ...unit, lat: 14.9 }] });
@@ -78,8 +75,8 @@ test("nearby unit popup includes distance and estimated arrival", () => {
   const r = runtime();
   r.update({ vehicles: [unit], userLocation: { latitude: unit.lat, longitude: unit.lng } });
   const popup = r.markers[0].bindPopup.mock.calls[0][0];
-  expect(text(popup)).toMatch(/Distance:\s+0 m/);
-  expect(text(popup)).toMatch(/ETA:\s+~1 min/);
+  expect(text(popup)).toMatch(/Distance\s+0 m/);
+  expect(text(popup)).toMatch(/ETA\s+~1 min/);
 });
 test("profile masks email for display without changing the source address", () => {
   const email = "commuter@example.test";

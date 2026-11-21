@@ -4,6 +4,7 @@ import { ProfileScreen } from "../ProfileScreen";
 import { commuterService } from "../../../core/api/commuter-service";
 import { authService } from "../../../core/api/auth-service";
 import { pickProfilePhoto, profilePhotoForm } from "../profile-photo";
+jest.mock("../../faq/FaqEntry", () => ({ FaqEntry: "FaqEntry" }));
 jest.mock("../../../shared/useWebDialogEntrance", () => ({ useWebDialogEntrance: () => ({ progress: { interpolate: () => 0 }, reducedMotion: true }) }));
 jest.mock("../ChangeEmailModal", () => ({ ChangeEmailModal: "ChangeEmail" }));
 jest.mock("../ProfileIdentityDetails", () => ({ ProfileIdentityDetails: "IdentityDetails" }));

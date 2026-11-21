@@ -9,8 +9,9 @@ import { ThemeProvider, useCommuterTheme } from "./src/core/theme/ThemeProvider"
 import { BrandFonts } from "./src/shared/ui/BrandFonts";
 import { commuterColors } from "./src/core/theme/colors";
 import { authService } from "./src/core/api/auth-service";
-import { setSessionEndedHandler } from "./src/core/api/api-client";
+import { isServerReachable, setSessionEndedHandler } from "./src/core/api/api-client";
 import { commuterService } from "./src/core/api/commuter-service";
+import { getConnectionIssue, type ConnectionIssue } from "./src/core/api/connection-issue";
 import type { User, CommuterProfile, CommuterTab, Trip } from "./src/core/domain/types";
 
 // UI Components
@@ -33,6 +34,8 @@ import { QrScannerModal } from "./src/features/scanner/QrScannerModal";
 import { ReceiptScanModal } from "./src/features/scanner/ReceiptScanModal";
 import { ShareRideModal } from "./src/features/share/ShareRideModal";
 import { MascotErrorBoundary } from "./src/shared/ui/MascotErrorBoundary";
+import { OfflineScreen } from "./src/shared/ui/OfflineScreen";
+import { MaintenanceGate } from "./src/shared/ui/MaintenanceGate";
 import { StudentRenewalScreen } from "./src/features/student-renewal/StudentRenewalScreen";
 import { RenewalReminder } from "./src/features/student-renewal/RenewalReminder";
 import { useStudentRenewal } from "./src/features/student-renewal/useStudentRenewal";
@@ -59,7 +62,9 @@ export default function App() {
       <ThemeProvider>
         <ThemeStatusBar />
         <MascotErrorBoundary>
-          <MainApp />
+          <MaintenanceGate>
+            <MainApp />
+          </MaintenanceGate>
         </MascotErrorBoundary>
       </ThemeProvider>
       </BrandFonts>
@@ -138,6 +143,9 @@ function MainApp() {
   const [feedbackFormVisible, setFeedbackFormVisible] = useState(false);
   const [retryingSession, setRetryingSession] = useState(false);
   const [rewardsEntrySection, setRewardsEntrySection] = useState<"rewards" | "announcements">("rewards");
+  const [authOffline, setAuthOffline] = useState(false);
+  const [retryFailed, setRetryFailed] = useState(false);
+  const [connectionIssue, setConnectionIssue] = useState<ConnectionIssue>("offline");
 
   const handleLogout = useCallback(() => {
     clearRewardsRequestCache();
@@ -149,9 +157,20 @@ function MainApp() {
     setShowScanModal(false); setShowReceiptScanModal(false); setShowShareModal(false);
     setShowRenewal(false); setShowDiscountApplication(false); setShowFeedbackModal(false); setFeedbackTargetTrip(null);
     setUser(null); setProfile(null); setActiveTab("home"); setAuthView("LOGIN"); setAnimateLoginEntrance(false);
+    setAuthOffline(false); setRetryFailed(false);
   }, []);
 
   useEffect(() => setSessionEndedHandler(handleLogout), [handleLogout]);
+
+  // Runs behind Login: a slow reply must not delay it or discard typed details.
+  const checkAuthConnection = useCallback(async () => {
+    const epoch = sessionEpoch.current;
+    if (await isServerReachable()) return;
+    const issue = await getConnectionIssue();
+    if (epoch !== sessionEpoch.current || currentUserId.current) return;
+    setConnectionIssue(issue);
+    setAuthOffline(true);
+  }, []);
 
   // Initialize session & onboarding check
   useEffect(() => {
@@ -169,7 +188,11 @@ function MainApp() {
           sessionVerified.current = !session.unverified;
           currentUserId.current = session.user.id;
           setUser(session.user);
-          if (session.unverified) return;
+          if (session.unverified) {
+            const issue = session.reason ?? await getConnectionIssue();
+            if (!cancelled) setConnectionIssue(issue);
+            return;
+          }
           if (session.user.must_change_password) return;
           if (session.profile) setProfile(session.profile);
           try {
@@ -183,6 +206,8 @@ function MainApp() {
           } catch {
             // offline profile fallback
           }
+        } else if (!session && !cancelled && onboardingCompleted) {
+          void checkAuthConnection();
         }
       } catch {
         // start clean
@@ -275,18 +300,54 @@ function MainApp() {
   const retrySession = async () => {
     const epoch = sessionEpoch.current;
     setRetryingSession(true);
+    setRetryFailed(false);
     try {
       const session = await authService.restoreSession();
       if (epoch !== sessionEpoch.current) return;
       if (!session) {
         await authService.clearLocalSession();
         handleLogout();
-      } else if (!session.unverified) {
+      } else if (session.unverified) {
+        const issue = session.reason ?? await getConnectionIssue();
+        if (epoch !== sessionEpoch.current) return;
+        setConnectionIssue(issue);
+        setRetryFailed(true);
+      } else {
         sessionVerified.current = true;
         currentUserId.current = session.user.id;
         setProfile(session.profile ?? null);
         setUser(session.user);
       }
+    } catch {
+      if (epoch === sessionEpoch.current) setRetryFailed(true);
+    } finally {
+      if (epoch === sessionEpoch.current) setRetryingSession(false);
+    }
+  };
+
+  const retryAuthConnection = async () => {
+    const epoch = sessionEpoch.current;
+    setRetryingSession(true);
+    setRetryFailed(false);
+    try {
+      if (!(await isServerReachable())) {
+        const issue = await getConnectionIssue();
+        if (epoch === sessionEpoch.current) { setConnectionIssue(issue); setRetryFailed(true); }
+        return;
+      }
+      const session = await authService.restoreSession();
+      if (epoch !== sessionEpoch.current) return;
+      if (session) {
+        if (session.unverified) setConnectionIssue(session.reason ?? await getConnectionIssue());
+        if (epoch !== sessionEpoch.current) return;
+        sessionVerified.current = !session.unverified;
+        currentUserId.current = session.user.id;
+        setProfile(session.profile ?? null);
+        setUser(session.user);
+      }
+      setAuthOffline(false);
+    } catch {
+      if (epoch === sessionEpoch.current) setRetryFailed(true);
     } finally {
       if (epoch === sessionEpoch.current) setRetryingSession(false);
     }
@@ -311,22 +372,24 @@ function MainApp() {
             setAuthView(targetAuthView);
           }
           setShowOnboarding(false);
+          setAuthOffline(false);
+          setRetryFailed(false);
+          if (!currentUserId.current) void checkAuthConnection();
         }}
       />
     );
   }
 
   if (user && !sessionVerified.current) return (
-    <View style={[styles.loadingScreen, { padding: 24, gap: 16 }]}>
-      <Text style={{ color: colors.textPrimary, fontSize: 20, fontWeight: "700", textAlign: "center" }}>Session not verified</Text>
-      <Text style={{ color: colors.textSecondary, textAlign: "center" }}>Reconnect to E-CHATCO to verify your account before continuing.</Text>
-      <Pressable disabled={retryingSession} onPress={() => void retrySession()} style={{ backgroundColor: colors.primary, padding: 14, borderRadius: 10 }}>
-        <Text style={{ color: "white", fontWeight: "700" }}>{retryingSession ? "Checking session…" : "Try again"}</Text>
-      </Pressable>
-      <Pressable onPress={() => { void authService.clearLocalSession().finally(handleLogout); }} style={{ padding: 12 }}>
-        <Text style={{ color: colors.textSecondary }}>Sign out</Text>
-      </Pressable>
-    </View>
+    <OfflineScreen
+      issue={connectionIssue}
+      message="Your account is still signed in. Reconnect to continue where you left off."
+      retrying={retryingSession}
+      retryFailed={retryFailed}
+      onRetry={() => void retrySession()}
+      secondaryLabel="Sign out"
+      onSecondary={() => { void authService.clearLocalSession().finally(handleLogout); }}
+    />
   );
 
   if (user?.must_change_password) return <SetNewPasswordScreen onDone={handleLogout} />;
@@ -508,6 +571,19 @@ function MainApp() {
             </View>
           </Modal>
         </Animated.View>
+      )}
+      {!user && authOffline && (
+        <View style={StyleSheet.absoluteFill}>
+          <OfflineScreen
+            issue={connectionIssue}
+            message="E-CHATCO needs a connection to log in or create an account."
+            retrying={retryingSession}
+            retryFailed={retryFailed}
+            onRetry={() => void retryAuthConnection()}
+            secondaryLabel="Continue to login"
+            onSecondary={() => { setAuthOffline(false); setRetryFailed(false); }}
+          />
+        </View>
       )}
     </View>
   );

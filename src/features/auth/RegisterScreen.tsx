@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Text, TextInput } from "../../shared/ui/BrandText";
-import { View, Animated, Easing, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity, ActivityIndicator, Modal, useWindowDimensions, Image } from "react-native";
+import { View, Animated, Easing, StyleSheet, type StyleProp, type TextStyle, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity, ActivityIndicator, Modal, useWindowDimensions, Image } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { commuterColors } from "../../core/theme/colors";
 import { authService } from "../../core/api/auth-service";
@@ -13,6 +13,7 @@ import { registrationAgreement, type AgreementChoices } from "./registration-agr
 import { request } from "../../core/api/api-client";
 import { formatRegistrationBirthdate, pwdValidUntilError, registrationBirthdateError, registrationUsernameError, REGISTRATION_USERNAME_MAX_LENGTH } from "./registration-validation";
 import { useReducedMotion } from "../../shared/useReducedMotion";
+import { useDiscountRate } from "../fare/useDiscountRate";
 
 interface RegisterScreenProps {
   onRegisterSuccess: () => void;
@@ -24,10 +25,17 @@ type AppliedType = "REGULAR" | "STUDENT" | "SENIOR" | "PWD";
 
 const COMMUTER_TYPE_OPTIONS: { label: string; value: AppliedType; description: string }[] = [
   { label: "Regular", value: "REGULAR", description: "Standard fare commuter" },
-  { label: "Student", value: "STUDENT", description: "20% student fare discount" },
-  { label: "Senior Citizen", value: "SENIOR", description: "20% senior citizen discount" },
-  { label: "PWD", value: "PWD", description: "20% person with disability discount" },
+  { label: "Student", value: "STUDENT", description: "Student fare discount" },
+  { label: "Senior Citizen", value: "SENIOR", description: "Senior citizen discount" },
+  { label: "PWD", value: "PWD", description: "Person with disability discount" },
 ];
+
+/** Quotes the admin's current discount, and no number until it has loaded. */
+function CommuterTypeDescription({ value, description, style }: { value: AppliedType; description: string; style: StyleProp<TextStyle> }) {
+  const rate = useDiscountRate();
+  const text = value !== "REGULAR" && rate ? `${rate}% ${description.charAt(0).toLowerCase()}${description.slice(1)}` : description;
+  return <Text style={style}>{text}</Text>;
+}
 
 const SUFFIX_OPTIONS = ["None", "Jr.", "Sr.", "II", "III", "IV"];
 const DEFAULT_SUFFIX = "None";
@@ -933,7 +941,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                                 <Ionicons name="checkmark-circle" size={18} color="#62A0EA" />
                               )}
                             </View>
-                            <Text style={styles.categoryCardDesc}>{cat.description}</Text>
+                            <CommuterTypeDescription value={cat.value} description={cat.description} style={styles.categoryCardDesc} />
                           </TouchableOpacity>
                         );
                       })}

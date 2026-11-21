@@ -21,7 +21,7 @@ export function normalizeFareMatrix(raw: any): PublishedFareMatrix {
   const config = { baseFareRegular, baseFareDiscounted, baseBarangayCount: Number(raw.config?.baseBarangayCount ?? 4), succeedingFareRegular: Number(raw.config?.succeedingFareRegular ?? 2.4), discountRate: Number(raw.config?.discountRate ?? 20) };
   if (points.some((p: PublishedFarePoint) => !p.id || !Number.isFinite(p.pointNumber) || !Number.isFinite(p.regularFare) || p.regularFare < 0 || !Number.isFinite(p.discountedFare) || p.discountedFare < 0)
     || Object.values(config).some(value => !Number.isFinite(value)) || config.baseFareRegular <= 0 || config.baseFareDiscounted < 0
-    || !Number.isInteger(config.baseBarangayCount) || config.baseBarangayCount < 1 || config.succeedingFareRegular < 0 || config.discountRate < 0 || config.discountRate > 100) {
+    || !Number.isInteger(config.baseBarangayCount) || config.baseBarangayCount < 0 || config.succeedingFareRegular < 0 || config.discountRate < 0 || config.discountRate > 100) {
     throw new Error("The published fare matrix is incomplete. Please refresh or contact support.");
   }
   return { route: raw.route, points, config };

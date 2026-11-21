@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { View, StyleSheet, StyleProp, ViewStyle } from "react-native";
 import { WebView } from "react-native-webview";
 import Constants from "expo-constants";
@@ -8,9 +8,8 @@ import { usePublishedRoute } from "./usePublishedRoute";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import { MAP_RUNTIME, mapUpdateScript } from "./map-runtime";
 import { commuterLocationCss } from "./commuter-map-pin";
-import { UnitDetailsPanel } from "./UnitDetailsPanel";
 import { mapVehicleState } from "./map-vehicle-state";
-import { useMapFontCss } from "./useMapFontCss";
+import { MAP_FONT_CSS, MAP_FONT_FAMILY } from "./map-fonts";
 
 const CARTO_API_KEY =
   process.env.EXPO_PUBLIC_CARTO_API_KEY ||
@@ -34,10 +33,8 @@ export const CommuterLiveMap = React.memo(function CommuterLiveMap({
   style,
 }: CommuterLiveMapProps) {
   const webViewRef = useRef<WebView>(null);
-  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const loadedRoute = usePublishedRoute(!providedRoute);
   const route = providedRoute ?? loadedRoute;
-  const mapFontCss = useMapFontCss();
   const { isLight, colors } = useCommuterTheme();
 
   const routeCenter = useMemo(() => {
@@ -58,9 +55,6 @@ export const CommuterLiveMap = React.memo(function CommuterLiveMap({
   const mapState = useMemo(() => ({
     vehicles: mapVehicles, userLocation, isHailing,
   }), [mapVehicles, userLocation, isHailing]);
-  useEffect(() => {
-    if (selectedVehicleId && !vehicles.some(v => String(v.vehicle_id || v.id) === selectedVehicleId)) setSelectedVehicleId(null);
-  }, [vehicles, selectedVehicleId]);
   useEffect(() => { webViewRef.current?.injectJavaScript(mapUpdateScript(mapState)); }, [mapState, isLight]);
 
   const htmlContent = useMemo(() => `
@@ -72,8 +66,8 @@ export const CommuterLiveMap = React.memo(function CommuterLiveMap({
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
-    ${mapFontCss}
-    body, .leaflet-container { font-family: Poppins; }
+    ${MAP_FONT_CSS}
+    body, .leaflet-container { font-family: ${MAP_FONT_FAMILY}; }
     html, body, #map {
       width: 100%;
       height: 100%;
@@ -144,7 +138,7 @@ export const CommuterLiveMap = React.memo(function CommuterLiveMap({
   </script>
 </body>
 </html>
-  `, [routePointsJs, routeCenter.latitude, routeCenter.longitude, isLight, mapFontCss]);
+  `, [routePointsJs, routeCenter.latitude, routeCenter.longitude, isLight]);
   const source = useMemo(() => ({ html: htmlContent }), [htmlContent]);
 
   return (
@@ -154,16 +148,9 @@ export const CommuterLiveMap = React.memo(function CommuterLiveMap({
         originWhitelist={["*"]}
         source={source}
         onLoadEnd={() => webViewRef.current?.injectJavaScript(mapUpdateScript(mapState))}
-        onMessage={(event) => {
-          try {
-            const message = JSON.parse(event.nativeEvent.data);
-            if (message?.type === "chatco-unit-open" && vehicles.some(v => String(v.vehicle_id || v.id) === String(message.id))) setSelectedVehicleId(String(message.id));
-          } catch { /* Ignore unrelated WebView messages. */ }
-        }}
         style={styles.webView}
         scrollEnabled={false}
       />
-      <UnitDetailsPanel vehicleId={selectedVehicleId} onClose={() => setSelectedVehicleId(null)} />
     </View>
   );
 });
