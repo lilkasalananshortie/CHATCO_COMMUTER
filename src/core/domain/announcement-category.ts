@@ -3,7 +3,7 @@ import type { Announcement, AnnouncementType } from "./types";
 /** Same keyword precedence as web; retain raw type for custom/admin labels. */
 export function mapAnnouncementType(raw: string): AnnouncementType {
   const type = String(raw ?? "").toLowerCase().trim();
-  if (/^(student_renewal|discount_application)/.test(type)) return "SYSTEM";
+  if (/^(student_renewal|pwd_renewal|discount_application)/.test(type)) return "SYSTEM";
   if (type === "voucher_received") return "VOUCHER";
   if (!type || type.includes("system")) return "SYSTEM";
   if (["claim_approved", "claim_rejected", "claim_released"].some(word => type.includes(word))) return "CLAIM_UPDATE";
@@ -17,5 +17,6 @@ export function mapAnnouncementType(raw: string): AnnouncementType {
 export function announcementLabel(item: Pick<Announcement, "type" | "rawType">, fallback: string): string {
   if (/^discount_application/i.test(item.rawType ?? "")) return "Discount application";
   if (/^student_renewal/i.test(item.rawType ?? "")) return "Student renewal";
+  if (/^pwd_renewal/i.test(item.rawType ?? "")) return "PWD renewal";
   return item.type === "CUSTOM" && item.rawType ? item.rawType : fallback;
 }

@@ -1,10 +1,11 @@
 import type { AudioPlayer } from "expo-audio";
 
-type DashboardSound = "hail" | "nearby";
+type DashboardSound = "hail" | "nearby" | "accepted";
 
 const sources: Record<DashboardSound, number> = {
   hail: require("../../../assets/sounds/hail-reminder.wav"),
   nearby: require("../../../assets/sounds/jeep-nearby.wav"),
+  accepted: require("../../../assets/sounds/hail-accepted.wav"),
 };
 
 const players = new Map<DashboardSound, AudioPlayer>();

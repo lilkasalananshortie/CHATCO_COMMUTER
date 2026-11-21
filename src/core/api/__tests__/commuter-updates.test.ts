@@ -26,6 +26,11 @@ test("hail reads preserve authoritative expiry and active recovery state", async
   expect(await commuterService.getActiveHail()).toMatchObject({ id: "hail", expires_at: "2026-10-17T01:00:00Z" });
   expect(await commuterService.getHailStatus("hail")).toMatchObject({ expires_at: "2026-10-17T01:00:00Z" });
 });
+test("all hail reads keep the unit that owns the hail", async () => {
+  mockRequest.mockResolvedValue({ id: "hail", vehicle_id: "unit-4", status: "ACCEPTED", expires_at: "2026-10-17T01:00:00Z", vehicle: { unit_number: "UNIT-004" } });
+  expect(await commuterService.getActiveHail()).toMatchObject({ vehicle_id: "unit-4", accepted_by: { unit_number: "UNIT-004" } });
+  expect(await commuterService.getHailStatus("hail")).toMatchObject({ vehicle_id: "unit-4" });
+});
 test("network error is not the same as no active hail", async () => {
   mockRequest.mockRejectedValue(new Error("offline"));
   await expect(commuterService.getActiveHail()).rejects.toThrow("offline");

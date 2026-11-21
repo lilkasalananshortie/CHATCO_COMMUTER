@@ -1,4 +1,4 @@
-"""Generate the two short PCM cues used by the commuter dashboard."""
+"""Generate the three short PCM cues used by the commuter dashboard."""
 
 import math
 import struct
@@ -47,4 +47,11 @@ write_cue("hail-reminder", [
 write_cue("jeep-nearby", [
     (880, 0.0, 0.15, "sine", 0.3),
     (660, 0.2, 0.15, "sine", 0.3),
+])
+
+# Web hail accepted chime: three sine notes at C5, E5, then G5.
+write_cue("hail-accepted", [
+    (523.25, 0.0, 0.2, "sine", 0.25),
+    (659.25, 0.15, 0.2, "sine", 0.25),
+    (783.99, 0.3, 0.2, "sine", 0.25),
 ])

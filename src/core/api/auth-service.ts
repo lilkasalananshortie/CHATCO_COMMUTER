@@ -165,7 +165,11 @@ export const authService = {
             errMsg = `${errMsg}: ${errList.join("; ")}`;
           }
         }
-        throw new Error(errMsg);
+        // Same shape as api-client errors, so the form can place field errors.
+        throw Object.assign(new Error(errMsg), {
+          status: uploadResponse.status,
+          response: { status: uploadResponse.status, data: parsed },
+        });
       }
 
       return parsed?.data ?? parsed ?? { message: "Registration successful" };

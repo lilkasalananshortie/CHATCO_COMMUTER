@@ -3,13 +3,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, ScrollView, TouchableOpacity, View } from "react-native";
 import { Text } from "../../shared/ui/BrandText";
 import { discountApplicationService } from "../../core/api/discount-application-service";
-import { FeatureButton, useFeatureStyles } from "../../shared/ui/FeatureControls";
+import { FeatureButton, FeatureInput, useFeatureStyles } from "../../shared/ui/FeatureControls";
 import { useCommuterTheme } from "../../core/theme/ThemeProvider";
 import { ProfileIcon } from "../profile/ProfileIcon";
 import { DiscountSchoolProofFields, EMPTY_APPLICATION_SCHOOL_FIELDS } from "./DiscountSchoolProofFields";
 import { pickRenewalDocument } from "../student-renewal/pick-renewal-document";
 import { SupportingDocumentField } from "../student-renewal/SupportingDocumentField";
 import { readNativeProof, schoolProofFieldsError, type RenewalDocument, type RenewalFields } from "../student-renewal/renewal-types";
+import { formatRegistrationBirthdate, pwdValidUntilError } from "../auth/registration-validation";
 import { APPLICATION_LABELS, DISCOUNT_CATEGORIES, applicationPayload, canCancelApplication, type ApplicationState, type DiscountCategory } from "./application-types";
 
 export function DiscountApplicationScreen({ state, loading, loadError, onRefresh, onGoHome, onOpenRenewal }: {
@@ -19,6 +20,7 @@ export function DiscountApplicationScreen({ state, loading, loadError, onRefresh
   const { colors, isLight } = useCommuterTheme();
   const [category, setCategory] = useState<DiscountCategory | "">("");
   const [fields, setFields] = useState<RenewalFields>(EMPTY_APPLICATION_SCHOOL_FIELDS);
+  const [validUntil, setValidUntil] = useState("");
   const [document, setDocument] = useState<RenewalDocument | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -38,7 +40,8 @@ export function DiscountApplicationScreen({ state, loading, loadError, onRefresh
     if (application?.request_type === "APPLICATION" && current?.status === "NEEDS_CORRECTION") {
       setCategory(application.requested_type);
       setFields({ school_name: application.school_name ?? "", education_level: application.education_level ?? "", grade_level: application.grade_level == null ? "" : String(application.grade_level), school_year: application.school_year ?? "", enrollment_term: application.enrollment_term ?? "" });
-    } else { setCategory(""); setFields(EMPTY_APPLICATION_SCHOOL_FIELDS); }
+      setValidUntil(application.valid_until?.slice(0, 10) ?? "");
+    } else { setCategory(""); setFields(EMPTY_APPLICATION_SCHOOL_FIELDS); setValidUntil(""); }
   }, [current?.application?.id, current?.application?.revision, current?.status]);
   const choose = async () => {
     if (pending.current) return;
@@ -56,7 +59,7 @@ export function DiscountApplicationScreen({ state, loading, loadError, onRefresh
     try {
       if (cancel && !canCancelApplication(current)) throw new Error("This application can no longer be cancelled. Refresh its status.");
       const result = cancel ? await discountApplicationService.cancel(current.application!.id)
-        : await discountApplicationService.submit(applicationPayload(current, category, fields, document, await readNativeProof(document, current.document_required !== false)));
+        : await discountApplicationService.submit(applicationPayload(current, category, fields, document, await readNativeProof(document, current.document_required !== false), validUntil));
       if (!mounted.current) return;
       setSaved({ base: state, state: result }); setDocument(null); setConfirmCancel(false);
       setMessage(cancel
@@ -89,12 +92,14 @@ export function DiscountApplicationScreen({ state, loading, loadError, onRefresh
   const renewal = application?.request_type === "RENEWAL";
   const requiresDocument = current?.document_required !== false;
   const schoolFieldsError = category === "STUDENT" ? schoolProofFieldsError(fields) : null;
+  const validUntilError = category === "PWD" ? pwdValidUntilError(validUntil) : null;
   const categoryDetails: Record<DiscountCategory, string> = { STUDENT: "Current enrollment proof", PWD: "Valid PWD identification", SENIOR: "Valid senior citizen ID" };
   const statusColor = current?.status === "PENDING" ? (isLight ? "#0369A1" : "#BAE6FD")
     : current?.status === "NEEDS_CORRECTION" ? (isLight ? "#B45309" : "#FDE68A")
       : current?.status === "APPROVED" ? (isLight ? "#047857" : "#A7F3D0")
         : current?.status === "REJECTED" ? (isLight ? "#B91C1C" : "#FECACA") : colors.textSecondary;
-  const requestTitle = renewal ? "Student renewal" : correction ? "Update your application"
+  const renewalLabel = application?.requested_type === "PWD" ? "PWD renewal" : "Student renewal";
+  const requestTitle = renewal ? renewalLabel : correction ? "Update your application"
     : application && current?.status !== "CANCELLED" ? `${DISCOUNT_CATEGORIES[application.requested_type]} application` : "Start an application";
   const formattedDate = application?.submitted_at ? new Date(application.submitted_at).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" }) : "";
   const fieldLabel = { color: colors.textMuted, fontSize: 12 } as const;
@@ -125,10 +130,11 @@ export function DiscountApplicationScreen({ state, loading, loadError, onRefresh
           <View><Text style={fieldLabel}>Current account</Text><Text style={fieldValue}>{DISCOUNT_CATEGORIES[current.commuter_type as DiscountCategory] ?? "Regular"}</Text></View>
           <View><Text style={fieldLabel}>Submitted</Text><Text style={fieldValue}>{formattedDate}</Text></View>
           {application.requested_type === "STUDENT" && <><View><Text style={fieldLabel}>School</Text><Text style={fieldValue}>{application.school_name ?? "—"}</Text></View><View><Text style={fieldLabel}>Education</Text><Text style={fieldValue}>{application.education_level === "COLLEGE" ? "College" : `Grade ${application.grade_level ?? "—"}`} · {application.school_year ?? "School year not provided"}</Text></View></>}
+          {application.requested_type === "PWD" && !!application.valid_until && <View><Text style={fieldLabel}>PWD ID valid until</Text><Text style={fieldValue}>{application.valid_until.slice(0, 10)}</Text></View>}
         </View>}
         {!!application?.reason && <View style={{ borderRadius: 12, borderWidth: 1, borderColor: isLight ? "#FDE68A" : "rgba(253,230,138,0.25)", backgroundColor: isLight ? "#FFFBEB" : "rgba(253,230,138,0.08)", padding: 14, gap: 5 }}><Text style={{ color: isLight ? "#92400E" : "#FDE68A", fontWeight: "700" }}>Note from the reviewer</Text><Text style={s.text}>{application.reason}</Text></View>}
         {correction && <View style={{ gap: 10 }}><Text style={{ color: isLight ? "#92400E" : "#FDE68A", lineHeight: 21 }}>Send your corrected supporting document below whenever you are ready. The discount category cannot be changed for this request; to apply under a different category, cancel this application first.</Text>{canCancelApplication(current) && <FeatureButton secondary label="Cancel application" disabled={blocked} onPress={() => setConfirmCancel(true)} />}</View>}
-        {renewal ? <View style={[panel, { gap: 12 }]}><Text style={s.text}>You have an outstanding Student renewal. Complete that request before starting a new discount application.</Text><FeatureButton label="View Student renewal" disabled={busy} onPress={onOpenRenewal} /></View>
+        {renewal ? <View style={[panel, { gap: 12 }]}><Text style={s.text}>You have an outstanding {renewalLabel}. Complete that request before starting a new discount application.</Text><FeatureButton label={`View ${renewalLabel}`} disabled={busy} onPress={onOpenRenewal} /></View>
           : current.can_submit && !loadError ? <View style={{ gap: 20 }}>
             <View>
               <Text style={{ color: colors.textPrimary, fontWeight: "700", fontSize: 15 }}>{correction ? "Application category" : "Choose your discount category"}</Text>
@@ -145,11 +151,12 @@ export function DiscountApplicationScreen({ state, loading, loadError, onRefresh
             {!!category && <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 18, gap: 14 }}>
               <View><Text style={{ color: colors.textPrimary, fontSize: 16, fontWeight: "700" }}>Supporting document</Text><Text style={[s.muted, { marginTop: 5 }]}>{requiresDocument ? category === "STUDENT" ? "Use a school ID showing the current school year or another document proving current enrollment." : `Upload your ${DISCOUNT_CATEGORIES[category]} ID/card. The name should match your verified commuter account.` : "Document upload is disabled for local workflow testing. No file will be sent or stored."}</Text></View>
               {category === "STUDENT" && <DiscountSchoolProofFields fields={fields} onChange={setFields} disabled={blocked} />}
+              {category === "PWD" && <View style={{ gap: 6 }}><FeatureInput label="Valid until" placeholder="YYYY-MM-DD" value={validUntil} maxLength={10} keyboardType="number-pad" inputMode="numeric" editable={!blocked} onChangeText={(value) => setValidUntil(formatRegistrationBirthdate(value))} /><Text style={validUntil.length === 10 && validUntilError ? s.error : s.muted}>{validUntil.length === 10 && validUntilError ? validUntilError : "The date printed on your PWD ID. Your discount runs until one month after this day."}</Text></View>}
               {requiresDocument && <><Text style={fieldLabel}>{category === "STUDENT" ? "Enrollment proof" : `${DISCOUNT_CATEGORIES[category]} ID/card`}</Text><SupportingDocumentField webLayout document={document} label={busy ? "Choosing supporting document…" : "Choose supporting document"} disabled={blocked} onChoose={() => void choose()} onRemove={() => setDocument(null)} /></>}
             </View>}
             <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, padding: 13, borderRadius: 12, borderWidth: 1, borderColor: isLight ? "rgba(26,95,180,0.2)" : "rgba(98,160,234,0.2)", backgroundColor: isLight ? "#F0F7FF" : "rgba(98,160,234,0.07)" }}><ProfileIcon name="shield-check" size={19} color={isLight ? "#1A5FB4" : "#99C1F1"} /><Text style={[s.text, { flex: 1, fontSize: 13 }]}>Your fare stays Regular while the team checks your document. Once approved, your new classification is used by the existing fare discount process. Student discounts require annual renewal.</Text></View>
             {!!schoolFieldsError && category === "STUDENT" && <Text style={s.error}>{schoolFieldsError}</Text>}
-            <FeatureButton label={busy ? "Submitting..." : correction ? "Submit corrected documents" : "Submit application"} disabled={blocked || !category || (category === "STUDENT" && !!schoolFieldsError) || (requiresDocument && !document)} onPress={() => { setError(""); setConfirmSubmit(true); }} />
+            <FeatureButton label={busy ? "Submitting..." : correction ? "Submit corrected documents" : "Submit application"} disabled={blocked || !category || (category === "STUDENT" && !!schoolFieldsError) || !!validUntilError || (requiresDocument && !document)} onPress={() => { setError(""); setConfirmSubmit(true); }} />
           </View>
           : <View style={{ gap: 14, paddingVertical: 8 }}>
             <Text style={s.text}>{current.status === "PENDING" ? "Your supporting document is being verified. Your account stays Regular until approval. We will send the result to Rewards & Updates." : current.status === "APPROVED" ? "Your discount application was approved. Your current commuter classification is shown above." : "New discount applications are available to active Regular commuter accounts."}</Text>

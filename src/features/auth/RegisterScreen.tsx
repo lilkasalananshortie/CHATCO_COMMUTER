@@ -11,7 +11,7 @@ import { Mascot } from "../../shared/ui/Mascot";
 import { RegistrationConsent } from "./RegistrationConsent";
 import { registrationAgreement, type AgreementChoices } from "./registration-agreement";
 import { request } from "../../core/api/api-client";
-import { formatRegistrationBirthdate, registrationBirthdateError, registrationUsernameError, REGISTRATION_USERNAME_MAX_LENGTH } from "./registration-validation";
+import { formatRegistrationBirthdate, pwdValidUntilError, registrationBirthdateError, registrationUsernameError, REGISTRATION_USERNAME_MAX_LENGTH } from "./registration-validation";
 import { useReducedMotion } from "../../shared/useReducedMotion";
 
 interface RegisterScreenProps {
@@ -97,6 +97,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
   const [birthdate, setBirthdate] = useState("");
   const [gender, setGender] = useState<"" | "Male" | "Female" | "Prefer not to say">("");
   const [appliedType, setAppliedType] = useState<AppliedType | "">("");
+  const [pwdValidUntil, setPwdValidUntil] = useState("");
 
   // Contact & ID
   const [email, setEmail] = useState("");
@@ -261,6 +262,10 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
       }
       if (!gender) errors.gender = "Select your gender.";
       if (!appliedType) errors.appliedType = "Select the commuter type you're applying for.";
+      if (appliedType === "PWD") {
+        const validUntilError = pwdValidUntilError(pwdValidUntil);
+        if (validUntilError) errors.valid_until = validUntilError;
+      }
     }
 
     if (stepNum === 2) {
@@ -494,6 +499,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
           password: String(password),
           password_confirmation: String(passwordConfirmation),
         };
+        if (appliedType === "PWD") parameters.valid_until = pwdValidUntil.trim();
         if (middleName && middleName.trim()) parameters.middle_name = String(middleName).trim();
         if (suffix && suffix !== "None") parameters.suffix = String(suffix);
         if (
@@ -537,6 +543,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
       formData.append("contact_number", String(contactNumber || "").trim());
       formData.append("username", String(username || "").trim());
       formData.append("applied_type", String(appliedType));
+      if (appliedType === "PWD") formData.append("valid_until", pwdValidUntil.trim());
       formData.append("password", String(password));
       formData.append("password_confirmation", String(passwordConfirmation));
 
@@ -553,7 +560,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
       if (responseErrors && Object.keys(responseErrors).length > 0) {
         const mapped: Record<string, string> = {};
         const stepByField: Record<string, number> = {
-          first_name: 1, middle_name: 1, suffix: 1, surname: 1, birthdate: 1, gender: 1, applied_type: 1,
+          first_name: 1, middle_name: 1, suffix: 1, surname: 1, birthdate: 1, gender: 1, applied_type: 1, valid_until: 1,
           email: 2, contact_number: 2, id_image: 2,
           username: 4, password: 4, password_confirmation: 4,
         };
@@ -907,7 +914,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                           <TouchableOpacity
                             key={cat.value}
                             activeOpacity={0.8}
-                            onPress={() => { setAppliedType(cat.value); clearFieldError("appliedType"); clearFieldError("id"); }}
+                            onPress={() => { setAppliedType(cat.value); if (cat.value !== "PWD") setPwdValidUntil(""); clearFieldError("appliedType"); clearFieldError("id"); clearFieldError("valid_until"); }}
                             style={[
                               styles.categoryCard,
                               isSelected && styles.categoryCardActive,
@@ -933,6 +940,41 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
                     </View>
                     {fieldErrors.appliedType && <Text style={styles.errorText}>{fieldErrors.appliedType}</Text>}
                   </View>
+
+                  {appliedType === "PWD" && (
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.label}>PWD ID valid until * (YYYY-MM-DD)</Text>
+                      <View
+                        style={[
+                          styles.inputWrapper,
+                          focusedField === "valid_until" && styles.inputWrapperFocused,
+                          fieldErrors.valid_until && styles.inputWrapperError,
+                        ]}
+                      >
+                        <Ionicons name="calendar-outline" size={18} color="#94A3B8" style={styles.inputIcon} />
+                        <TextInput
+                          style={styles.input}
+                          value={pwdValidUntil}
+                          onChangeText={(t) => {
+                            setPwdValidUntil(formatRegistrationBirthdate(t));
+                            clearFieldError("valid_until");
+                          }}
+                          onFocus={() => setFocusedField("valid_until")}
+                          onBlur={() => setFocusedField(null)}
+                          accessibilityLabel="PWD ID valid until"
+                          keyboardType="number-pad"
+                          placeholder="YYYY-MM-DD"
+                          placeholderTextColor="#64748B"
+                          inputMode="numeric"
+                          maxLength={10}
+                          returnKeyType="next"
+                        />
+                      </View>
+                      {fieldErrors.valid_until
+                        ? <Text style={styles.errorText}>{fieldErrors.valid_until}</Text>
+                        : <Text style={styles.categoryCardDesc}>Enter the date printed on your PWD ID. Your discount continues for one month after it.</Text>}
+                    </View>
+                  )}
                 </View>
               )}
 

@@ -22,6 +22,25 @@ export interface NearbyHailableVehicle {
   etaMinutes: number;
 }
 
+/** Whether any live unit is within 1 km. Full or on-break units still count, so capacity alone never stops a hail. */
+export function hasVehicleInHailRange(
+  vehicles: VehicleLocation[],
+  userLocation: { latitude: number; longitude: number } | null | undefined,
+  now = Date.now(),
+): boolean {
+  if (!userLocation) return false;
+  return vehicles.some((vehicle) => {
+    const latitude = Number(vehicle.latitude ?? (vehicle as any).lat);
+    const longitude = Number(vehicle.longitude ?? (vehicle as any).lng);
+    const updatedAt = Date.parse(String(vehicle.updated_at ?? (vehicle as any).last_update ?? ""));
+    const age = now - updatedAt;
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude === 0 && longitude === 0) return false;
+    if (!Number.isFinite(updatedAt) || age < 0 || age > HAIL_LOCATION_MAX_AGE_MS) return false;
+    const distance = distanceMeters(userLocation, { latitude, longitude });
+    return Number.isFinite(distance) && distance <= PICKUP_RADIUS_METERS;
+  });
+}
+
 export function getNearbyHailableVehicles(
   vehicles: VehicleLocation[],
   userLocation: { latitude: number; longitude: number } | null | undefined,

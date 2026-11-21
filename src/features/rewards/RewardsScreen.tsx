@@ -30,7 +30,8 @@ import { notifyAnnouncementsRead } from "../../core/domain/announcements-events"
 import { announcementLabel } from "../../core/domain/announcement-category";
 import { RewardsProgressRing, REWARD_RING_CIRCUMFERENCE } from "./RewardsProgressRing";
 import { RewardsRenewalNotice } from "./RewardsRenewalNotice";
-import type { RenewalState } from "../student-renewal/renewal-types";
+import { RENEWAL_COPY, type RenewalKind, type RenewalState } from "../student-renewal/renewal-types";
+import { appendAnnouncementPage, mergeFirstAnnouncementPage } from "./announcement-feed";
 import { useReducedMotion } from "../../shared/useReducedMotion";
 
 import type {
@@ -229,6 +230,13 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
   const [announcementsLoading, setAnnouncementsLoading] = useState(true);
   const walletRequestIds = useRef<Record<"AVAILABLE" | "USED" | "EXPIRED", number>>({ AVAILABLE: 0, USED: 0, EXPIRED: 0 });
   const previousAvailableVoucherKey = useRef<string | null>(null);
+  const [feedLastPage, setFeedLastPage] = useState(1);
+  const [feedPage, setFeedPage] = useState(1);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [olderError, setOlderError] = useState(false);
+  const [serverUnread, setServerUnread] = useState<number | null>(null);
+  const feedPageRef = useRef(1);
+  const loadingOlderRef = useRef(false);
   const reduceMotion = useReducedMotion();
   const progressRingValue = useRef(new Animated.Value(0)).current;
   const voucherTabProgress = useRef(new Animated.Value(0)).current;
@@ -295,15 +303,20 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
           rewards => { if (mounted.current) { setData(rewards); setError(null); } },
           err => { if (mounted.current) setError(err ?? new Error("Rewards unavailable")); },
         ).finally(() => { if (mounted.current) setLoading(false); }),
-        commuterService.getAnnouncements().then(
-          announcements => {
+        commuterService.getAnnouncementsPage(1).then(
+          result => {
             if (mounted.current && revision === announcementsRevision.current) {
-              setAnnouncements(announcements || []);
+              setAnnouncements(previous => mergeFirstAnnouncementPage(previous, result.items, feedPageRef.current));
+              setFeedLastPage(result.lastPage);
               setAnnouncementsError(null);
             }
           },
           err => { if (mounted.current) setAnnouncementsError(err ?? new Error("Updates unavailable")); },
         ).finally(() => { if (mounted.current) setAnnouncementsLoading(false); }),
+        commuterService.getUnreadAnnouncementCount().then(
+          count => { if (mounted.current && revision === announcementsRevision.current) setServerUnread(count); },
+          () => { /* The loaded list still gives a usable unread count. */ },
+        ),
       ]);
     } finally {
       fetching.current = false;
@@ -377,7 +390,31 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
     }
   };
 
-  const unreadCount = announcements.filter((a) => !a.is_read).length;
+  // The server also counts unread updates on pages that are not loaded yet.
+  const unreadCount = Math.max(serverUnread ?? 0, announcements.filter((a) => !a.is_read).length);
+  const hasOlderUpdates = feedPage < feedLastPage;
+
+  const loadOlderUpdates = async () => {
+    if (loadingOlderRef.current || feedPageRef.current >= feedLastPage) return;
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    setOlderError(false);
+    const revision = announcementsRevision.current;
+    try {
+      const result = await commuterService.getAnnouncementsPage(feedPageRef.current + 1);
+      // A read change while loading could make this page's read state stale.
+      if (!mounted.current || revision !== announcementsRevision.current) return;
+      setAnnouncements(previous => appendAnnouncementPage(previous, result.items));
+      feedPageRef.current = result.page;
+      setFeedPage(result.page);
+      setFeedLastPage(result.lastPage);
+    } catch {
+      if (mounted.current) setOlderError(true);
+    } finally {
+      loadingOlderRef.current = false;
+      if (mounted.current) setLoadingOlder(false);
+    }
+  };
 
   const markAllAsRead = async () => {
     if (markingRead.current || unreadCount === 0) return;
@@ -392,6 +429,7 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
       announcementsRevision.current++;
       setAnnouncements(prev => prev.map(item => ids.has(item.id) ? { ...item, is_read: true, isRead: true } : item));
       setSelectedAnnouncement(item => item && ids.has(item.id) ? { ...item, is_read: true, isRead: true } : item);
+      setServerUnread(0);
       notifyAnnouncementsRead();
     } catch {
       if (mounted.current) setReadError("Couldn't mark notifications as read. Please try again.");
@@ -412,12 +450,18 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
           prev.map((a) => (a.id === item.id ? { ...a, is_read: true, isRead: true } : a))
         );
         setSelectedAnnouncement(current => current?.id === item.id ? { ...current, is_read: true, isRead: true } : current);
+        setServerUnread(count => count === null ? null : Math.max(0, count - 1));
         notifyAnnouncementsRead();
       } catch {
         // ignore
       }
     }
   };
+
+  // STUDENT_RENEWAL* or PWD_RENEWAL* notices act on that renewal only.
+  const noticeRenewalKind: RenewalKind | null = selectedAnnouncement?.rawType?.startsWith("STUDENT_RENEWAL") ? "STUDENT"
+    : selectedAnnouncement?.rawType?.startsWith("PWD_RENEWAL") ? "PWD" : null;
+  const noticeRenewal = noticeRenewalKind && (renewalState?.kind ?? "STUDENT") === noticeRenewalKind ? renewalState ?? null : null;
 
   const copyVoucherCode = async () => {
     if (!activeVoucherCode) return;
@@ -565,8 +609,22 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
               <MascotMessage {...getMascotErrorState(announcementsError)} message="We couldn't refresh announcements. Please try again." compact onRetry={onRefresh} retrying={refreshing} />
             ) : announcementsLoading && announcements.length === 0 ? (
               <ActivityIndicator accessibilityLabel="Loading updates" size="small" color="#62A0EA" />
-            ) : announcements.filter((item) => !unreadOnly || !item.is_read).length === 0 && (
+            ) : announcements.filter((item) => !unreadOnly || !item.is_read).length === 0 && !hasOlderUpdates && (
               <MascotMessage pose="noticeboard" title="All caught up" message="No announcements right now. Check back for updates." compact />
+            )}
+
+            {olderError && <Text accessibilityRole="alert" style={{ color: colors.danger }}>Couldn't load older updates. Please try again.</Text>}
+            {hasOlderUpdates && !announcementsLoading && (
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Load older updates"
+                accessibilityState={{ disabled: loadingOlder, busy: loadingOlder }}
+                disabled={loadingOlder}
+                onPress={() => void loadOlderUpdates()}
+                style={{ minHeight: 44, alignItems: "center", justifyContent: "center", borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, opacity: loadingOlder ? 0.6 : 1 }}
+              >
+                <Text style={{ color: colors.textSecondary, fontSize: 14, fontWeight: "600" }}>{loadingOlder ? "Loading…" : "Load older updates"}</Text>
+              </TouchableOpacity>
             )}
           </View>
         </View>
@@ -607,7 +665,7 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
                 : `${ridesRemaining} Ride${ridesRemaining === 1 ? "" : "s"} to Free Ride`}
             </Text>
             <Text style={styles.progressDescription}>
-              Complete {targetRides} paid rides to earn a free ride voucher. GCash counts automatically; cash counts once you scan the receipt QR.
+              Complete {targetRides} paid rides to earn a free ride voucher. Eligible GCash rides count automatically; cash counts once you scan the receipt QR.
             </Text>
 
             <View style={styles.statsRow}>
@@ -661,7 +719,7 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
                     <Mascot pose="reward" size={92} />
                     <Text style={styles.emptyCardTitle}>No vouchers yet</Text>
                     <Text style={styles.emptyCardText}>
-                      Your next free ride arrives after {ridesRemaining} more paid ride{ridesRemaining === 1 ? "" : "s"}. GCash rides count automatically.
+                      Your next free ride arrives after {ridesRemaining} more paid ride{ridesRemaining === 1 ? "" : "s"}. Eligible GCash rides count automatically.
                     </Text>
                     <TouchableOpacity onPress={handleOpenReceiptScanner} style={[styles.scanReceiptLink, styles.scanReceiptLinkCentered]}>
                       <Ionicons name="qr-code-outline" size={16} color={isLight ? colors.primary : "#99C1F1"} />
@@ -705,7 +763,7 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
             </View>
             <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 20, gap: 20 }}>
               {[
-                { title: "1. Complete paid rides", description: "GCash rides count automatically. For cash rides, scan the QR on your conductor's receipt. Each receipt can be claimed once within its claim window." },
+                { title: "1. Complete paid rides", description: "Eligible GCash rides count automatically. For cash rides, scan the QR on your conductor's receipt. Each receipt can be claimed once within its claim window." },
                 { title: "2. Earn a free ride", description: `Every ${targetRides} paid rides earns a voucher. Your progress then starts toward the next voucher.` },
                 { title: "3. Use it with GCash", description: "When you scan the conductor's GCash QR to pay, we offer your available voucher. Accept it to get the ride free or discounted; any remaining fare is paid by GCash." },
               ].map(item => <View key={item.title} style={{ gap: 4 }}>
@@ -834,21 +892,21 @@ export const RewardsScreen: React.FC<RewardsScreenProps> = ({
                       <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
                     </TouchableOpacity>
                   )}
-                  {selectedAnnouncement.rawType?.startsWith("STUDENT_RENEWAL") && onOpenRenewal && (
+                  {noticeRenewalKind && onOpenRenewal && (
                     <View style={styles.announcementActions}>
                       <TouchableOpacity
                         onPress={() => { setSelectedAnnouncement(null); onOpenRenewal(); }}
                         style={styles.announcementPrimaryAction}
                       >
-                        <Text style={styles.announcementPrimaryActionText}>{renewalState?.can_submit ? "Renew student status" : "View renewal status"}</Text>
+                        <Text style={styles.announcementPrimaryActionText}>{noticeRenewal?.can_submit ? RENEWAL_COPY[noticeRenewalKind].renewAction : "View renewal status"}</Text>
                         <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
                       </TouchableOpacity>
-                      {renewalState?.can_switch_to_regular && renewalState.status !== "PENDING" && renewalState.status !== "APPROVED" && (
+                      {noticeRenewal?.can_switch_to_regular && noticeRenewal.status !== "PENDING" && noticeRenewal.status !== "APPROVED" && (
                         <TouchableOpacity
                           onPress={() => { setSelectedAnnouncement(null); onOpenRenewal(); }}
                           style={styles.announcementSecondaryAction}
                         >
-                          <Text style={styles.announcementSecondaryActionText}>No Longer a Student</Text>
+                          <Text style={styles.announcementSecondaryActionText}>{RENEWAL_COPY[noticeRenewalKind].regularAction}</Text>
                         </TouchableOpacity>
                       )}
                     </View>

@@ -49,7 +49,7 @@ function render(loadError = "") {
 }
 function button(label: string) { return render().find((node) => node.props.label === label || node.props.accessibilityLabel === label)!; }
 async function flush() { for (let i = 0; i < 12; i++) await Promise.resolve(); }
-async function choosePwd() { render(); button("PWD").props.onPress(); button("Choose supporting document").props.onChoose(); await flush(); }
+async function choosePwd() { render(); button("PWD").props.onPress(); button("Valid until").props.onChangeText(`${new Date().getFullYear() + 1}-01-15`); button("Choose supporting document").props.onChoose(); await flush(); }
 beforeEach(() => {
   mockStates = []; mockRefs = []; mockDeps = []; mockEffects = []; current = state;
   jest.clearAllMocks();
@@ -97,11 +97,12 @@ test("stale revision conflict refreshes status instead of retrying a write", asy
   expect(refresh).toHaveBeenCalledTimes(1);
   expect(discountApplicationService.submit).toHaveBeenCalledTimes(1);
 });
-const application = { id: "request", revision: 3, request_type: "APPLICATION", requested_type: "PWD", status: "NEEDS_CORRECTION", reason: "Clearer ID", school_name: null, education_level: null, grade_level: null, school_year: null, enrollment_term: null, submitted_at: "2026-10-15", correction_due_at: null } as const;
-test("correction prefills its category, locks category changes, and sends its revision", async () => {
+const application = { id: "request", revision: 3, request_type: "APPLICATION", requested_type: "PWD", status: "NEEDS_CORRECTION", reason: "Clearer ID", school_name: null, education_level: null, grade_level: null, school_year: null, enrollment_term: null, submitted_at: "2026-10-15", correction_due_at: null, valid_until: `${new Date().getFullYear() + 1}-03-15` } as const;
+test("correction prefills its category and card date, locks category changes, and sends its revision", async () => {
   current = { ...state, status: "NEEDS_CORRECTION", application };
   render();
   expect(button("PWD").props.disabled).toBe(true);
+  expect(button("Valid until").props.value).toBe(application.valid_until);
   button("Choose supporting document").props.onChoose(); await flush();
   button("Submit corrected documents").props.onPress(); button("Confirm submission").props.onPress(); await flush();
   const form = (discountApplicationService.submit as jest.Mock).mock.calls[0][0] as FormData;
@@ -118,7 +119,7 @@ test("cancellation requires confirmation and rapid confirmation taps write once"
 });
 test("a renewal request links to renewal, never to application submission", () => {
   current = { ...state, status: "PENDING", can_submit: false, application: { ...application, request_type: "RENEWAL" } };
-  render(); button("View Student renewal").props.onPress();
+  render(); button("View PWD renewal").props.onPress();
   expect(renewal).toHaveBeenCalledTimes(1);
   expect(render().some((node) => node.props.label === "Cancel application")).toBe(false);
 });

@@ -29,7 +29,7 @@ export function RenewalReminder({ state, enabled, onOpen, onRefresh, viewingRene
     if (pending.current || !key) return;
     pending.current = true; setBusy(true); setError("");
     try {
-      await studentRenewalService.reminder(action);
+      await (state?.kind === "PWD" ? studentRenewalService.reminder(action, "PWD") : studentRenewalService.reminder(action));
       if (!mounted.current) return;
       setViewedKey(key);
       await onRefresh();
@@ -38,7 +38,7 @@ export function RenewalReminder({ state, enabled, onOpen, onRefresh, viewingRene
   };
   const copy = state ? renewalReminderPresentation(state) : null;
   const close = () => { if (!pending.current) setViewedKey(key); };
-  return <DashboardDialog visible={enabled && !viewingRenewal && key !== null && viewedKey !== key} title={copy?.title ?? "Student renewal reminder"} onClose={close}>
+  return <DashboardDialog visible={enabled && !viewingRenewal && key !== null && viewedKey !== key} title={copy?.title ?? "Renewal reminder"} onClose={close}>
     {copy && <>
       <Text style={s.text}>{copy.message}</Text>
       <View style={{ borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border }}>

@@ -398,7 +398,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({ onLogout, onEmailC
           />
           {onOpenDiscountApplication && ["ACTIVE", "APPROVED"].includes(accountStatus) && commuterType === "REGULAR" &&
             <DiscountApplicationEntry state={discountApplicationState} loading={discountApplicationLoading} failed={!!discountApplicationError} isLight={isLight} onOpen={onOpenDiscountApplication} />}
-          {onOpenRenewal && ["ACTIVE", "APPROVED"].includes(accountStatus) && commuterType === "STUDENT" &&
+          {onOpenRenewal && ["ACTIVE", "APPROVED"].includes(accountStatus) && (commuterType === "STUDENT" || commuterType === "PWD") &&
             <StudentRenewalEntry state={renewalState} discountPercentage={20} isLight={isLight} onOpen={onOpenRenewal} />}
         </View>
         <>

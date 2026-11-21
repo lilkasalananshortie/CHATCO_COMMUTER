@@ -33,7 +33,7 @@ jest.mock("../../scanner/ReceiptScanModal", () => ({ ReceiptScanModal: "Receipt"
 jest.mock("../RewardsProgressRing", () => ({ RewardsProgressRing: "Ring", REWARD_RING_CIRCUMFERENCE: 100 }));
 jest.mock("../../../core/domain/rewards-events", () => ({ subscribeRewardsChanged: () => () => {} }));
 jest.mock("../../../core/api/commuter-service", () => ({ commuterService: {
-  markAllAnnouncementsRead: jest.fn(), markAnnouncementRead: jest.fn(), getRewards: jest.fn(), getAnnouncements: jest.fn(),
+  markAllAnnouncementsRead: jest.fn(), markAnnouncementRead: jest.fn(), getRewards: jest.fn(), getAnnouncements: jest.fn(), getAnnouncementsPage: jest.fn(), getUnreadAnnouncementCount: jest.fn(),
 } }));
 
 type Element = React.ReactElement<Record<string, any>>;
@@ -106,12 +106,50 @@ test("a refresh started before mark all cannot restore stale unread notices", as
   jest.useFakeTimers();
   let finish!: (value: any) => void;
   (commuterService.getRewards as jest.Mock).mockResolvedValue({ vouchers: [] });
-  (commuterService.getAnnouncements as jest.Mock).mockReturnValue(new Promise(resolve => { finish = resolve; }));
+  (commuterService.getUnreadAnnouncementCount as jest.Mock).mockResolvedValue(1);
+  (commuterService.getAnnouncementsPage as jest.Mock).mockReturnValue(new Promise(resolve => { finish = resolve; }));
   render(); const cleanup = mockEffects[3]!();
   try {
     await markButton().props.onPress();
-    finish([{ ...notice }]); await flush();
+    finish({ items: [{ ...notice }], page: 1, lastPage: 1 }); await flush();
     expect(mockStates[1][0].is_read).toBe(true);
+  } finally { cleanup(); jest.useRealTimers(); }
+});
+
+test("older updates skip duplicates and survive the background refresh", async () => {
+  jest.useFakeTimers();
+  const older = { ...notice, id: "older", title: "Older" };
+  (commuterService.getRewards as jest.Mock).mockResolvedValue({ vouchers: [] });
+  (commuterService.getUnreadAnnouncementCount as jest.Mock).mockResolvedValue(2);
+  (commuterService.getAnnouncementsPage as jest.Mock)
+    .mockResolvedValueOnce({ items: [notice], page: 1, lastPage: 2 })
+    .mockResolvedValueOnce({ items: [notice, older], page: 2, lastPage: 2 })
+    .mockResolvedValue({ items: [{ ...notice, title: "Fresh" }], page: 1, lastPage: 2 });
+  render(); const cleanup = mockEffects[3]!();
+  try {
+    await flush();
+    await render().find(node => node.props.accessibilityLabel === "Load older updates")!.props.onPress();
+    await flush();
+    expect(commuterService.getAnnouncementsPage).toHaveBeenLastCalledWith(2);
+    expect(mockStates[1].map((item: { id: string }) => item.id)).toEqual(["notice", "older"]);
+    expect(render().some(node => node.props.accessibilityLabel === "Load older updates")).toBe(false);
+    await jest.advanceTimersByTimeAsync(30000);
+    expect(mockStates[1].map((item: { title: string }) => item.title)).toEqual(["Fresh", "Older"]);
+  } finally { cleanup(); jest.useRealTimers(); }
+});
+
+test("mark all stays available for unread updates on pages not loaded yet", async () => {
+  jest.useFakeTimers();
+  (commuterService.getRewards as jest.Mock).mockResolvedValue({ vouchers: [] });
+  (commuterService.getUnreadAnnouncementCount as jest.Mock).mockResolvedValue(3);
+  (commuterService.getAnnouncementsPage as jest.Mock).mockResolvedValue({ items: [{ ...notice, is_read: true, isRead: true }], page: 1, lastPage: 2 });
+  render(); const cleanup = mockEffects[3]!();
+  try {
+    await flush();
+    expect(markButton().props.disabled).toBe(false);
+    await markButton().props.onPress();
+    expect(commuterService.markAllAnnouncementsRead).toHaveBeenCalledTimes(1);
+    expect(markButton().props.disabled).toBe(true);
   } finally { cleanup(); jest.useRealTimers(); }
 });
 

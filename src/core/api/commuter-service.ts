@@ -75,6 +75,21 @@ function profileEnvelope(res: any): { user: User; profile: CommuterProfile } {
   return { user: res.user, profile: { ...res.profile, id: res.profile.id ?? res.user.id } };
 }
 
+function mapAnnouncement(a: any): Announcement {
+  return {
+    id: a.id,
+    title: a.title,
+    content: a.message || a.content || "",
+    message: a.message || a.content || "",
+    type: mapAnnouncementType(a.type),
+    rawType: a.raw_type || a.rawType || a.type || null,
+    is_read: Boolean(a.is_read ?? a.isRead),
+    isRead: Boolean(a.is_read ?? a.isRead),
+    created_at: a.created_at,
+    createdAt: a.created_at,
+  };
+}
+
 export const commuterService = {
   // Profile
   async getProfile(): Promise<{ user: User; profile: CommuterProfile }> {
@@ -179,6 +194,7 @@ export const commuterService = {
       status: res.status || "PENDING",
       created_at: res.created_at || new Date().toISOString(),
       expires_at: res.expires_at ?? null,
+      vehicle_id: res.vehicle_id ?? data.vehicle_id,
       accepted_by: res.vehicle
         ? {
             unit_number: res.vehicle.unit_number || "JEEP",
@@ -204,6 +220,7 @@ export const commuterService = {
         status: data.status || "PENDING",
         created_at: data.created_at || new Date().toISOString(),
         expires_at: data.expires_at ?? null,
+        vehicle_id: data.vehicle_id ?? null,
         accepted_by: data.vehicle
           ? {
               unit_number: data.vehicle.unit_number || "JEEP",
@@ -229,6 +246,7 @@ export const commuterService = {
         status: data.status || "PENDING",
         created_at: data.created_at || new Date().toISOString(),
         expires_at: data.expires_at ?? null,
+        vehicle_id: data.vehicle_id ?? null,
         accepted_by: data.vehicle
           ? {
               unit_number: data.vehicle.unit_number || "JEEP",
@@ -654,18 +672,13 @@ export const commuterService = {
   async getAnnouncements(): Promise<Announcement[]> {
     const res = await request<any>("/mobile/commuter/announcements");
     const rows = Array.isArray(res) ? res : res.data || [];
-    return rows.map((a: any) => ({
-      id: a.id,
-      title: a.title,
-      content: a.message || a.content || "",
-      message: a.message || a.content || "",
-      type: mapAnnouncementType(a.type),
-      rawType: a.raw_type || a.rawType || a.type || null,
-      is_read: Boolean(a.is_read ?? a.isRead),
-      isRead: Boolean(a.is_read ?? a.isRead),
-      created_at: a.created_at,
-      createdAt: a.created_at,
-    }));
+    return rows.map(mapAnnouncement);
+  },
+
+  async getAnnouncementsPage(page = 1, perPage = 15): Promise<{ items: Announcement[]; page: number; lastPage: number }> {
+    const res = await request<any>(`/mobile/commuter/announcements?page=${page}&per_page=${perPage}`);
+    const rows = Array.isArray(res) ? res : res.data || [];
+    return { items: rows.map(mapAnnouncement), page: Number(res.current_page ?? page), lastPage: Number(res.last_page ?? page) };
   },
 
   async getUnreadAnnouncementCount(): Promise<number> {

@@ -21,6 +21,28 @@ export function registrationBirthdateError(value: string, now = new Date()): str
   return null;
 }
 
+/** Today's calendar date in the Philippines, which has no daylight saving. */
+export function philippineToday(now = new Date()): string {
+  return new Date(now.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/** The PWD card's printed date. `after` is the current card date on a renewal. */
+export function pwdValidUntilError(value: string, after?: string | null, now = new Date()): string | null {
+  const normalized = value.trim();
+  if (!normalized) return "Enter the valid-until date printed on your PWD ID.";
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalized);
+  const parsed = match ? new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))) : null;
+  if (!parsed || parsed.toISOString().slice(0, 10) !== normalized) return "Use a valid date in YYYY-MM-DD format.";
+  const today = philippineToday(now);
+  const renewing = !!after && after.slice(0, 10) >= today;
+  if (normalized <= today || (renewing && normalized <= after!.slice(0, 10))) {
+    return after ? "The new valid-until date must be later than your current card date and today." : "The valid-until date must be in the future.";
+  }
+  const maxYear = Number(today.slice(0, 4)) + 5;
+  if (normalized > `${maxYear}-12-31`) return `Check the year. The date can be no later than Dec 31, ${maxYear}.`;
+  return null;
+}
+
 export function registrationUsernameError(value: string): string | null {
   const username = value.trim();
   if (!username) return "Choose a username.";

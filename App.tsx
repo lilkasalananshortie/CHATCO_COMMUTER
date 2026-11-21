@@ -22,6 +22,7 @@ import { LoginScreen } from "./src/features/auth/LoginScreen";
 import { RegisterScreen } from "./src/features/auth/RegisterScreen";
 import { SetNewPasswordScreen } from "./src/features/auth/SetNewPasswordScreen";
 import { DashboardScreen } from "./src/features/dashboard/DashboardScreen";
+import { clearReleasedHails } from "./src/features/dashboard/useHailCooldown";
 import { LostFoundScreen } from "./src/features/lostfound/LostFoundScreen";
 import { RewardsScreen } from "./src/features/rewards/RewardsScreen";
 import { FeedbackScreen } from "./src/features/feedback/FeedbackScreen";
@@ -35,6 +36,7 @@ import { MascotErrorBoundary } from "./src/shared/ui/MascotErrorBoundary";
 import { StudentRenewalScreen } from "./src/features/student-renewal/StudentRenewalScreen";
 import { RenewalReminder } from "./src/features/student-renewal/RenewalReminder";
 import { useStudentRenewal } from "./src/features/student-renewal/useStudentRenewal";
+import { renewalKindFor } from "./src/features/student-renewal/renewal-types";
 import { subscribeRewardsChanged } from "./src/core/domain/rewards-events";
 import { clearRewardsRequestCache } from "./src/core/api/rewards-request-cache";
 import { subscribeAnnouncementsRead } from "./src/core/domain/announcements-events";
@@ -109,7 +111,8 @@ function MainApp() {
   }, [showDiscountApplication]);
   const operationalUserId = !sessionVerified.current || user?.must_change_password ? undefined : user?.id;
   const discountApplication = useDiscountApplication(operationalUserId);
-  const renewal = useStudentRenewal(operationalUserId);
+  // Wait for the profile, because it decides which renewal endpoint applies.
+  const renewal = useStudentRenewal(profile ? operationalUserId : undefined, renewalKindFor(profile));
   useEffect(() => {
     if (!sessionVerified.current || !user || !discountApplication.state || profile?.commuter_type === discountApplication.state.commuter_type) return;
     let cancelled = false;
@@ -138,6 +141,7 @@ function MainApp() {
 
   const handleLogout = useCallback(() => {
     clearRewardsRequestCache();
+    clearReleasedHails();
     sessionEpoch.current++;
     sessionVerified.current = false;
     currentUserId.current = undefined;

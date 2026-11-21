@@ -1,6 +1,6 @@
 /// <reference types="jest" />
 
-import { getNearbyHailableVehicles, unavailableHailReason } from "../nearby-hailing";
+import { getNearbyHailableVehicles, hasVehicleInHailRange, unavailableHailReason } from "../nearby-hailing";
 import { distanceToRouteMeters } from "../trip-direction";
 import type { VehicleLocation } from "../../../core/domain/types";
 
@@ -59,4 +59,12 @@ test("missing, denied, or invalid GPS cannot be confused with no nearby units", 
   expect(unavailableHailReason("available", null, route)).toBe("unavailable");
   expect(unavailableHailReason("available", { latitude: NaN, longitude: 120.8 }, route)).toBe("unavailable");
   expect(unavailableHailReason("available", commuter, [])).toBe("unavailable");
+});
+
+test("a full unit still counts as in range, but a far or stale unit does not", () => {
+  expect(hasVehicleInHailRange([vehicle({ capacity_status: "FULL" })], commuter, now)).toBe(true);
+  expect(hasVehicleInHailRange([vehicle({ latitude: 15.2 })], commuter, now)).toBe(false);
+  expect(hasVehicleInHailRange([vehicle({ updated_at: new Date(now - 11 * 60_000).toISOString() })], commuter, now)).toBe(false);
+  expect(hasVehicleInHailRange([], commuter, now)).toBe(false);
+  expect(hasVehicleInHailRange([vehicle()], null, now)).toBe(false);
 });

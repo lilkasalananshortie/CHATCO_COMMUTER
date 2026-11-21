@@ -31,6 +31,17 @@ test("slow renewal requests serialize polling and mutation refresh waits for a f
   expect(render().state).toMatchObject({ status: "PENDING", reminder_due: false });
   if (cleanup) cleanup();
 });
+test("a PWD account with no card date has no renewal and stops polling", async () => {
+  (studentRenewalService.state as jest.Mock).mockRejectedValue(Object.assign(new Error("No card date"), { status: 403 }));
+  mockIndex = mockRefIndex = 0; useStudentRenewal("pwd", "PWD");
+  const cleanup = mockEffect(); await flush();
+  expect(studentRenewalService.state).toHaveBeenCalledWith("PWD");
+  mockIndex = mockRefIndex = 0;
+  expect(useStudentRenewal("pwd", "PWD")).toMatchObject({ state: null, error: "" });
+  await jest.advanceTimersByTimeAsync(120000);
+  expect(studentRenewalService.state).toHaveBeenCalledTimes(1);
+  if (cleanup) cleanup();
+});
 test("foreground resume refreshes due status and scheduled notice identity", async () => {
   (studentRenewalService.state as jest.Mock).mockResolvedValue(due);
   (commuterService.getAnnouncements as jest.Mock).mockResolvedValue([{ id: "next-reminder", rawType: "STUDENT_RENEWAL", created_at: "2027-08-29T00:00:00+08:00" }]);

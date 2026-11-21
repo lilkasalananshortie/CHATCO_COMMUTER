@@ -12,11 +12,12 @@ export function DiscountApplicationEntry({ state, loading, failed, isLight, onOp
 
   const application = state?.application;
   const renewal = application?.request_type === "RENEWAL";
+  const renewalLabel = application?.requested_type === "PWD" ? "PWD renewal" : "Student renewal";
   const category = application ? DISCOUNT_CATEGORIES[application.requested_type] : "";
   const status = state && application && !["CANCELLED", "EXPIRED"].includes(state.status) ? state.status : "NOT_APPLIED";
   const content = !state
     ? { text: "Unable to load your discount application status.", link: "View application status" }
-    : renewal ? { text: `Student renewal: ${APPLICATION_LABELS[status]}`, link: "View Student renewal" }
+    : renewal ? { text: `${renewalLabel}: ${APPLICATION_LABELS[status]}`, link: `View ${renewalLabel}` }
     : status === "PENDING" ? { text: "Your discount application is currently under review. Check here for updates on your application status.", link: "View application status" }
     : status === "NEEDS_CORRECTION" ? { text: `An admin asked for a correction to your ${category} discount application. Send corrected documents to continue the review.`, link: "Update your application" }
     : status === "REJECTED" ? { text: `Your ${category} discount application was not approved.`, link: "Apply again" }

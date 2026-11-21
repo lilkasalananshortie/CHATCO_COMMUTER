@@ -7,14 +7,21 @@ const state: ApplicationState = { commuter_type: "REGULAR", effective_fare_type:
   document_required: true, can_submit: true, status: "NOT_APPLIED", application: null };
 const fields: RenewalFields = { school_name: " School ", education_level: "HIGH_SCHOOL", grade_level: "10", school_year: "2026-2027", enrollment_term: "" };
 const proof = () => new File(["proof"], "proof.pdf", { type: "application/pdf" });
+const cardDate = `${new Date().getFullYear() + 1}-01-15`;
 
 test.each(["PWD", "SENIOR"] as const)("%s sends proof and category, never leftover school fields", (category) => {
-  const form = applicationPayload(state, category, fields, proof());
+  const form = applicationPayload(state, category, fields, proof(), undefined, cardDate);
   expect(form.get("requested_type")).toBe(category);
+  expect(form.get("valid_until")).toBe(category === "PWD" ? cardDate : null);
   expect(form.get("document")).toBeInstanceOf(File);
   expect(form.has("school_name")).toBe(false);
   expect(form.has("grade_level")).toBe(false);
   expect(form.has("application_id")).toBe(false);
+});
+test("PWD cannot submit without a real future card date", () => {
+  expect(() => applicationPayload(state, "PWD", fields, proof())).toThrow("valid-until");
+  expect(() => applicationPayload(state, "PWD", fields, proof(), undefined, "2020-01-01")).toThrow("future");
+  expect(() => applicationPayload(state, "PWD", fields, proof(), undefined, "2030-02-31")).toThrow("valid date");
 });
 test("student shares renewal validation and trimming", () => {
   const form = applicationPayload(state, "STUDENT", fields, proof());
@@ -30,7 +37,7 @@ test("college requires term and excludes leftover grade", () => {
 test("proof is mandatory unless backend explicitly disables it", () => {
   expect(() => applicationPayload(state, "PWD", fields, null)).toThrow("proof");
   expect(() => applicationPayload({ ...state, document_required: undefined as any }, "PWD", fields, null)).toThrow("proof");
-  expect(applicationPayload({ ...state, document_required: false }, "PWD", fields, proof()).has("document")).toBe(false);
+  expect(applicationPayload({ ...state, document_required: false }, "PWD", fields, proof(), undefined, cardDate).has("document")).toBe(false);
   expect(applicationPayload({ ...state, document_required: false }, "STUDENT", fields, null).get("school_name")).toBe("School");
 });
 test("invalid and oversized proof cannot upload", () => {
@@ -47,13 +54,13 @@ const correction: ApplicationState = { ...state, status: "NEEDS_CORRECTION", app
   submitted_at: "2026-10-15", correction_due_at: null, school_name: null, school_year: null, education_level: null, grade_level: null, enrollment_term: null,
 } };
 test("corrections include authoritative id and revision and cannot change category", () => {
-  const form = applicationPayload(correction, "PWD", fields, proof());
+  const form = applicationPayload(correction, "PWD", fields, proof(), undefined, cardDate);
   expect(form.get("application_id")).toBe("application");
   expect(form.get("revision")).toBe("4");
   expect(() => applicationPayload(correction, "SENIOR", fields, proof())).toThrow("Cancel");
 });
 test("renewal correction cannot be submitted through application endpoint", () => {
-  expect(() => applicationPayload({ ...correction, application: { ...correction.application!, request_type: "RENEWAL" } }, "PWD", fields, proof())).toThrow("Student Renewal");
+  expect(() => applicationPayload({ ...correction, application: { ...correction.application!, request_type: "RENEWAL" } }, "PWD", fields, proof())).toThrow("PWD Renewal");
 });
 test("only pending/correction applications are cancellable", () => {
   expect(canCancelApplication(correction)).toBe(true);

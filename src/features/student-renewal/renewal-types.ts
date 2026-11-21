@@ -1,13 +1,20 @@
 import { appendNativeMultipartFile } from "../../core/api/native-multipart-file";
+import { pwdValidUntilError } from "../auth/registration-validation";
 
 export type RenewalStatus = "NOT_RENEWED" | "PENDING" | "NEEDS_CORRECTION" | "APPROVED" | "REJECTED" | "CANCELLED" | "EXPIRED";
 export type EducationLevel = "HIGH_SCHOOL" | "COLLEGE";
+/** Students renew in one shared yearly window; PWDs around their own card date. */
+export type RenewalKind = "STUDENT" | "PWD";
 export interface RenewalApplication {
-  id: string; revision: number; status: RenewalStatus; school_name: string; education_level: EducationLevel;
-  grade_level: number | null; school_year: string; enrollment_term: string | null;
+  id: string; revision: number; status: RenewalStatus; school_name: string | null; education_level: EducationLevel | null;
+  grade_level: number | null; school_year: string | null; enrollment_term: string | null;
   reason: string | null; correction_due_at: string | null; submitted_at: string;
+  /** PWD requests only. */
+  valid_until?: string | null;
 }
 export interface RenewalState {
+  /** Absent on student responses. */
+  kind?: RenewalKind; valid_until?: string;
   cycle_year: number; deadline: string; opens_at: string; renewal_period: string;
   commuter_type: string; discount_eligible: boolean; discount_expires_at: string | null;
   status: RenewalStatus; can_submit: boolean; notice_active: boolean; reminder_due: boolean;
@@ -17,6 +24,38 @@ export const RENEWAL_LABELS: Record<RenewalStatus, string> = {
   NOT_RENEWED: "Not renewed", PENDING: "Pending renewal verification", NEEDS_CORRECTION: "Needs correction",
   APPROVED: "Renewed", REJECTED: "Rejected", CANCELLED: "Cancelled", EXPIRED: "Expired",
 };
+export const RENEWAL_COPY: Record<RenewalKind, {
+  title: string; label: string; discount: string; discountLabel: string; proofShort: string; renewTitle: string; renewAction: string;
+  correctedAction: string; regularAction: string; ready: string; correctionTitle: string; reminderTitle: string; reminderCorrectionTitle: string;
+}> = {
+  STUDENT: {
+    title: "Student Renewal", label: "Student renewal", discount: "student discount", discountLabel: "Student discount", proofShort: "proof",
+    renewTitle: "Renew your student status", renewAction: "Renew student status", correctedAction: "Submit corrected proof",
+    regularAction: "No Longer a Student", ready: "your current school ID or enrollment proof", correctionTitle: "Update your enrollment proof",
+    reminderTitle: "Student renewal reminder", reminderCorrectionTitle: "Enrollment proof needs a correction",
+  },
+  PWD: {
+    title: "PWD Renewal", label: "PWD renewal", discount: "PWD discount", discountLabel: "PWD discount", proofShort: "PWD ID",
+    renewTitle: "Renew your PWD ID", renewAction: "Renew PWD ID", correctedAction: "Submit corrected PWD ID",
+    regularAction: "Switch to Regular", ready: "your renewed PWD ID", correctionTitle: "Update your PWD ID",
+    reminderTitle: "PWD renewal reminder", reminderCorrectionTitle: "PWD ID needs a correction",
+  },
+};
+
+/** A 'YYYY-MM-DD' card date as "Mar 15, 2027", with no time zone shift. */
+export function formatCardDate(value: string): string {
+  const [year, month, day] = value.slice(0, 10).split("-").map(Number);
+  const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${names[(month ?? 1) - 1]} ${day}, ${year}`;
+}
+
+/** Which renewal endpoint applies. A lapsed PWD is Regular with applied_type PWD. */
+export function renewalKindFor(profile: { commuter_type?: string | null; applied_type?: string | null } | null | undefined): RenewalKind {
+  const type = String(profile?.commuter_type ?? "").toUpperCase();
+  const applied = String(profile?.applied_type ?? "").toUpperCase();
+  return type === "PWD" || (type === "REGULAR" && applied === "PWD") ? "PWD" : "STUDENT";
+}
+
 export interface RenewalFields {
   school_name: string; education_level: EducationLevel | ""; grade_level: string; school_year: string; enrollment_term: string;
 }
@@ -44,12 +83,20 @@ export function proofPayload(document: RenewalDocument | null, required = true, 
   // Local application debugging must not upload a selected file to R2.
   if (!required) return form;
   if (!document) throw new Error("Choose your supporting proof first.");
-  if (document.size != null && document.size > 5 * 1024 * 1024) throw new Error("Enrollment proof must be 5MB or smaller.");
+  if (document.size != null && document.size > 5 * 1024 * 1024) throw new Error("Supporting proof must be 5MB or smaller.");
   if (!["image/jpeg", "image/png", "image/webp", "application/pdf"].includes(document.type)) throw new Error("Choose a JPG, PNG, WebP or PDF document.");
   if ("uri" in document) {
     if (!nativeProof) throw new Error("Unable to read the selected document.");
     appendNativeMultipartFile(form, "document", nativeProof);
   } else form.append("document", document);
+  return form;
+}
+
+export function pwdRenewalPayload(validUntil: string, currentCardDate: string | null | undefined, document: RenewalDocument | null, nativeProof?: NativeProof): FormData {
+  const form = proofPayload(document, true, nativeProof);
+  const dateError = pwdValidUntilError(validUntil, currentCardDate);
+  if (dateError) throw new Error(dateError);
+  form.append("valid_until", validUntil.trim());
   return form;
 }
 

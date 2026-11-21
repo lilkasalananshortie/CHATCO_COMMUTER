@@ -2,7 +2,7 @@ import React from "react";
 import { TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Text } from "../../shared/ui/BrandText";
-import type { RenewalState } from "../student-renewal/renewal-types";
+import { RENEWAL_COPY, type RenewalState } from "../student-renewal/renewal-types";
 
 const date = (value: string, withTime = false) => new Date(value).toLocaleString("en-PH", {
   month: "short", day: "numeric", year: "numeric", timeZone: "Asia/Manila",
@@ -12,18 +12,21 @@ const date = (value: string, withTime = false) => new Date(value).toLocaleString
 export function StudentRenewalEntry({ state, discountPercentage, isLight, onOpen }: {
   state: RenewalState | null; discountPercentage: number; isLight: boolean; onOpen: () => void;
 }) {
-  if (!state?.notice_active || state.commuter_type !== "STUDENT") return null;
+  if (!state?.notice_active || state.commuter_type !== (state.kind ?? "STUDENT")) return null;
+  const copy = RENEWAL_COPY[state.kind ?? "STUDENT"];
+  const pwd = state.kind === "PWD";
+  const label = copy.label.replace(/^Student/, "student");
   const { status, can_submit: canSubmit, application } = state;
-  const discount = `${discountPercentage}% student discount`;
+  const discount = `${discountPercentage}% ${copy.discount}`;
   const content = status === "PENDING"
-    ? { text: "Your student renewal is being reviewed. We’ll notify you when it’s done, so there’s no need to submit again.", link: "View renewal status" }
+    ? { text: `Your ${label} is being reviewed. We’ll notify you when it’s done, so there’s no need to submit again.`, link: "View renewal status" }
     : status === "NEEDS_CORRECTION"
-      ? { text: `An admin asked for a correction to your student renewal. Send corrected proof${application?.correction_due_at ? ` by ${date(application.correction_due_at, true)}` : ""} to continue the review.`, link: "Submit corrected proof" }
+      ? { text: `An admin asked for a correction to your ${label}. Send ${pwd ? "a corrected PWD ID" : "corrected proof"}${application?.correction_due_at ? ` by ${date(application.correction_due_at, true)}` : ""} to continue the review.`, link: copy.correctedAction }
       : status === "REJECTED"
-        ? { text: "Your student renewal was not approved.", link: canSubmit ? "Submit again" : "View renewal status" }
+        ? { text: `Your ${label} was not approved.`, link: canSubmit ? "Submit again" : "View renewal status" }
         : !canSubmit
-          ? { lead: "Student renewal is coming up.", text: `It opens on ${date(state.opens_at)}. Have your current school ID or enrollment proof ready to keep your ${discount}.`, link: "View renewal status" }
-          : { lead: "Student renewal is due.", text: `Upload your current school ID or enrollment proof before ${date(state.deadline)} to keep your ${discount}.`, link: "Renew student status" };
+          ? { lead: `${copy.label} is coming up.`, text: `It opens on ${date(state.opens_at)}. Have ${copy.ready} ready to keep your ${discount}.`, link: "View renewal status" }
+          : { lead: `${copy.label} is due.`, text: `Upload ${copy.ready} ${pwd ? `by ${date(new Date(Date.parse(state.deadline) - 1).toISOString())}` : `before ${date(state.deadline)}`} to keep your ${discount}.`, link: copy.renewAction };
   const primary = canSubmit && status !== "PENDING";
   return <View style={{ width: "100%", marginTop: 4, paddingTop: 16, borderTopWidth: 1, borderTopColor: isLight ? "rgba(26,95,180,0.15)" : "rgba(255,255,255,0.15)" }}>
     <Text style={{ color: status === "REJECTED" ? (isLight ? "#B91C1C" : "#FECACA") : (isLight ? "#374151" : "rgba(255,255,255,0.85)"), fontSize: 14, lineHeight: 23 }}>

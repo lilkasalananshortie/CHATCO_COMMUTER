@@ -3,9 +3,9 @@ import { studentRenewalService } from "../../core/api/student-renewal-service";
 import { commuterService } from "../../core/api/commuter-service";
 import { latestRenewalNoticeId, renewalReminderKey } from "./renewal-reminder-state";
 import { foregroundPoll } from "../../shared/foreground-poll";
-import type { RenewalState } from "./renewal-types";
+import type { RenewalKind, RenewalState } from "./renewal-types";
 
-export function useStudentRenewal(userId?: string) {
+export function useStudentRenewal(userId?: string, kind: RenewalKind = "STUDENT") {
   const [state, setState] = useState<RenewalState | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -19,7 +19,7 @@ export function useStudentRenewal(userId?: string) {
     const request = ++generation.current;
     setLoading(true);
     try {
-      const result = await studentRenewalService.state();
+      const result = await studentRenewalService.state(kind);
       if (generation.current !== request || owner.current !== userId) return;
       let latest: string | null | undefined;
       if (renewalReminderKey(result)) {
@@ -31,12 +31,17 @@ export function useStudentRenewal(userId?: string) {
         setState(result); setError("");
       }
     } catch (e: any) {
-      if (generation.current === request && owner.current === userId) {
+      // A PWD account with no card date has no renewal: not an error, and nothing to poll.
+      if (kind === "PWD" && e?.status === 403 && generation.current === request && owner.current === userId) {
+        setState(null); setError("");
+        poll.current?.stop();
+        poll.current = null;
+      } else if (generation.current === request && owner.current === userId) {
         setState(null); // Never show stale eligibility or invent a reminder during an outage.
-        setError(e.message || "Unable to load student renewal.");
+        setError(e.message || "Unable to load your renewal.");
       }
     } finally { if (generation.current === request && owner.current === userId) setLoading(false); }
-  }, [userId]);
+  }, [kind, userId]);
   const refresh = useCallback(() => poll.current?.refresh(true) ?? load(), [load]);
   useEffect(() => {
     setState(null); setError(""); setLoading(false); setNoticeId(null);

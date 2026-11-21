@@ -23,6 +23,7 @@ export interface CommuterProfile {
   profile_image_url?: string | null;
   verified_at?: string | null;
   student_discount_expires_at?: string | null;
+  pwd_valid_until?: string | null;
   effective_fare_type?: string;
 }
 
@@ -82,6 +83,7 @@ export interface CalculatedFare {
 
 export interface HailRequest {
   id: string;
+  vehicle_id?: string | null;
   pickup_name: string;
   passenger_count: number;
   status: "PENDING" | "ACCEPTED" | "REJECTED" | "CANCELLED" | "COMPLETED" | "EXPIRED";
